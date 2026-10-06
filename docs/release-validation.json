@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-10-06T20:34:14.157833+00:00",
+  "sourceCodeCommit": "7237e9e23d354891d438603590991c69f2621326",
+  "publicUrl": "https://atlas-aletheia.com/quant/",
+  "sourceUrl": "https://github.com/eprestonyi/atlas-quant",
+  "build": {
+    "id": "0.1.0-212851c35f56",
+    "sha256": "e97d92e92100f96b34f19697f27363ba0e4d23eaf11719d415444a0bc60864a6",
+    "bytes": 177563
+  },
+  "health": {
+    "ok": true,
+    "service": "Atlas Quant",
+    "version": "0.1.0-212851c35f56",
+    "runner": {
+      "online": true,
+      "lastSeen": "2026-10-06T20:34:07.525Z",
+      "state": "ready",
+      "engineVersion": null
+    },
+    "capabilities": {
+      "demo": true,
+      "upload": true,
+      "tushareHosted": false,
+      "localTushare": true
+    }
+  },
+  "localValidation": {
+    "pythonTests": 79,
+    "nodeTestCasesExecuted": 28,
+    "nodeIncludesRepeatedDslCases": true,
+    "npmAuditVulnerabilities": 0,
+    "cleanSyntheticReproducibility": "whole result JSON exactly equal"
+  },
+  "productionBrowser": {
+    "freshWorkspace": true,
+    "saveStrategy": true,
+    "moveModuleByPointer": true,
+    "dragFactorIntoCanvas": true,
+    "demoCompleted": true,
+    "demoRows": 7824,
+    "candidateFamilies": 4,
+    "trades": 159,
+    "holdoutUsedForSelection": false,
+    "exportJsonReadback": true,
+    "exportSha256": "28ebd030c520ee4c6cda4997d8538956d4f89c591ed8f086155b7e232b82f07d",
+    "mobileViewportPixels": 390,
+    "pageHorizontalOverflow": false,
+    "authenticatedAtlasNavReadback": "NOT_VERIFIED_NO_AUTHENTICATED_BROWSER_SESSION"
+  },
+  "portalIntegration": {
+    "originalModuleSha256": "97383f08dd41303fdfad8f670d171749c12beddefc7bb3e94e260a5c901fc2ad",
+    "originalBindingCount": 67,
+    "originalBindingsPreserved": true,
+    "addedBindingNames": [
+      "ATLAS_QUANT",
+      "ATLAS_QUANT_SERVICE_SECRET"
+    ],
+    "existingPublicPagesHealthy": true
+  },
+  "limitations": [
+    "Public hosted Tushare remains disabled pending provider multiuser rights.",
+    "Quant workspaces use browser cookies; Atlas account sync/recovery is not implemented.",
+    "Computation uses one Mac mini host; no high availability or uninterrupted operation claim.",
+    "Research fills use adjusted fractional units and do not simulate full exchange execution."
+  ]
+}
