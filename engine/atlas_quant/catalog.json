@@ -1,0 +1,34 @@
+{
+  "factors": [
+    {"id":"momentum_5","name":"5日动量","category":"动量","description":"过去5个交易日复权收盘收益。","expression":"returns(close,5)","direction":1,"lookback":5},
+    {"id":"momentum_20","name":"20日动量","category":"动量","description":"过去20个交易日复权收盘收益。","expression":"returns(close,20)","direction":1,"lookback":20},
+    {"id":"momentum_60","name":"60日动量","category":"动量","description":"过去60个交易日复权收盘收益。","expression":"returns(close,60)","direction":1,"lookback":60},
+    {"id":"reversal_1","name":"单日反转","category":"反转","description":"上一交易日收益的反向得分；方向为负。","expression":"returns(close,1)","direction":-1,"lookback":1},
+    {"id":"reversal_5","name":"5日反转","category":"反转","description":"5日累计收益的反向得分；方向为负。","expression":"returns(close,5)","direction":-1,"lookback":5},
+    {"id":"volatility_10","name":"10日波动率","category":"风险","description":"10个日收益的总体标准差；低波动得分较高。","expression":"ts_std(returns(close,1),10)","direction":-1,"lookback":10},
+    {"id":"volatility_20","name":"20日波动率","category":"风险","description":"20个日收益的总体标准差；低波动得分较高。","expression":"ts_std(returns(close,1),20)","direction":-1,"lookback":20},
+    {"id":"volatility_60","name":"60日波动率","category":"风险","description":"60个日收益的总体标准差；低波动得分较高。","expression":"ts_std(returns(close,1),60)","direction":-1,"lookback":60},
+    {"id":"range_20","name":"20日平均振幅","category":"风险","description":"日内高低价差除以收盘价的20日平均。","expression":"ts_mean((high-low)/close,20)","direction":-1,"lookback":19},
+    {"id":"intraday_strength","name":"日内实体强度","category":"量价","description":"收开盘价差相对日内振幅；无振幅时缺失。","expression":"(close-open)/(high-low)","direction":1,"lookback":0},
+    {"id":"gap_reversal","name":"隔夜跳空反转","category":"反转","description":"今日开盘相对昨日收盘的复权跳空，取反向。","expression":"open/lag(close,1)-1","direction":-1,"lookback":1},
+    {"id":"volume_surge_5","name":"5日相对成交量","category":"流动性","description":"今日成交量相对包含今日的5日均量。","expression":"vol/ts_mean(vol,5)-1","direction":1,"lookback":4},
+    {"id":"volume_surge_20","name":"20日相对成交量","category":"流动性","description":"今日成交量相对包含今日的20日均量。","expression":"vol/ts_mean(vol,20)-1","direction":1,"lookback":19},
+    {"id":"volume_variation_20","name":"20日成交量变异","category":"流动性","description":"成交量标准差除以均量；偏好稳定成交。","expression":"ts_std(vol,20)/ts_mean(vol,20)","direction":-1,"lookback":19},
+    {"id":"liquidity_20","name":"20日成交额","category":"流动性","description":"20日平均成交额自然对数；原始成交额单位为千元。","expression":"log(ts_mean(amount,20))","direction":1,"lookback":19},
+    {"id":"illiquidity_20","name":"20日非流动性","category":"流动性","description":"绝对日收益除以成交额的均值；成交额下限为1千元。","expression":"ts_mean(abs(returns(close,1))/max(amount,1),20)","direction":-1,"lookback":20},
+    {"id":"trend_strength_20","name":"20日均线偏离","category":"趋势","description":"收盘价相对包含今日的20日移动均值。","expression":"close/ts_mean(close,20)-1","direction":1,"lookback":19},
+    {"id":"range_position_20","name":"20日区间位置","category":"趋势","description":"收盘在20日高低价区间中的位置。","expression":"(close-ts_min(low,20))/(ts_max(high,20)-ts_min(low,20))","direction":1,"lookback":19},
+    {"id":"rsi_ratio_14","name":"14日上涨幅度占比","category":"趋势","description":"14日正价格变化之和占绝对价格变化之和；0到1。","expression":"ts_mean(max(delta(close,1),0),14)/ts_mean(abs(delta(close,1)),14)","direction":1,"lookback":14},
+    {"id":"downside_risk_20","name":"20日下行风险","category":"风险","description":"20日负收益平方均值的平方根。","expression":"sqrt(ts_mean(min(returns(close,1),0)*min(returns(close,1),0),20))","direction":-1,"lookback":20},
+    {"id":"amplitude_1","name":"当日振幅","category":"风险","description":"高低价差相对当日收盘价。","expression":"(high-low)/close","direction":-1,"lookback":0},
+    {"id":"overnight_momentum_5","name":"5日隔夜动量","category":"动量","description":"5个交易日开盘相对前收盘收益的平均。","expression":"ts_mean(open/lag(close,1)-1,5)","direction":1,"lookback":5},
+    {"id":"intraday_momentum_20","name":"20日日内动量","category":"动量","description":"20个交易日收盘相对开盘收益的平均。","expression":"ts_mean((close-open)/open,20)","direction":1,"lookback":19},
+    {"id":"breakout_20","name":"20日突破","category":"趋势","description":"今日收盘相对截至昨日20日最高价，明确滞后窗口。","expression":"close/lag(ts_max(high,20),1)-1","direction":1,"lookback":20}
+  ],
+  "models": [
+    {"id":"factor_score","name":"等权因子基线","description":"按预设方向处理因子后，对同日因子百分位排名取均值；无监督。"},
+    {"id":"ridge","name":"Ridge 回归","description":"有限正则化网格，训练段拟合，时间顺序验证。"},
+    {"id":"elastic_net","name":"ElasticNet 回归","description":"L1/L2 稀疏线性模型，参数仅在训练期验证选择。"},
+    {"id":"hist_gradient_boosting","name":"Histogram Gradient Boosting","description":"有限浅树网格，禁用随机 early stopping。"}
+  ]
+}

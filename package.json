@@ -1,0 +1,1 @@
+{"name":"atlas-quant","version":"0.1.0","private":true,"type":"module","scripts":{"build":"node scripts/build.mjs","test":"node --test tests/*.test.mjs","check":"node --check edge/worker.mjs && node --check edge/validation.mjs"},"license":"Apache-2.0","devDependencies":{"miniflare":"^4.20260730.0"},"overrides":{"undici":"7.29.1","sharp":"0.35.5"}}

@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {Miniflare} from 'miniflare';
+const entry=await fs.readFile(new URL('../edge/portal-entry.mjs',import.meta.url),'utf8');
+const mf=new Miniflare({modules:[{type:'ESModule',path:'portal-entry.mjs',contents:entry},{type:'ESModule',path:'worker.js',contents:`export function originalExport(){return 7;}export default {async fetch(req){return new Response('<html><head><title>Atlas</title></head><body>Existing Portal</body></html>',{headers:{'content-type':'text/html','x-original':'preserved'}})}};`}],compatibilityDate:'2026-08-01',serviceBindings:{ATLAS_QUANT:async req=>new Response('Quant:'+new URL(req.url).pathname)},bindings:{ATLAS_QUANT_SERVICE_SECRET:'private-test-only'}});
+test.after(()=>mf.dispose());
+test('additive portal preserves other domains, existing headers and routes',async()=>{for(const u of ['https://doctaignorantia.com/quant/','https://atlas-aletheia.com/cn/','https://atlas-aletheia.com/api/account/atlas']){const r=await mf.dispatchFetch(u);assert.equal(r.headers.get('x-original'),'preserved');assert.equal(await r.text(),'<html><head><title>Atlas</title></head><body>Existing Portal</body></html>');}});
+test('Atlas quant forwarding and terminal link use the dedicated service',async()=>{assert.equal(await (await mf.dispatchFetch('https://atlas-aletheia.com/quant/api/health')).text(),'Quant:/quant/api/health');const r=await mf.dispatchFetch('https://atlas-aletheia.com/cn/terminal/');assert.equal(r.headers.get('x-original'),'preserved');assert.match(await r.text(),/\/quant\/atlas-link\.js/);});
+test('private Tushare service cannot be called without its separate credential',async()=>{assert.equal((await mf.dispatchFetch('https://atlas-aletheia.com/api/internal/atlas-quant/tushare',{method:'POST',body:'{}'})).status,401);assert.equal((await mf.dispatchFetch('https://atlas-aletheia.com/api/internal/atlas-quant/tushare',{method:'POST',headers:{authorization:'Bearer private-test-only'},body:'{}'})).status,503);});

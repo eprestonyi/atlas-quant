@@ -1,0 +1,13 @@
+PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS strategies(id TEXT PRIMARY KEY, owner TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL, spec TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS strategies_owner ON strategies(owner,updated_at);
+CREATE TABLE IF NOT EXISTS strategy_versions(strategy_id TEXT NOT NULL, version INTEGER NOT NULL, spec TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(strategy_id,version));
+CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL, data_source TEXT NOT NULL, spec TEXT NOT NULL, dataset_key TEXT, result_key TEXT, summary TEXT, error TEXT, lease_token TEXT, lease_until TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS jobs_owner ON jobs(owner,created_at);
+CREATE INDEX IF NOT EXISTS jobs_queue ON jobs(status,created_at);
+CREATE TABLE IF NOT EXISTS factors(id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL, expression TEXT NOT NULL, direction INTEGER NOT NULL, category TEXT NOT NULL, author TEXT NOT NULL, license TEXT NOT NULL, source_url TEXT, fork_of TEXT, version INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL, metadata TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS factors_public ON factors(status,created_at);
+CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS audit(id TEXT PRIMARY KEY, owner TEXT, action TEXT NOT NULL, entity_id TEXT, detail TEXT, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS rate_buckets(key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires_at TEXT NOT NULL);

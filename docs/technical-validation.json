@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "validationDateHongKong": "2026-10-07",
+  "scope": "CLEAN_LOCAL_NUMERICAL_ENGINE_ONLY",
+  "productionDeploymentVerified": false,
+  "realTushareDataVerified": false,
+  "syntheticOnly": true,
+  "python": "3.12.13",
+  "platform": "macOS-26.2-arm64-arm-64bit",
+  "cleanEnvironment": "private/clean-env",
+  "installCommand": "uv venv private/clean-env --python 3.12 && uv pip install --python private/clean-env/bin/python -r engine/requirements.lock.txt",
+  "requirementsSha256": "048d7a135615c0709703d83dec2d1a19e013038d55ca7a5b94d73c30e978624b",
+  "packages": {
+    "numpy": "2.5.3",
+    "pandas": "2.3.3",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.1",
+    "threadpoolctl": "3.7.0",
+    "pytest": "8.4.2"
+  },
+  "sourceSha256": {
+    "engine/atlas_quant/engine.py": "80409efed65bf0211b11d368932488c7dec6725605677bf8f0361030a392d9ac",
+    "engine/atlas_quant/factors.py": "19c34e30f18f8361ff6915766454f1c35d5dbb5918e13d2cc58b48c6da3be643",
+    "engine/atlas_quant/catalog.json": "835286234203c664872206b0ea0008b74811cb966eff37db0aaf4e01638dbd27",
+    "engine/atlas_quant/fixtures.py": "c50fdc4ab69ffdc9de5b4cfb4c40bfee6e1100a9fd1eb14b7e995aa8b5704349",
+    "engine/examples/basic.json": "8f63e866ba3719192aae6f6198bbd1d906d3390b8f4fd7b2f83bb7b12efcf1da"
+  },
+  "sample": {
+    "source": "SYNTHETIC_EDUCATIONAL_ONLY",
+    "marketRows": 4890,
+    "calendarSessions": 978,
+    "generationSeconds": 0.051438084003166296,
+    "engineSeconds": 1.3370978749953792,
+    "reportBytesCompact": 225425,
+    "reportBytesDefaultJSON": 245003,
+    "resultSha256": "5414efe58644f3f09fba78d4d7c6c533b04f0f6fbdc1e280f4bc6e09fbd1ea35",
+    "dataSha256": "1c1a5c272595155e73d2ae421a91b92be88eed3a527a875e348df125790ae6b5",
+    "strategySha256": "aad0a01b65f1200737308f9211c02b162281f944e73f5bae2dd00f23ea3491ab",
+    "winner": "hist_gradient_boosting",
+    "winnerParams": {
+      "max_leaf_nodes": 7,
+      "l2_regularization": 1.0
+    },
+    "selectionRankIC": 0.006985334452244556,
+    "outerRankIC": 0.006133333333333335,
+    "holdoutRankIC": -0.008614897699587306,
+    "holdout": {
+      "start": "20251230",
+      "end": "20260930",
+      "fractionOfResearchDates": 0.20063025210084034
+    },
+    "evidenceStatus": "NO_VALIDATED_EDGE",
+    "candidateConfigurations": 7,
+    "outerFolds": 3,
+    "equityPoints": 197,
+    "tradeCount": 158,
+    "metrics": {
+      "totalReturn": 0.020806987192886428,
+      "annualReturn": 0.026830968101690278,
+      "volatility": 0.13572628386773394,
+      "sharpe": 0.26249785670700626,
+      "maxDrawdown": -0.08320104929599537,
+      "turnover": 26.592677395671725,
+      "totalCosts": 40217.07609128512,
+      "tradeCount": 158,
+      "benchmarkReturn": 0.08341905559824858
+    },
+    "ledger": {
+      "passed": true,
+      "maxCashReconciliationError": 1.6298145055770874e-09,
+      "maxNotionalError": 0.0,
+      "maxEquityIdentityError": 1.1641532182693481e-10,
+      "costSum": 40217.07609128512,
+      "finalCash": 1.6298145055770874e-09,
+      "nonNegativeCashAndPositions": true,
+      "allFillsAfterSignalDate": true
+    },
+    "holdoutUsedForSelection": false
+  },
+  "repeat": {
+    "exactJSONEquality": true,
+    "exclusions": [],
+    "secondResultSha256": "5414efe58644f3f09fba78d4d7c6c533b04f0f6fbdc1e280f4bc6e09fbd1ea35",
+    "secondEngineSeconds": 1.3002512910024961
+  },
+  "stress": {
+    "source": "SYNTHETIC_EDUCATIONAL_ONLY",
+    "marketRows": 41760,
+    "calendarSessions": 2088,
+    "generationSeconds": 0.4011567499983357,
+    "engineSeconds": 5.509304541999882,
+    "reportBytesCompact": 3567448,
+    "reportBytesDefaultJSON": 3851968,
+    "resultSha256": "a251d6f95173f64224cfa7a1bcd7024b3de5913d803966d7c665913e613fc680",
+    "dataSha256": "6c611c39f3eee68036dfd3bf211bf1a47c2d4dc4f8fb50b10cf2147bfed1c9e9",
+    "strategySha256": "52fe952615180012f5a07ce48c8b4b5ecc90b3575c8abdcbe52a9698f69ee593",
+    "winner": "hist_gradient_boosting",
+    "winnerParams": {
+      "max_leaf_nodes": 7,
+      "l2_regularization": 1.0
+    },
+    "selectionRankIC": 0.04041181407415863,
+    "outerRankIC": 0.023712748702013037,
+    "holdoutRankIC": -0.03835130980320755,
+    "holdout": {
+      "start": "20250305",
+      "end": "20260930",
+      "fractionOfResearchDates": 0.20029673590504452
+    },
+    "evidenceStatus": "NO_VALIDATED_EDGE",
+    "candidateConfigurations": 7,
+    "outerFolds": 3,
+    "equityPoints": 411,
+    "tradeCount": 8200,
+    "metrics": {
+      "totalReturn": 0.2815285577891957,
+      "annualReturn": 0.16469841552196973,
+      "volatility": 0.11163897562158885,
+      "sharpe": 1.4217556064332304,
+      "maxDrawdown": -0.07920197311029198,
+      "turnover": 3.7606981928861707,
+      "totalCosts": 6509.336831233684,
+      "tradeCount": 8200,
+      "benchmarkReturn": 0.2889565808466399
+    },
+    "ledger": {
+      "passed": true,
+      "maxCashReconciliationError": 2.121396391885355e-10,
+      "maxNotionalError": 0.0,
+      "maxEquityIdentityError": 4.656612873077393e-10,
+      "costSum": 6509.336831233684,
+      "finalCash": 2.1191226551309228e-10,
+      "nonNegativeCashAndPositions": true,
+      "allFillsAfterSignalDate": true
+    },
+    "holdoutUsedForSelection": false
+  },
+  "limitations": [
+    "Synthetic data only; no live provider or future investment performance claim.",
+    "Calendar excludes weekends only and does not model real holidays.",
+    "Adjusted fractional research units, hypothetical next-open fills and explicit cash costs.",
+    "No order book, price-limit queue, round lots, liquidity participation or complete A-share exchange rules.",
+    "Chosen universe is retrospective; historical membership and surviving-universe bias are not resolved.",
+    "Price marks carried over missing sessions are estimates until fresh prices arrive.",
+    "Historical provider revisions and historical point-in-time fundamental availability are not verified.",
+    "Positive average RankIC is not a statistical significance or deployability test."
+  ],
+  "engineImplementation": "Atlas adjusted-unit daily research engine with scikit-learn; no Backtrader/LEAN execution integration",
+  "backtraderExcluded": true,
+  "dependencyCheck": {
+    "command": "uv pip check --python private/clean-env/bin/python",
+    "installedPackages": 25,
+    "compatible": true
+  },
+  "tests": {
+    "command": "PYTHONPATH=engine private/clean-env/bin/python -m pytest -q engine/tests",
+    "passed": 73,
+    "failed": 0,
+    "seconds": 9.66,
+    "engineFactorTests": 40
+  }
+}

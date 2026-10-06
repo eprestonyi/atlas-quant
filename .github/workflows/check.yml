@@ -1,0 +1,32 @@
+name: Research reproducibility and API checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked Python environment
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r engine/requirements.lock.txt
+          .venv/bin/python -m pip check
+      - run: npm ci
+      - run: PYTHONPATH=engine .venv/bin/python -m pytest -q engine/tests
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Reproduce the complete synthetic report
+        run: |
+          .venv/bin/python scripts/local-run.py engine/examples/basic.json --source demo --output private/first.json
+          .venv/bin/python scripts/local-run.py engine/examples/basic.json --source demo --output private/second.json
+          cmp private/first.json private/second.json

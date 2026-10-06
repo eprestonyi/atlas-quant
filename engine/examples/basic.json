@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "Atlas Quant 合成研究示例",
+  "universe": {
+    "symbols": ["000001.SZ", "000002.SZ", "600000.SH", "600036.SH", "600519.SH"],
+    "start": "20230101",
+    "end": "20260930"
+  },
+  "factors": [
+    {"id": "momentum_20", "expression": "returns(close,20)", "direction": 1},
+    {"id": "volatility_20", "expression": "ts_std(returns(close,1),20)", "direction": -1}
+  ],
+  "preprocess": {"winsorize": true, "standardize": true},
+  "model": {
+    "mode": "auto",
+    "candidates": ["factor_score", "ridge", "elastic_net", "hist_gradient_boosting"],
+    "horizon": 5,
+    "metric": "rank_ic"
+  },
+  "portfolio": {"topN": 3, "maxWeight": 0.4, "rebalanceDays": 5, "initialCapital": 1000000},
+  "costs": {"commissionBps": 3, "slippageBps": 10, "sellTaxBps": 5},
+  "graph": {"nodes": [], "edges": []}
+}
