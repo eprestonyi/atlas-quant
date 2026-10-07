@@ -1,4 +1,4 @@
-# Atlas Quant v0.2 API
+# Atlas Quant v0.3 API
 
 同源 API 根路径为 `/quant/api`。JSON 错误格式为 `{"error":{"code":"...","message":"..."}}`。以下契约面向当前源码；部署能力以 `GET /health` 为准。浏览器写请求使用 `Content-Type: application/json`，不允许跨站请求；private 端点需要先通过 `GET /session` 建立 HttpOnly 工作区 cookie。
 
@@ -13,8 +13,9 @@
 | `GET /fields` | 分页字段定义；`items,total,page,pageSize` |
 | `GET /factor-catalog` | 分页内置、社区与数值字段派生定义；包含 availability、依赖字段和来源 |
 | `GET /universes` | 分页成员池摘要；列表不返回全部成员 |
-| `GET /universes/:id` | 完整成员、推荐计算子集、日期与快照哈希 |
-| `GET /research-presets` | 4 个研究目标、15 个精选因子包与对应策略模板、5 个模型组合预设 |
+| `GET /universes/:id` | 完整成员、日期与快照哈希；历史推荐子集元数据不会自动成为运行成员 |
+| `GET /universe-options` | 小体积分类选项、精选入口、目录版本；不加载全量成员 |
+| `GET /research-presets` | `strategies` 为 3 个残差基准，`packs` 为 15 个因子包；`legacyStrategies` 与 `modelPresets` 仅用于历史长仓研究 |
 | `GET /factors`、`GET /factors/:id` | 兼容因子列表与单个内置、社区或字段配方详情 |
 
 字段和因子分页支持 `q,database,category,availability,page,pageSize`；`pageSize` 为 1–100，默认 30。可用性为 `all`、`ready`、`needs_mapping`、`unavailable`，`schema_only` 兼容 `needs_mapping`；`unavailable` 返回当前空目录；未知值返回 400。字段搜索将 `%`、`_` 作为文字匹配。股票池支持 `q,category,page,pageSize`。
@@ -27,9 +28,10 @@
 
 | 方法 / 路径 | 请求或行为 |
 |---|---|
+| `POST /universes/resolve` | `{selection}`；完整成员、逐步集合计数与哈希；请求最多 200,000 字节 |
 | `GET /strategies` | 当前工作区的保存策略 |
-| `POST /strategies` | `{strategy}`；创建版本 1 |
-| `PUT /strategies/:id` | `{strategy,version}`；版本冲突为 409 |
+| `POST /strategies` | `{strategy}`；创建版本 1；请求最多 200,000 字节 |
+| `PUT /strategies/:id` | `{strategy,version}`；请求最多 200,000 字节；版本冲突为 409 |
 | `DELETE /strategies/:id` | 删除自己保存的策略 |
 | `GET /runs` | 当前工作区任务摘要 |
 | `POST /runs` | `{strategy,dataSource,dataset?}`；返回 202 与 `{job}` |
@@ -39,15 +41,36 @@
 
 `dataSource` 必须显式为 `demo`、`upload` 或 `tushare`。上传的 `dataset` 为 `{rows,provenance}`，最大 24 MiB；请求包络最大 26 MiB。完整结果最大 24 MiB，超限明确失败，不静默截断预测或交易。每工作区同时 1 个实验、每天最多 20 次提交；全局队列最多 30 个。
 
-完整策略例见 [research-v02.json](../engine/examples/research-v02.json)。`schemaVersion` 保持 1，新增字段兼容已有策略：
+默认研究流程分为 **股票池 → 基准与因子 → 观察与信号 → 交易与成本 → 检验与报告**。新策略例见 [stat-arb.json](../engine/examples/stat-arb.json)。`schemaVersion` 保持 1；新界面明确提交 `research.mode:'stat_arb'`，缺失 mode 的旧策略保持 `legacy_long_only`，不会被自动解释为多空研究。
 
-- `universe.symbols`：3–50 个独立沪深 A 股代码；start/end 为 `YYYYMMDD`，范围最多 8 年。
-- `factors`：1–32 项 `{id,expression,direction}`，唯一 id；受限因果 DSL，方向 ±1。
-- `model.mode`：`auto` 或 `manual`；manual 仅允许一个模型系列；auto 比较实际勾选系列。
-- `model.candidates`：`factor_score,ridge,elastic_net,hist_gradient_boosting,bayesian_ridge,huber,random_forest,extra_trees` 的非重复子集。
-- `model.target`：`forward_return`（默认）或 `forward_excess_return`；horizon 1–20，metric 固定 `rank_ic`。
-- `portfolio`、`costs`：明确初始资金、topN、权重上限、调仓间隔和双边/卖出费用；允许目标权重合计不足 1 并保留现金。
-- `graph`：可为空图；非空时需完整连接六个合法阶段。图不能绕过引擎配置检查。
+- `universe.symbols`：本次明确参与计算的 3–50 个独立沪深 A 股代码；start/end 为 `YYYYMMDD`，最多 8 年。目录可包含北交所身份，但本轮托管策略执行仅接受 `.SH`、`.SZ`。
+- `universe.selection`：version 1 的 includeGroups/excludeGroups/includeSymbols/excludeSymbols。组内 AND、组间 OR，先加入个股，再最终剔除。解析返回完整成员，超过 50 只不截断；继续过滤或明确选择子集后才能运行。
+- `universe.resolutionHash,snapshotHash,subsetPolicy`：与 selection 一并保存，subsetPolicy 为 `all` 或 `explicit`。保存不等于成员核验；提交任务时重新解析。规则或目录哈希变化返回 409 `UNIVERSE_CHANGED`；集合外成员或伪装全量返回 400 `UNIVERSE_SUBSET_MISMATCH`。当前成员快照不构成历史成员证明。[完整集合契约](UNIVERSE_SELECTION.md)
+- `factors`：残差模式允许 0–32 项 `{id,expression,direction}`。id 为 1–100 个 ASCII 字母、数字、下划线或连字符；使用受限因果 DSL，direction 为 ±1。它们作为形成截止日的**对冲暴露**，不预测单股收益，也不按方向决定个股排名。常数、缺失、线性依赖或占满残差自由度的暴露会被剔除并记录。
+- `research.observationDays`：1–60 个交易日的观察采样间隔；独立于 `portfolio.rebalanceDays`（1–60）。`research.baseline` 可保留 `{id,name,version}` 来源，不表示已验证收益。
+- `preprocess.decorrelation`：`none` 或 `drop_correlated`；correlationThreshold 为 0.5–1。残差路径按形成截止日的暴露截面处理相关性；`winsorize/standardize` 兼容字段属于旧预测路径，残差暴露按自身规则中心化、缩放。
+- `portfolio`：initialCapital 为 10,000–1,000,000,000；rebalanceThresholdBps 为 0–10,000 的整篮权重变化带。残差模式不使用 TopN 选股，topN/maxWeight 兼容占位字段不决定篮子。
+- `costs`：commissionBps 0–100、slippageBps 0–200、sellTaxBps/transferBps 0–100、minCommission 0–1,000。残差默认分别为 2.5、3、5、0.1、5；是固定可编辑情景，不代表实际券商报价或历史费用表。
+- `graph`：可为空；非空仍使用兼容的六阶段合法图契约。五步界面是用户流程，图不能绕过配置检查。
+
+`statArb` 参数：
+
+| 字段 | 范围 / 默认 |
+|---|---|
+| method | `market_residual`、`pca_residual`（默认）、`factor_residual` |
+| formationDays / residualWindow | 60–504 / 20–252，默认 126 / 60；残差窗口不超过形成窗口 |
+| components | 1–10，PCA 不超过股票数减 2；默认 min(2, N−2) |
+| refitDays | 1–126，默认 20；仅在实际观察日重新估计 |
+| entryZ / exitZ / stopZ | 0.25–6 / 0–5.9 / 0.3–10，默认 2 / 0.5 / 4；exitZ < entryZ < stopZ |
+| maxHoldingDays / maxHalfLife | 1–252 / 1–252，默认 20 / 60 |
+| grossExposure | 0.1–2，默认 1；目标净权重为 0，实际漂移单独报告 |
+| shorting / borrowAnnualBps | 仅 `theoretical`；借券年费情景 0–10,000 bps，默认 300 |
+
+三个模板分别为篮子均值残差、PCA 残差、PCA 加风格暴露；`factor_residual` 是额外可选方法，至少需要一个因子。等权共同成分投影不等于股票 beta 中性；AR(1) 半衰期不是协整检验。
+
+残差报告 `research.singleStockReturnForecast:false`、`predictions:null`，包含形成期载荷与误差、残差状态、对冲敞口、费用、完整交易/每日账本及附加因子的同条件基线比较。`statArb.signals.rows` 仅保留最近 5,000 个留出期事件，`totalRows,truncated` 明示范围；它不截断交易和每日账本。方法与阈值事先固定，最后约 30% 的可研究日期用于报告；`selection.qualified` 与 `deploymentQualified` 固定 false，`evidenceStatus:'UNVALIDATED_THEORETICAL_STAT_ARB'`。实际券源、融券条件、价格限制撮合未验证，不能据此宣称可实盘或盈利。[数值规则](STAT_ARB.md)
+
+历史策略 [research-v02.json](../engine/examples/research-v02.json) 保留 `legacy_long_only` / `factor` 路径：1–32 因子，8 类模型的有限候选，`forward_return` / `forward_excess_return` 目标，horizon 1–20，metric 为 rank_ic；manual 模式只选一个模型。该路径才保留单股分数、收益目标预测、TopN 长仓和旧时间切分；这些输出不作为新残差篮子的预测或对冲模型。
 
 PCD 的 `dataBindings.pcd` 最多 32 个别名。每个绑定含 `fieldId,unitCode,records`；records 为 1–50 项 `{ts_code,entityId,recordId}`，股票必须在本策略内。空对象、错误类型、重复记录或身份冲突会失败。绑定只是精确读取请求，不证明对应证券有事实；连接器还校验记录内容、单位、期间与时间。
 

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "PCA 篮子残差研究基准",
+  "research": {
+    "mode": "stat_arb",
+    "observationDays": 1,
+    "baseline": {"id": "pca_residual", "name": "PCA共同成分残差", "version": 1}
+  },
+  "universe": {
+    "symbols": ["000001.SZ", "000002.SZ", "000333.SZ", "600000.SH", "600036.SH", "600519.SH"],
+    "start": "20230101",
+    "end": "20260930"
+  },
+  "factors": [],
+  "preprocess": {"decorrelation": "drop_correlated", "correlationThreshold": 0.9},
+  "statArb": {
+    "method": "pca_residual", "formationDays": 126, "residualWindow": 60,
+    "components": 2, "refitDays": 20, "entryZ": 2, "exitZ": 0.5, "stopZ": 4,
+    "maxHoldingDays": 20, "maxHalfLife": 60, "grossExposure": 1,
+    "shorting": "theoretical", "borrowAnnualBps": 300
+  },
+  "portfolio": {"initialCapital": 1000000, "rebalanceDays": 1, "rebalanceThresholdBps": 25},
+  "costs": {"commissionBps": 2.5, "slippageBps": 3, "sellTaxBps": 5, "transferBps": 0.1, "minCommission": 5},
+  "graph": {"nodes": [], "edges": []}
+}

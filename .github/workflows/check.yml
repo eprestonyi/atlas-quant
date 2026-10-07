@@ -25,8 +25,15 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      - run: node web/tests/research-flow.mjs
+      - run: node web/tests/research-dom.mjs
       - name: Reproduce the complete synthetic report
         run: |
           .venv/bin/python scripts/local-run.py engine/examples/basic.json --source demo --output private/first.json
           .venv/bin/python scripts/local-run.py engine/examples/basic.json --source demo --output private/second.json
           cmp private/first.json private/second.json
+      - name: Reproduce the basket residual research report
+        run: |
+          .venv/bin/python scripts/local-run.py engine/examples/stat-arb.json --source demo --output private/residual-first.json
+          .venv/bin/python scripts/local-run.py engine/examples/stat-arb.json --source demo --output private/residual-second.json
+          cmp private/residual-first.json private/residual-second.json

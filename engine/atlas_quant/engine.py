@@ -27,7 +27,7 @@ from threadpoolctl import threadpool_limits
 from .factors import FactorError, evaluate_expression, validate_expression
 from .research_registry import MODEL_REGISTRY, TARGETS, is_external_field
 
-ENGINE_VERSION = "0.2.0"
+ENGINE_VERSION = "0.3.0"
 MAX_SYMBOLS = 50
 MAX_FACTORS = 32
 MAX_DATA_ROWS = 110_000
@@ -79,7 +79,7 @@ def validate_strategy(strategy):
         raise ResearchError("INVALID_STRATEGY", "需要 schemaVersion=1 的策略")
     s = copy.deepcopy(strategy)
     s["schemaVersion"] = 1
-    for section in ("universe", "preprocess", "model", "portfolio", "costs"):
+    for section in ("universe", "preprocess", "model", "portfolio", "costs", "research"):
         if section in s and not isinstance(s[section], dict):
             raise ResearchError("INVALID_STRATEGY", f"{section} 须为对象")
     u = s.get("universe", {})
@@ -105,11 +105,20 @@ def validate_strategy(strategy):
             raise ResearchError("INVALID_FACTORS", "因子方向须为 1 或 -1")
         factor["direction"] = factor.get("direction", 1)
         validate_expression(factor.get("expression"))
+    research = s.setdefault("research", {})
+    research.setdefault("mode", "legacy_long_only")
+    if research["mode"] not in ("factor", "legacy_long_only"):
+        raise ResearchError("INVALID_RESEARCH", "本引擎支持 factor/legacy_long_only；统计套利使用独立研究核心")
+    research["observationDays"] = _number(research.get("observationDays", 1), "因子观察采样间隔", 1, 60, True)
     pre = s.setdefault("preprocess", {})
     for key in ("winsorize", "standardize"):
         pre.setdefault(key, True)
         if not isinstance(pre[key], bool):
             raise ResearchError("INVALID_STRATEGY", f"{key} 须为布尔值")
+    pre.setdefault("decorrelation", "none")
+    if pre["decorrelation"] not in ("none", "drop_correlated"):
+        raise ResearchError("INVALID_STRATEGY", "去相关模式须为 none/drop_correlated")
+    pre["correlationThreshold"] = _number(pre.get("correlationThreshold", 0.9), "相关性阈值", 0.5, 1)
     model = s.setdefault("model", {})
     model.setdefault("mode", "auto")
     model.setdefault("candidates", list(MODEL_NAMES))
@@ -131,10 +140,16 @@ def validate_strategy(strategy):
     p["topN"] = _number(p.get("topN", 3), "持仓数量", 1, len(symbols), True)
     p["maxWeight"] = _number(p.get("maxWeight", 0.4), "单股目标上限", 0.01, 1)
     p["rebalanceDays"] = _number(p.get("rebalanceDays", 5), "调仓间隔", 1, 60, True)
+    p["rebalanceThresholdBps"] = _number(p.get("rebalanceThresholdBps", 0), "目标权重偏离阈值", 0, 10000)
+    p["rankBuffer"] = _number(p.get("rankBuffer", 0), "持仓名次缓冲", 0, len(symbols) - p["topN"], True)
     p["initialCapital"] = _number(p.get("initialCapital", 1_000_000), "初始资金", 1_000, 1_000_000_000)
     costs = s.setdefault("costs", {})
-    for key, default in (("commissionBps", 3), ("slippageBps", 10), ("sellTaxBps", 5)):
+    for key, default in (("commissionBps", 3), ("slippageBps", 10), ("sellTaxBps", 5), ("transferBps", 0)):
         costs[key] = _number(costs.get(key, default), key, 0, 200)
+    costs["minCommission"] = _number(costs.get("minCommission", 0), "单笔最低佣金", 0, 1000)
+    costs.setdefault("taxMode", "fixed")
+    if costs["taxMode"] != "fixed":
+        raise ResearchError("INVALID_STRATEGY", "当前仅支持显式 fixed 税率场景，不复刻历史税率")
     return s
 
 
@@ -267,11 +282,31 @@ def _trial_specs(names):
     return specs
 
 
+def _decorrelate(X_train, preprocess):
+    """Greedy stable-order feature selection, using training values only."""
+    threshold = preprocess.get("correlationThreshold", 0.9)
+    corr = X_train.corr(min_periods=10)
+    kept, dropped = [], []
+    for column in X_train.columns:
+        against = next((old for old in kept if np.isfinite(corr.loc[old, column])
+                        and abs(corr.loc[old, column]) >= threshold), None)
+        if preprocess.get("decorrelation", "none") == "drop_correlated" and against is not None:
+            dropped.append({"id": column, "retainedAgainst": against, "correlation": float(corr.loc[against, column])})
+        else:
+            kept.append(column)
+    return kept, {"mode": preprocess.get("decorrelation", "none"), "threshold": threshold,
+                  "method": "absolute_pearson_pairwise_training_min10_stable_input_order",
+                  "fitOnTrainOnly": True, "retained": kept, "dropped": dropped,
+                  "trainRows": len(X_train)}
+
+
 def _fit_predict(spec, X_train, y_train, X_test, preprocess):
+    columns, decorrelation = _decorrelate(X_train, preprocess)
+    X_train, X_test = X_train[columns], X_test[columns]
     if spec["id"] == "factor_score":
         # Daily ranks use only contemporaneously available cross-sectional data.
         scores = X_test.groupby(level="trade_date").rank(pct=True).mean(axis=1)
-        return scores, {"method": "mean_contemporaneous_factor_percentile", "trained": False}
+        return scores, {"method": "mean_contemporaneous_factor_percentile", "trained": False, "decorrelation": decorrelation}
     if X_train.notna().sum().min() < 10:
         raise ValueError("训练段有因子不足 10 个有效样本")
     steps = []
@@ -305,7 +340,7 @@ def _fit_predict(spec, X_train, y_train, X_test, preprocess):
     pred = pd.Series(pipe.predict(X_test), index=X_test.index)
     if not np.isfinite(pred.to_numpy()).all():
         raise ValueError("模型产生非有限预测")
-    audit = {"trained": True, "imputerMedian": pipe.named_steps["impute"].statistics_.tolist()}
+    audit = {"trained": True, "decorrelation": decorrelation, "featureNames": columns, "imputerMedian": pipe.named_steps["impute"].statistics_.tolist()}
     if "winsorize" in pipe.named_steps:
         audit["winsorLower"] = pipe.named_steps["winsorize"].lower_.tolist()
         audit["winsorUpper"] = pipe.named_steps["winsorize"].upper_.tolist()
@@ -350,14 +385,14 @@ def _evaluate(spec, X, y, ends, valid, folds, pre):
             train, test, purged = _fold_masks(X, ends, valid, train_dates, test_dates)
             # Compute contemporaneous ranks before filtering on future label
             # availability; otherwise future suspensions can alter baseline ranks.
-            predict = X.index.get_level_values("trade_date").isin(test_dates) & X.notna().any(axis=1)
-            pred, _ = _fit_predict(spec, X[train], y[train], X[predict], pre)
+            predict = X.index.get_level_values("trade_date").isin(test_dates) & X.notna().any(axis=1) & _observation_mask(X)
+            pred, fitted = _fit_predict(spec, X[train], y[train], X[predict], pre)
             ics = _rank_ics(pred, y[test])
             if len(ics) < 5:
                 raise ValueError("可计算 RankIC 的验证日期少于 5 天")
             fold_scores = [x["ic"] for x in ics]
             scores.extend(fold_scores)
-            records.append({"trainStart": train_dates[0], "trainEnd": train_dates[-1], "trainLabelEndMax": ends[train].max(), "testStart": test_dates[0], "testEnd": test_dates[-1], "trainRows": int(train.sum()), "testRows": int(test.sum()), "purgedRows": purged, "score": float(np.mean(fold_scores)), "scoredDates": len(ics)})
+            records.append({"trainStart": train_dates[0], "trainEnd": train_dates[-1], "trainLabelEndMax": ends[train].max(), "testStart": test_dates[0], "testEnd": test_dates[-1], "trainRows": int(train.sum()), "testRows": int(test.sum()), "purgedRows": purged, "score": float(np.mean(fold_scores)), "scoredDates": len(ics), "decorrelation": fitted["decorrelation"]})
         return {**spec, "score": float(np.mean(scores)), "scoreStd": float(np.std(scores)), "folds": records, "status": "complete", "scoredDates": len(scores)}
     except (ValueError, FloatingPointError) as exc:
         return {**spec, "score": None, "folds": records, "status": "failed", "error": str(exc)}
@@ -371,89 +406,156 @@ def _choose(trials):
     return max(available, key=lambda trial: trial["score"])
 
 
+def _trade_costs(notional, side, costs):
+    if notional <= 1e-10:
+        return {"commission": 0.0, "slippage": 0.0, "tax": 0.0, "transfer": 0.0, "cost": 0.0}
+    parts = {"commission": max(notional * costs["commissionBps"] / 10000, costs.get("minCommission", 0)),
+             "slippage": notional * costs["slippageBps"] / 10000,
+             "tax": notional * costs["sellTaxBps"] / 10000 if side == "SELL" else 0.0,
+             "transfer": notional * costs.get("transferBps", 0) / 10000}
+    return {**parts, "cost": sum(parts.values())}
+
+
+def _sellable_quantity(lots, date):
+    """A-share T+1: lots acquired this trading date cannot be sold yet."""
+    return sum(lot["quantity"] for lot in lots if lot["date"] < date)
+
+
+def _consume_sellable(lots, quantity, date):
+    if quantity > _sellable_quantity(lots, date) + 1e-7:
+        raise ResearchError("T1_VIOLATION", "卖出数量超过 T+1 可卖持仓")
+    remaining = quantity
+    for lot in lots:
+        if lot["date"] < date:
+            sold = min(lot["quantity"], remaining)
+            lot["quantity"] -= sold
+            remaining -= sold
+    if remaining > 1e-7:
+        raise ResearchError("T1_VIOLATION", "卖出数量超过 T+1 可卖持仓")
+    lots[:] = [lot for lot in lots if lot["quantity"] > 1e-10]
+
+
 def _simulate(panel, dates, predictions, strategy):
     p, c = strategy["portfolio"], strategy["costs"]
     capital, cash = p["initialCapital"], p["initialCapital"]
     symbols = sorted(strategy["universe"]["symbols"])
     positions = {symbol: 0.0 for symbol in symbols}
+    lots = {symbol: [] for symbol in symbols}
     marks, trades, equity, ledger, skipped = {}, [], [], [], []
-    costs_total = 0.0
-    turnover_notional = 0.0
-    benchmark_qty = {}
-    benchmark_cash = capital
+    costs_total, turnover_notional = 0.0, 0.0
+    cost_breakdown = {key: 0.0 for key in ("commission", "slippage", "tax", "transfer")}
+    benchmark_qty, benchmark_cash = {}, capital
+    observation_dates = sorted(set(predictions.index.get_level_values("trade_date")))
+    pending = {}
     for symbol in symbols:
         price = panel.loc[(dates[0], symbol), "close"]
         if np.isfinite(price) and panel.loc[(dates[0], symbol), "vol"] > 0:
             benchmark_qty[symbol] = capital / len(symbols) / price
             benchmark_cash -= capital / len(symbols)
             marks[symbol] = float(price)
-    peak = capital
+    peak, previous_nav = capital, capital
     for i, date in enumerate(dates):
         day = panel.xs(date, level="trade_date")
-        day_cost = 0.0
-        # Orders generated after the prior session close fill no sooner than now.
+        day_cost, day_notional = 0.0, 0.0
+        bought_today = {symbol: 0.0 for symbol in symbols}
+        opening_prices = {symbol: float(day.loc[symbol, "open"]) if np.isfinite(day.loc[symbol, "open"]) else marks.get(symbol, 0.0) for symbol in symbols}
+        opening_nav = cash + sum(qty * opening_prices[symbol] for symbol, qty in positions.items())
+        # Sampling and rebalancing clocks are independent. Only observations
+        # available by yesterday's close may create/replace target instructions.
         if i > 0 and (i - 1) % p["rebalanceDays"] == 0:
-            signal_date = dates[i - 1]
-            try:
-                scores = predictions.xs(signal_date, level="trade_date").dropna()
-            except KeyError:
-                scores = pd.Series(dtype=float)
+            available_dates = [d for d in observation_dates if d <= dates[i - 1]]
+            signal_date = available_dates[-1] if available_dates else None
+            scores = predictions.xs(signal_date, level="trade_date").dropna() if signal_date else pd.Series(dtype=float)
             if len(scores) >= p["topN"]:
-                ranked = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))[:p["topN"]]
-                desired_symbols = {symbol for symbol, _ in ranked}
+                ranked = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))
+                rank = {symbol: j + 1 for j, (symbol, _) in enumerate(ranked)}
+                retained = [symbol for symbol, _ in ranked if positions[symbol] > 1e-10 and rank[symbol] <= p["topN"] + p.get("rankBuffer", 0)]
+                desired = retained[:p["topN"]]
+                desired += [symbol for symbol, _ in ranked if symbol not in desired][:p["topN"] - len(desired)]
                 weight = min(1.0 / p["topN"], p["maxWeight"])
-                opening_nav = cash + sum(qty * (float(day.loc[symbol, "open"]) if np.isfinite(day.loc[symbol, "open"]) else marks.get(symbol, 0.0)) for symbol, qty in positions.items())
-                target = {}
-                for symbol in symbols:
-                    price = day.loc[symbol, "open"]
-                    if np.isfinite(price) and day.loc[symbol, "vol"] > 0:
-                        target[symbol] = opening_nav * weight / price if symbol in desired_symbols else 0.0
-                    elif symbol in desired_symbols or positions[symbol] > 0:
-                        skipped.append({"date": date, "signalDate": signal_date, "symbol": symbol, "reason": "missing_session_or_zero_volume"})
-                # Sell first. Frozen unavailable positions consume cash/exposure.
-                for side in ("SELL", "BUY"):
-                    buy_scale = 1.0
-                    if side == "BUY":
-                        purchase_rate = (c["commissionBps"] + c["slippageBps"]) / 10_000
-                        required_cash = sum(max(0, qty - positions[symbol]) * float(day.loc[symbol, "open"]) * (1 + purchase_rate) for symbol, qty in target.items())
-                        if required_cash > cash and required_cash > 0:
-                            buy_scale = max(0, cash) / required_cash
-                    for symbol in symbols:
-                        if symbol not in target:
-                            continue
-                        difference = target[symbol] - positions[symbol]
-                        if (side == "SELL" and difference >= -1e-10) or (side == "BUY" and difference <= 1e-10):
-                            continue
-                        price = float(day.loc[symbol, "open"])
-                        quantity = abs(difference)
-                        rate = (c["commissionBps"] + c["slippageBps"] + (c["sellTaxBps"] if side == "SELL" else 0)) / 10_000
-                        if side == "BUY":
-                            quantity *= buy_scale
-                            quantity = min(quantity, max(0, cash) / (price * (1 + rate)))
-                        if quantity <= 1e-10:
-                            continue
-                        notional = quantity * price
-                        commission = notional * c["commissionBps"] / 10_000
-                        slippage = notional * c["slippageBps"] / 10_000
-                        tax = notional * c["sellTaxBps"] / 10_000 if side == "SELL" else 0.0
-                        cost = commission + slippage + tax
-                        if side == "SELL":
-                            positions[symbol] -= quantity
-                            cash += notional - cost
-                        else:
-                            positions[symbol] += quantity
-                            cash -= notional + cost
-                        if abs(cash) < 1e-8:
-                            cash = 0.0
-                        if cash < -1e-6 or positions[symbol] < -1e-8:
-                            raise ResearchError("LEDGER_ERROR", "资金或持仓记账出现负值")
-                        marks[symbol] = price
-                        day_cost += cost
-                        costs_total += cost
-                        turnover_notional += notional
-                        trades.append({"date": date, "signalDate": signal_date, "symbol": symbol, "side": side, "quantity": quantity, "price": price, "notional": notional, "commission": commission, "slippage": slippage, "tax": tax, "cost": cost, "cashAfter": cash})
+                # Unfilled instructions survive suspensions until the next
+                # scheduled rebalance replaces them. No unseen future fill.
+                pending = {symbol: {"weight": weight if symbol in desired else 0.0,
+                                    "signalDate": signal_date, "orderDate": date}
+                           for symbol in symbols if symbol in desired or positions[symbol] > 1e-10}
             else:
                 skipped.append({"date": date, "signalDate": signal_date, "reason": "insufficient_signals_keep_positions"})
+        targets = {}
+        for symbol, instruction in list(pending.items()):
+            price = day.loc[symbol, "open"]
+            if not np.isfinite(price) or day.loc[symbol, "vol"] <= 0:
+                skipped.append({"date": date, "signalDate": instruction["signalDate"], "symbol": symbol, "reason": "missing_session_or_zero_volume", "pending": True})
+                continue
+            current_weight = positions[symbol] * float(price) / opening_nav
+            delta_weight = instruction["weight"] - current_weight
+            if abs(delta_weight) * 10000 < p.get("rebalanceThresholdBps", 0) or abs(delta_weight) < 1e-12:
+                skipped.append({"date": date, "signalDate": instruction["signalDate"], "symbol": symbol, "reason": "within_rebalance_threshold", "weightDeviationBps": abs(delta_weight) * 10000})
+                del pending[symbol]
+                continue
+            targets[symbol] = opening_nav * instruction["weight"] / float(price)
+        for side in ("SELL", "BUY"):
+            differences = {symbol: target - positions[symbol] for symbol, target in targets.items()}
+            buy_scale = 1.0
+            if side == "BUY":
+                wants = {symbol: qty * float(day.loc[symbol, "open"]) for symbol, qty in differences.items() if qty > 1e-10}
+                def required(scale):
+                    return sum(notional * scale + _trade_costs(notional * scale, "BUY", c)["cost"] for notional in wants.values())
+                if required(1.0) > cash:
+                    lo, hi = 0.0, 1.0
+                    for _ in range(55):
+                        mid = (lo + hi) / 2
+                        if required(mid) <= max(cash, 0):
+                            lo = mid
+                        else:
+                            hi = mid
+                    buy_scale = lo
+            for symbol in symbols:
+                if symbol not in targets or symbol not in pending:
+                    continue
+                difference = targets[symbol] - positions[symbol]
+                if (side == "SELL" and difference >= -1e-10) or (side == "BUY" and difference <= 1e-10):
+                    continue
+                instruction = pending[symbol]
+                price = float(day.loc[symbol, "open"])
+                quantity = abs(difference)
+                if side == "SELL":
+                    available = _sellable_quantity(lots[symbol], date)
+                    if quantity > available + 1e-10:
+                        skipped.append({"date": date, "signalDate": instruction["signalDate"], "symbol": symbol, "reason": "t_plus_one_locked", "blockedQuantity": quantity - available, "pending": True})
+                    quantity = min(quantity, available)
+                else:
+                    quantity *= buy_scale
+                if quantity <= 1e-10:
+                    continue
+                notional = quantity * price
+                fees = _trade_costs(notional, side, c)
+                if side == "SELL" and cash + notional < fees["cost"]:
+                    skipped.append({"date": date, "signalDate": instruction["signalDate"], "symbol": symbol, "reason": "insufficient_cash_for_minimum_fee", "pending": True})
+                    continue
+                if side == "SELL":
+                    _consume_sellable(lots[symbol], quantity, date)
+                    positions[symbol] -= quantity
+                    cash += notional - fees["cost"]
+                else:
+                    positions[symbol] += quantity
+                    lots[symbol].append({"date": date, "quantity": quantity})
+                    bought_today[symbol] += quantity
+                    cash -= notional + fees["cost"]
+                if abs(cash) < 1e-8:
+                    cash = 0.0
+                if cash < -1e-6 or positions[symbol] < -1e-8:
+                    raise ResearchError("LEDGER_ERROR", "资金或持仓记账出现负值")
+                marks[symbol] = price
+                day_cost += fees["cost"]
+                day_notional += notional
+                costs_total += fees["cost"]
+                turnover_notional += notional
+                for key in cost_breakdown:
+                    cost_breakdown[key] += fees[key]
+                trades.append({"date": date, "signalDate": instruction["signalDate"], "orderDate": instruction["orderDate"], "delayedSessions": dates.index(date) - dates.index(instruction["orderDate"]), "symbol": symbol, "side": side, "quantity": quantity, "price": price, "notional": notional, **fees, "cashAfter": cash, "settlementRule": "A_SHARE_T_PLUS_ONE"})
+                # Cash-scaled buys are final. T+1 blocked remainders stay pending.
+                if side == "BUY" or quantity >= abs(difference) - 1e-8:
+                    del pending[symbol]
         stale = []
         for symbol in symbols:
             closing = day.loc[symbol, "close"]
@@ -466,12 +568,13 @@ def _simulate(panel, dates, predictions, strategy):
         benchmark = benchmark_cash + sum(qty * marks[symbol] for symbol, qty in benchmark_qty.items())
         peak = max(peak, nav)
         equity.append({"date": date, "equity": nav, "benchmark": benchmark, "drawdown": nav / peak - 1, "cash": cash, "positionsValue": market_value, "dailyCosts": day_cost})
-        ledger.append({"date": date, "cash": cash, "positionsValue": market_value, "equity": nav, "costs": day_cost, "positions": [{"symbol": s, "quantity": q, "mark": marks.get(s), "value": q * marks.get(s, 0)} for s, q in positions.items() if q > 1e-10], "staleMarks": stale})
+        ledger.append({"date": date, "cash": cash, "positionsValue": market_value, "equity": nav, "costs": day_cost, "tradedNotional": day_notional, "turnover": day_notional / previous_nav, "holdingCount": sum(qty > 1e-10 for qty in positions.values()), "positions": [{"symbol": sym, "quantity": qty, "mark": marks.get(sym), "value": qty * marks.get(sym, 0), "weight": qty * marks.get(sym, 0) / nav, "boughtToday": bought_today[sym], "sellableQuantity": _sellable_quantity(lots[sym], date)} for sym, qty in positions.items() if qty > 1e-10], "staleMarks": stale, "pendingOrders": [{"symbol": sym, **order} for sym, order in pending.items()]})
+        previous_nav = nav
     navs = np.array([point["equity"] for point in equity])
     rets = navs[1:] / navs[:-1] - 1
     std = float(np.std(rets, ddof=1)) if len(rets) > 1 else 0.0
     total_return = navs[-1] / capital - 1
-    metrics = {"totalReturn": total_return, "annualReturn": (navs[-1] / capital) ** (252 / max(1, len(rets))) - 1, "volatility": std * np.sqrt(252), "sharpe": float(np.mean(rets)) / std * np.sqrt(252) if std > 1e-12 else None, "maxDrawdown": min(point["drawdown"] for point in equity), "turnover": turnover_notional / float(np.mean(navs)), "totalCosts": costs_total, "tradeCount": len(trades), "benchmarkReturn": equity[-1]["benchmark"] / capital - 1}
+    metrics = {"totalReturn": total_return, "annualReturn": (navs[-1] / capital) ** (252 / max(1, len(rets))) - 1, "volatility": std * np.sqrt(252), "sharpe": float(np.mean(rets)) / std * np.sqrt(252) if std > 1e-12 else None, "maxDrawdown": min(point["drawdown"] for point in equity), "turnover": turnover_notional / float(np.mean(navs)), "totalCosts": costs_total, "costBreakdown": cost_breakdown, "costDragOnInitialCapital": costs_total / capital, "tradeCount": len(trades), "benchmarkReturn": equity[-1]["benchmark"] / capital - 1}
     return metrics, equity, trades, ledger, skipped
 
 
@@ -497,7 +600,7 @@ def _forecast_report(predictions, truth, label_end, panel, dates, strategy, mode
     return {"target": target, "horizonSessions": strategy["model"]["horizon"], "period": "terminal_holdout_only", "frozenModel": True, "scoreInterpretation": "predicted_target_higher_is_better" if is_estimate else "mean_factor_percentile_higher_is_better_not_return", "predictedTargetUnit": target["unit"] if is_estimate else None, "riskInterpretation": "Trailing 20-session annualized observed risk, not predicted future risk or confidence interval.", "latestDate": latest_date, "rows": rows, "latest": sorted((row for row in rows if row["date"] == latest_date), key=lambda row: (row["rank"], row["symbol"])), "errorMetrics": metrics, "confidenceInterval": None}
 
 
-def _training_diagnostics(X, mask):
+def _training_diagnostics(X, mask, fitted=None):
     train = X.loc[mask]
     correlation = train.corr(min_periods=30)
     pairs = []
@@ -507,11 +610,53 @@ def _training_diagnostics(X, mask):
             if np.isfinite(value) and abs(value) >= 0.9:
                 pairs.append({"first": first, "second": second, "correlation": float(value)})
     pairs.sort(key=lambda row: -abs(row["correlation"]))
-    return {"period": "final_purged_training_only", "featureCoverage": {col: float(train[col].notna().mean()) for col in train}, "highCorrelationPairs": pairs[:50], "highCorrelationThreshold": 0.9, "totalHighCorrelationPairs": len(pairs), "automaticallyDroppedFeatures": [], "note": "Correlated window recipes are not independent evidence. Diagnostics do not select features using holdout."}
+    return {"period": "final_purged_training_only", "featureCoverage": {col: float(train[col].notna().mean()) for col in train}, "highCorrelationPairs": pairs[:50], "highCorrelationThreshold": 0.9, "totalHighCorrelationPairs": len(pairs), "automaticallyDroppedFeatures": [item["id"] for item in (fitted or {}).get("decorrelation", {}).get("dropped", [])], "decorrelation": (fitted or {}).get("decorrelation"), "features": list(train.columns), "matrix": correlation.to_numpy().tolist(), "note": "Correlated window recipes are not independent evidence. Diagnostics do not select features using holdout."}
+
+
+def _observation_mask(X):
+    dates = X.index.get_level_values("trade_date")
+    return dates.isin(X.attrs.get("observationDates", dates))
+
+
+def _factor_research(X, y, valid, holdout_start, strategy, diagnostics, metrics, ledger):
+    """Descriptive untouched-holdout diagnostics, never a short-sale backtest."""
+    rows = (X.index.get_level_values("trade_date") >= holdout_start) & _observation_mask(X)
+    groups = min(5, len(strategy["universe"]["symbols"]))
+    factors = []
+    for definition in strategy["factors"]:
+        name = definition["id"]
+        ic = _rank_ics(X.loc[rows, name], y.loc[valid & rows])
+        values = np.asarray([point["ic"] for point in ic])
+        std = float(np.std(values, ddof=1)) if len(values) > 1 else None
+        mean = float(values.mean()) if len(values) else None
+        observed = pd.DataFrame({"factor": X.loc[rows, name], "target": y.loc[valid & rows]}).dropna()
+        daily = []
+        for date, frame in observed.groupby(level="trade_date", sort=True):
+            if len(frame) < groups or frame.factor.nunique() < 2:
+                continue
+            # Stable tie handling: symbol order inside equal factor values.
+            ordered = frame.sort_values("factor", kind="stable")
+            bucket = np.floor(np.arange(len(ordered)) * groups / len(ordered)).astype(int)
+            returns = [float(ordered.iloc[np.flatnonzero(bucket == g)].target.mean()) for g in range(groups)]
+            daily.append({"date": date, "groupReturns": returns, "counts": [int((bucket == g).sum()) for g in range(groups)], "longShort": returns[-1] - returns[0]})
+        factors.append({"id": name, "direction": definition["direction"], "rankIC": {"mean": mean, "std": std, "icir": mean / std if std is not None and std > 1e-12 else None, "count": len(ic), "daily": ic, "annualized": False},
+                        "quantiles": {"groups": groups, "order": "direction_adjusted_factor_low_to_high", "daily": daily, "meanReturns": np.mean([row["groupReturns"] for row in daily], axis=0).tolist() if daily else [None] * groups,
+                                      "longShortMean": float(np.mean([row["longShort"] for row in daily])) if daily else None,
+                                      "horizonSessions": strategy["model"]["horizon"], "overlappingLabels": strategy["research"]["observationDays"] < strategy["model"]["horizon"], "costsIncluded": False, "executablePortfolio": False}})
+    capital = strategy["portfolio"]["initialCapital"]
+    return {"period": "terminal_holdout", "usedForSelection": False, "observationDates": sorted(set(X.index.get_level_values("trade_date")[rows])), "factors": factors,
+            "correlation": diagnostics,
+            "portfolio": {"kind": "legacy_long_only_research_diagnostic", "turnover": metrics["turnover"], "costBreakdown": metrics["costBreakdown"], "costDragOnInitialCapital": metrics["costDragOnInitialCapital"],
+                          "netReturn": metrics["totalReturn"], "grossReturnSameExecutedPositions": metrics["totalReturn"] + metrics["totalCosts"] / capital,
+                          "costDragDefinition": "Paid costs divided by initial capital; gross adds these costs back without reinvestment, not a rerun with zero fees.", "averageHoldingCount": float(np.mean([row["holdingCount"] for row in ledger])), "daily": [{key: row[key] for key in ("date", "holdingCount", "turnover", "costs", "positionsValue", "cash")} for row in ledger]},
+            "limitations": ["Long-short is high-minus-low forward-label arithmetic, not a financed, borrowable or T+1-executable short portfolio.", "Forward labels can overlap. ICIR is unannualized mean/sample-standard-deviation, not a significance test.", "Factor directions and universe are user choices. Reusing holdout for revisions introduces selection bias."]}
 
 
 def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
     """Run deterministic research. No provider call, network, file or trade side effect."""
+    if isinstance(strategy, dict) and isinstance(strategy.get('research'), dict) and strategy['research'].get('mode') == 'stat_arb':
+        from .stat_arb import run_stat_arb
+        return run_stat_arb(strategy, data, provenance)
     s = validate_strategy(strategy)
     if provenance is not None and not isinstance(provenance, dict):
         raise ResearchError("INVALID_PROVENANCE", "provenance 须为对象")
@@ -529,6 +674,10 @@ def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
     research_dates = dates[warmup:len(dates) - horizon - 1]
     if len(research_dates) < 180:
         raise ResearchError("INSUFFICIENT_DATA", "完整因子预热与预测期后至少需要 180 个研究交易日")
+    observation_dates = dates[warmup::s["research"]["observationDays"]]
+    X.attrs["observationDates"] = observation_dates
+    X.attrs["observationDays"] = s["research"]["observationDays"]
+    valid = valid & _observation_mask(X)
     date_ends = {date: dates[i + horizon + 1] if i + horizon + 1 < len(dates) else None for i, date in enumerate(dates)}
     cutoff = int(len(research_dates) * 0.8)
     development_dates, holdout_dates = research_dates[:cutoff], research_dates[cutoff:]
@@ -572,16 +721,16 @@ def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
             inner_folds = _time_folds(inner_dates, 2)
             inner_trials = [_evaluate(spec, X, y, label_end, train_mask, inner_folds, s["preprocess"]) for spec in specs]
             winner = _choose(inner_trials)
-            predict = X.index.get_level_values("trade_date").isin(test_dates) & X.notna().any(axis=1)
-            pred, _ = _fit_predict(winner, X[train_mask], y[train_mask], X[predict], s["preprocess"])
+            predict = X.index.get_level_values("trade_date").isin(test_dates) & X.notna().any(axis=1) & _observation_mask(X)
+            pred, outer_fit = _fit_predict(winner, X[train_mask], y[train_mask], X[predict], s["preprocess"])
             ics = _rank_ics(pred, y[test_mask])
             if len(ics) < 5:
                 raise ResearchError("INSUFFICIENT_VALIDATION", "外层验证可评分日期不足")
-            outer_records.append({"trainStart": train_dates[0], "trainEnd": train_dates[-1], "trainLabelEndMax": label_end[train_mask].max(), "testStart": test_dates[0], "testEnd": test_dates[-1], "trainRows": int(train_mask.sum()), "testRows": int(test_mask.sum()), "purgedRows": purged, "selectedModel": winner["id"], "selectedParams": winner["params"], "innerScore": winner["score"], "score": float(np.mean([ic["ic"] for ic in ics])), "scoredDates": len(ics), "innerSelection": [{"trialId": trial["trialId"], "score": trial["score"], "status": trial["status"]} for trial in inner_trials], "dailyIC": ics})
+            outer_records.append({"trainStart": train_dates[0], "trainEnd": train_dates[-1], "trainLabelEndMax": label_end[train_mask].max(), "testStart": test_dates[0], "testEnd": test_dates[-1], "trainRows": int(train_mask.sum()), "testRows": int(test_mask.sum()), "purgedRows": purged, "selectedModel": winner["id"], "selectedParams": winner["params"], "innerScore": winner["score"], "score": float(np.mean([ic["ic"] for ic in ics])), "scoredDates": len(ics), "innerSelection": [{"trialId": trial["trialId"], "score": trial["score"], "status": trial["status"], "folds": trial["folds"]} for trial in inner_trials], "dailyIC": ics, "decorrelation": outer_fit["decorrelation"]})
         final_folds = _time_folds(dev_dates, 3)
         trials = [_evaluate(spec, X, y, label_end, dev_valid, final_folds, s["preprocess"]) for spec in specs]
         winner = _choose(trials)
-        predict_mask = (X.index.get_level_values("trade_date") >= holdout_start) & X.notna().any(axis=1) & panel["close"].notna()
+        predict_mask = (X.index.get_level_values("trade_date") >= holdout_start) & X.notna().any(axis=1) & panel["close"].notna() & _observation_mask(X)
         holdout_predictions, fitted_audit = _fit_predict(winner, X[dev_valid], y[dev_valid], X[predict_mask], s["preprocess"])
     holdout_ics = _rank_ics(holdout_predictions, y[valid & (X.index.get_level_values("trade_date") >= holdout_start)])
     if len(holdout_ics) < 10:
@@ -612,16 +761,20 @@ def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
     candidates.sort(key=lambda row: row["score"] if row["score"] is not None else -np.inf, reverse=True)
     strategy_digest = hashlib.sha256(json.dumps(s, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
     prov = {**provenance, **data_audit, "strategySha256": strategy_digest, "engineVersion": ENGINE_VERSION}
+    training_diagnostics = _training_diagnostics(X, dev_valid, fitted_audit)
+    factor_research = _factor_research(X, y, valid, holdout_start, s, training_diagnostics, metrics, ledger)
     result = {
         "schemaVersion": 1, "status": "completed", "engineVersion": ENGINE_VERSION,
         "strategy": s, "provenance": prov,
+        "research": {"mode": s["research"]["mode"], "primaryAnalysis": "factorResearch", "standaloneMarketForecast": False, "observationDays": s["research"]["observationDays"], "labelHorizonSessions": horizon, "rebalanceDays": s["portfolio"]["rebalanceDays"], "samplingAnchor": dates[warmup], "observationDates": observation_dates, "portfolioInterpretation": "legacy_long_only_diagnostic_not_statistical_arbitrage"},
+        "factorResearch": factor_research,
         "selection": {"winner": winner["id"], "winnerTrialId": winner["trialId"], "params": winner["params"], "metric": "rank_ic", "reason": "以开发期内扩展窗口验证的平均每日截面RankIC选择有限候选；终端留出结果从未参与排序。", "score": winner["score"], "candidates": candidates, "trials": trials, "trialCount": len(specs), "holdoutUsedForSelection": False, "qualified": qualified, "deploymentQualified": False, "evidenceStatus": "POSITIVE_WINDOW_MEANS_NOT_SIGNIFICANCE_TESTED" if qualified else "NO_VALIDATED_EDGE", "splits": {"unit": "unique_trade_date", "boundaryRule": "fixed_calendar_after_declared_factor_warmup", "development": {"start": development_dates[0], "end": development_dates[-1]}, "finalTraining": {"start": dev_dates[0], "end": dev_dates[-1], "labelEndMax": label_end[dev_valid].max(), "rows": int(dev_valid.sum())}, "holdout": {"start": holdout_start, "end": simulation_dates[-1], "fractionOfResearchDates": len(holdout_dates) / len(research_dates)}, "labelHorizonSessions": s["model"]["horizon"], "purgeRule": "training label end strictly before validation start", "outerFolds": outer_records}},
         "metrics": metrics, "equity": equity, "trades": trades, "factors": factor_results,
         "predictions": _forecast_report(holdout_predictions, y, label_end, panel, dates, s, winner["id"]),
-        "trainingDiagnostics": _training_diagnostics(X, dev_valid),
+        "trainingDiagnostics": training_diagnostics,
         "warnings": warn,
-        "validation": {"metricPeriod": "terminal_holdout_only", "holdoutRankIC": holdout_score, "holdoutDailyIC": holdout_ics, "nestedWalkForwardRankIC": outer_score, "nestedWalkForwardFolds": len(outer_records), "randomSplitUsed": False, "preprocessingFitOnTrainOnly": True, "holdoutUsedForSelection": False, "finalFit": fitted_audit, "features": list(X.columns), "eligibleDates": len(eligible_dates), "labelDefinition": TARGETS[s["model"]["target"]]["definition"] + "; T signal generated after close", "calendar": "provided" if data_audit["calendarProvided"] else "observed_dates_only", "seed": 17, "candidateBudget": len(specs), "totalFitsUpperBound": len(specs) * 9 + 4, "predictiveSignificanceTested": False},
-        "execution": {"unit": "fractional_adjusted_research_unit", "fillRule": "T-close signal, T+1 open reference price plus explicit cash slippage cost", "positionCap": "target weight at rebalance, not a continuous hard exposure limit", "costUnit": "basis_points_of_reference_notional", "turnoverDefinition": "gross_traded_notional / mean_daily_equity", "benchmarkDefinition": "equal_weight_buy_and_hold_at_first_holdout_close_cost_free", "terminalLiquidation": False, "ledger": ledger, "skipped": skipped},
+        "validation": {"metricPeriod": "terminal_holdout_only", "holdoutRankIC": holdout_score, "holdoutDailyIC": holdout_ics, "nestedWalkForwardRankIC": outer_score, "nestedWalkForwardFolds": len(outer_records), "randomSplitUsed": False, "preprocessingFitOnTrainOnly": True, "holdoutUsedForSelection": False, "finalFit": fitted_audit, "features": list(X.columns), "eligibleDates": len(eligible_dates), "eligibleObservationDates": int((valid.groupby(level="trade_date").sum() >= 3).sum()), "labelDefinition": TARGETS[s["model"]["target"]]["definition"] + "; T signal generated after close", "calendar": "provided" if data_audit["calendarProvided"] else "observed_dates_only", "seed": 17, "candidateBudget": len(specs), "totalFitsUpperBound": len(specs) * 9 + 4, "predictiveSignificanceTested": False},
+        "execution": {"unit": "fractional_adjusted_research_unit", "fillRule": "T-close signal, T+1 open reference price plus explicit cash slippage cost", "positionCap": "target weight at rebalance, not a continuous hard exposure limit", "costUnit": "basis_points_of_reference_notional", "turnoverDefinition": "gross_traded_notional / mean_daily_equity", "benchmarkDefinition": "equal_weight_buy_and_hold_at_first_holdout_close_cost_free", "terminalLiquidation": False, "settlementRule": "A_SHARE_T_PLUS_ONE", "pendingOrderRule": "retry target weights at first tradable open until replaced by next scheduled signal; cash-scaled buys are final", "costBreakdown": metrics["costBreakdown"], "taxMode": "fixed_scenario_not_historical_schedule", "ledger": ledger, "skipped": skipped},
     }
     clean = _finite_json(result)
     json.dumps(clean, allow_nan=False)

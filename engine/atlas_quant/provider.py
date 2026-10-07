@@ -26,6 +26,9 @@ MAX_CALENDAR_DAYS = 3660
 MAX_RESPONSE_BYTES = 12 * 1024 * 1024
 MAX_UPLOAD_BYTES = 24 * 1024 * 1024
 MAX_CACHE_FILES = 32
+MAX_PROVIDER_CALLS = 512
+MAX_READ_ATTEMPTS = 3
+RETRYABLE_HTTP_STATUSES = frozenset({502, 503, 504})
 REQUIRED = ["ts_code", "trade_date", "open", "high", "low", "close", "raw_close", "vol", "amount", "adj_factor"]
 OPTIONAL_FIELDS = frozenset("turnover_rate turnover_rate_f volume_ratio pe pe_ttm pb ps ps_ttm dv_ratio dv_ttm total_share float_share free_share total_mv circ_mv".split())
 SYMBOL_RE = re.compile(r"^(?:\d{6})\.(?:SH|SZ|BJ)$")
@@ -39,8 +42,10 @@ DATASETS = {
 
 
 class ProviderError(ValueError):
-    def __init__(self, code, message):
+    def __init__(self, code, message, *, http_status=None, attempts=None):
         self.code = code
+        self.http_status = http_status
+        self.attempts = attempts
         super().__init__(message)
 
 
@@ -232,7 +237,7 @@ def validate_upload(strategy, dataset, *, deferred_fields=None):
 
 
 class TushareClient:
-    def __init__(self, token, *, proxy_url=None, service_token=None, session=None):
+    def __init__(self, token, *, proxy_url=None, service_token=None, session=None, wait=None):
         self.proxy_url = proxy_url
         if proxy_url:
             parsed = urlparse(proxy_url)
@@ -245,6 +250,7 @@ class TushareClient:
         self.token = token
         self.service_token = service_token
         self.session = session or requests.Session()
+        self.wait = wait if wait is not None else time.sleep
         self.calls = 0
 
     def call(self, api_name, params):
@@ -264,9 +270,6 @@ class TushareClient:
                     raise ProviderError("PROVIDER_PARAMS", "本版本仅支持 SSE 官方交易日历。")
             elif not isinstance(params["ts_code"], str) or not SYMBOL_RE.fullmatch(params["ts_code"]):
                 raise ProviderError("PROVIDER_PARAMS", "行情证券代码无效。")
-        if self.calls >= 512:
-            raise ProviderError("PROVIDER_BUDGET", "本次数据请求已达到接口预算。")
-        self.calls += 1
         # Tushare's documented membership default includes its numbered hierarchy
         # fields. Validate the full required response contract below in either case.
         payload = {"api_name": api_name, "params": params, "fields": "" if api_name == "index_member_all" else DATASETS[api_name]}
@@ -275,27 +278,48 @@ class TushareClient:
             headers["Authorization"] = "Bearer " + self.service_token
         else:
             payload["token"] = self.token
-        try:
-            response = self.session.post(self.proxy_url or OFFICIAL_URL, json=payload, headers=headers,
-                                         timeout=(10, 35), allow_redirects=False, stream=True)
-            with response:
-                if response.status_code == 429:
-                    raise ProviderError("TUSHARE_RATE_LIMIT", "行情服务限流，请稍后重试。")
-                if response.status_code in (401, 403):
-                    raise ProviderError("TUSHARE_PERMISSION", "行情凭据或数据权限不足。")
-                if response.status_code != 200:
-                    raise ProviderError("TUSHARE_HTTP_ERROR", "行情服务未成功响应。")
-                chunks, size = [], 0
-                for block in response.iter_content(65536):
-                    size += len(block)
-                    if size > MAX_RESPONSE_BYTES:
-                        raise ProviderError("PROVIDER_RESPONSE_SIZE", "行情响应超过安全大小限制。")
-                    chunks.append(block)
-                result = json.loads(b"".join(chunks))
-        except ProviderError:
-            raise
-        except (requests.RequestException, ValueError, TypeError):
-            raise ProviderError("TUSHARE_NETWORK", "无法读取行情服务；请检查连接与服务状态。") from None
+        # Only allowlisted, read-only data requests reach this retry loop. A retry
+        # repeats one failed read, never a research job or a queue mutation. Every
+        # actual attempt consumes the same job-wide provider budget.
+        for attempt in range(1, MAX_READ_ATTEMPTS + 1):
+            if self.calls >= MAX_PROVIDER_CALLS:
+                raise ProviderError("PROVIDER_BUDGET", "本次数据请求已达到接口预算。")
+            self.calls += 1
+            try:
+                response = self.session.post(self.proxy_url or OFFICIAL_URL, json=payload, headers=headers,
+                                             timeout=(10, 35), allow_redirects=False, stream=True)
+                with response:
+                    status = response.status_code
+                    if status == 429:
+                        raise ProviderError("TUSHARE_RATE_LIMIT", "行情服务限流（HTTP 429），请稍后重试。", http_status=status, attempts=attempt)
+                    if status in (401, 403):
+                        raise ProviderError("TUSHARE_PERMISSION", f"行情凭据或数据权限不足（HTTP {status}）。", http_status=status, attempts=attempt)
+                    if status != 200:
+                        # Never expose response bodies, URLs, headers or exception
+                        # text. Numeric HTTP status remains visible via _safe_error.
+                        raise ProviderError("TUSHARE_HTTP_ERROR", f"行情服务未成功响应（HTTP {status}；本次读取已请求 {attempt} 次）。", http_status=status, attempts=attempt)
+                    chunks, size = [], 0
+                    for block in response.iter_content(65536):
+                        size += len(block)
+                        if size > MAX_RESPONSE_BYTES:
+                            raise ProviderError("PROVIDER_RESPONSE_SIZE", "行情响应超过安全大小限制。")
+                        chunks.append(block)
+                    result = json.loads(b"".join(chunks))
+            except ProviderError as exc:
+                if exc.http_status not in RETRYABLE_HTTP_STATUSES:
+                    raise
+                last_error = exc
+            except (requests.Timeout, requests.ConnectionError, requests.exceptions.ChunkedEncodingError):
+                last_error = ProviderError("TUSHARE_NETWORK", f"无法读取行情服务（本次读取已请求 {attempt} 次）；请检查连接与服务状态。", attempts=attempt)
+            except (requests.RequestException, ValueError, TypeError):
+                # Invalid JSON/configuration is not evidence of a transient read.
+                raise ProviderError("TUSHARE_NETWORK", "无法读取行情服务；请检查连接与服务状态。", attempts=attempt) from None
+            else:
+                break
+            if attempt == MAX_READ_ATTEMPTS or self.calls >= MAX_PROVIDER_CALLS:
+                raise last_error from None
+            # Fixed 1s/2s backoff; injectable for deterministic no-network tests.
+            self.wait(float(attempt))
         if not isinstance(result, dict):
             raise ProviderError("TUSHARE_RESPONSE", "行情服务返回结构无效。")
         if result.get("code") != 0:

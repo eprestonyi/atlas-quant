@@ -6,10 +6,11 @@ import os from 'node:os';
 import {spawn} from 'node:child_process';
 import {Miniflare} from 'miniflare';
 
-const validation=await fs.readFile(new URL('../edge/validation.mjs',import.meta.url),'utf8');
+const validation=(await fs.readFile(new URL('../edge/validation.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/universe\.mjs';\n/,'');
+const universe=await fs.readFile(new URL('../edge/universe.mjs',import.meta.url),'utf8');
 const worker=(await fs.readFile(new URL('../edge/worker.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/validation\.mjs';\n/,'');
 const studio=await fs.readFile(new URL('../edge/studio.mjs',import.meta.url),'utf8');
-const script='const RESEARCH_PRESETS={};const WEB_ASSETS={"index.html":{body:"Atlas Quant",type:"text/html"}};const CATALOG={factors:[],models:[],templates:[]};const BUILD_ID="queue-race-test";\n'+validation+'\n'+studio+'\n'+worker;
+const script='const RESEARCH_PRESETS={};const WEB_ASSETS={"index.html":{body:"Atlas Quant",type:"text/html"}};const CATALOG={factors:[],models:[],templates:[]};const BUILD_ID="queue-race-test";\n'+validation+'\n'+universe+'\n'+studio+'\n'+worker;
 const secret='queue-test-only-secret-not-production';
 const mf=new Miniflare({modules:true,script,compatibilityDate:'2026-08-01',d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{RUNNER_SECRET:secret}});
 const db=await mf.getD1Database('DB');
@@ -87,7 +88,7 @@ test('expired computation delivery is permanently acknowledged for spool recover
 
 test('streaming request cap counts UTF-8 bytes without Content-Length',async()=>{
  const cookie=await session();
- const bytes=new TextEncoder().encode(JSON.stringify({strategy,note:'界'.repeat(35000)}));
+ const bytes=new TextEncoder().encode(JSON.stringify({strategy,note:'界'.repeat(70000)}));
  const stream=new ReadableStream({start(controller){controller.enqueue(bytes);controller.close();}});
  const response=await mf.dispatchFetch(origin+'/quant/api/strategies',{method:'POST',headers:{cookie,'content-type':'application/json'},body:stream,duplex:'half'});
  assert.equal(response.status,413);
