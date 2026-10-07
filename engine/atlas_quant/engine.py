@@ -222,6 +222,9 @@ def _prepare_data(data, strategy, provenance):
     numeric = sorted((required | factor_fields) - {"ts_code", "trade_date"})
     for field in numeric:
         df[field] = pd.to_numeric(df[field], errors="coerce")
+        # JSON transports canonicalize -0.0 to 0.0. Normalize signed zeros before
+        # the exact 17-digit snapshot fingerprint, without rounding other values.
+        df.loc[df[field].eq(0), field] = 0.0
     core = ["open", "high", "low", "close", "raw_close", "adj_factor"]
     if not np.isfinite(df[core].to_numpy()).all() or (df[core] <= 0).any().any():
         raise ResearchError("INVALID_PRICES", "已有行情行的 OHLC、原价和复权因子须为有限正数；缺失交易日应整行省略")
@@ -654,6 +657,9 @@ def _factor_research(X, y, valid, holdout_start, strategy, diagnostics, metrics,
 
 def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
     """Run deterministic research. No provider call, network, file or trade side effect."""
+    if isinstance(strategy, dict) and isinstance(strategy.get('research'), dict) and strategy['research'].get('mode') == 'statistical_quant':
+        from .statistical_quant import run_statistical_quant
+        return run_statistical_quant(strategy, data, provenance)
     if isinstance(strategy, dict) and isinstance(strategy.get('research'), dict) and strategy['research'].get('mode') == 'stat_arb':
         from .stat_arb import run_stat_arb
         return run_stat_arb(strategy, data, provenance)

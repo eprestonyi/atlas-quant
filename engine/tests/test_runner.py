@@ -239,3 +239,25 @@ def test_second_runner_cannot_enter_claim_loop(tmp_path):
         assert e.value.code == "RUNNER_ALREADY_ACTIVE"
     finally:
         os.close(fd)
+
+
+def test_result_budget_is_exact_compact_utf8_not_ascii_or_pretty_json(monkeypatch):
+    import atlas_quant.runner as runner
+    report = {"研究": [{"名称": "未来价值", "V": 123.5, "有效": True}] * 3}
+    compact = json.dumps(report, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode()
+    assert len(compact) != len(json.dumps(report).encode())
+    assert len(compact) != len(json.dumps(report, ensure_ascii=False).encode())
+    monkeypatch.setattr(runner, "MAX_RESULT_BYTES", len(compact))
+    assert runner._validate_result(report) is report
+    monkeypatch.setattr(runner, "MAX_RESULT_BYTES", len(compact) - 1)
+    with pytest.raises(RunnerError) as exc:
+        runner._validate_result(report)
+    assert exc.value.code == "RESULT_SIZE"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_compact_result_budget_never_accepts_nonfinite_numbers(value):
+    from atlas_quant.runner import _validate_result
+    with pytest.raises(RunnerError) as exc:
+        _validate_result({"研究": {"预测": value}})
+    assert exc.value.code == "ENGINE_RESULT"

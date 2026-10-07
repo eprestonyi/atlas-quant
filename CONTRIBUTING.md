@@ -40,7 +40,7 @@ PCD 的 17,073 个字段是结构目录，不能通过改 `availability` 标记�
 
 从一个明确问题开始，描述复现条件和改变后的行为。较大的接口或方法变动先讨论；小修复可以直接提交。维护者 review 是合并代码的过程，不等于当前社区条目发布机制。
 
-1. 保持 `docs/CONTRACT.md` 中的数据结构与前后端一致；发生契约变化时同步修改消费者。
+1. 保持 `docs/STATISTICAL_QUANT_SCHEMA.md` 和 `docs/STATISTICAL_QUANT_API.md` 中的新协议与前后端一致；`docs/CONTRACT.md` 只描述历史版本。发生契约变化时同步修改消费者及共享 fixture。
 2. 对数学、记账、权限、隔离和数据完整性变动加入有意义的反例测试。测试应能捕获未来泄漏、错误成交或越权访问等实际失败。
 3. 记录运行的检查和未验证部分。保持真实 provider、本地验证、托管执行和前向绩效之间的区别。
 
@@ -54,6 +54,25 @@ npm run build
 数值方法变动应保留固定 seed 与输入指纹，说明是否改变既有结果；更新版本/验收证据。不要为制造稳定测试而删除费用、未来数据检查或失败状态。
 
 默认不接受把同一 holdout 反复用于因子选择后仍称为独立验证的结果。新的研究尝试要留下记录，或者使用新的未查看区间/前向数据。
+
+## 新模型与模块贡献
+
+社区 DSL 定义的是 X 的可审计变换；新的服务端估计器、目标或执行算法通过代码 PR 扩展，不在用户提交时执行任意 Python。
+
+- 新 F 说明条件信息、被预测的单位和期限，输出预期入场及未来目标两个有限值。提供真实拟合实现、确定性候选配置、训练记录，以及在缺失数据和不收敛时的明确失败行为。
+- 新目标说明资产/篮子的身份、冻结数量、形成窗口与现金复制关系。对冲构造本身不代表对未来状态的预测。
+- 新因子说明观察与交易频率、转换和可知时间。用相同目标、有效样本与候选预算比较有无该因子；模型无法拟合的差异也要显示。
+- 新执行模块只能消费保存的预测和输入快照；交易必须引用预测 ID。测试 T+1、无法成交、费用、头寸与现金守恒。调整执行门槛不得悄悄改模型或重新取数。
+
+注册模块时同步更新版本化目录和界面可用状态，列出输入/输出及兼容条件。配方是可复用配置，不因加入目录而获得“精选获利策略”身份。模型序列化、新的市场或衍生品单位等改变需先扩展协议，不能硬塞入现有价格字段。
+
+本地至少完成确定性预测、同产物独立执行和标准库审计：
+
+```sh
+.venv/bin/python scripts/local-run.py engine/examples/statistical-quant.json --source demo --output private/forecast.json --snapshot-output private/input.json
+.venv/bin/python scripts/replay-execution.py private/forecast.json private/input.json --output private/execution.json
+.venv/bin/python scripts/audit-report.py private/execution.json --source-report private/forecast.json
+```
 
 ## 安全问题
 

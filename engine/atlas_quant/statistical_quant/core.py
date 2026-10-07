@@ -1,0 +1,112 @@
+"""Forecast artifacts are immutable research products, separate from execution."""
+from __future__ import annotations
+import copy
+from dataclasses import replace
+import numpy as np
+from threadpoolctl import threadpool_limits
+from .schema import VERSION, digest, fail, prediction_config, validate
+from .targets import build_samples
+from .validation import forecast
+from .execution import execute
+from .reporting import diagnostics_summary, trial_summary
+
+
+def _envelope(strategy, provenance, audit, artifact, panel, dates, execution_only=False):
+    from ..engine import _finite_json
+    metrics, equity, trades, execution = execute(panel, dates, strategy, artifact)
+    diagnostics = artifact["diagnostics"]
+    positive = diagnostics["metrics"].get("mseImprovement")
+    warnings = ["THEORETICAL_SHORT_INVENTORY_NOT_VERIFIED", "FRACTIONAL_ADJUSTED_UNITS_NOT_EXCHANGE_LOTS",
+                "FIXED_COSTS_NOT_HISTORICAL_FEE_SCHEDULE", "NO_INTRADAY_LIMIT_QUEUE_OR_CAPACITY_MODEL",
+                "OVERLAPPING_LABELS_ARE_NOT_INDEPENDENT", "PREDICTIVE_IMPROVEMENT_IS_NOT_PROFITABILITY",
+                "CURRENT_UNIVERSE_NOT_HISTORICAL_CONSTITUENTS"]
+    if provenance.get("synthetic"):
+        warnings.insert(0, "SYNTHETIC_DATA_NOT_MARKET_EVIDENCE")
+    state_effects = [x for f in artifact["modelFits"] for x in f.get("stateEffects", [])]
+    if strategy["model"]["family"] in ("mean_reversion", "pair_reversion") and not any(x["negativeEffectObserved"] for x in state_effects):
+        warnings.append("NEGATIVE_STATE_EFFECT_NOT_ESTABLISHED_BY_SELECTED_MODEL")
+    result = {"schemaVersion": 2, "status": "completed", "engineVersion": VERSION,
+              "strategy": strategy, "research": {"mode": "statistical_quant", "forecastFirst": True,
+                  "executionOnly": execution_only, "predictionRefitPerformed": not execution_only,
+                  "observationDays": strategy["research"]["observationDays"]},
+              "provenance": {**provenance, **audit}, "forecasts": artifact,
+              "validation": diagnostics_summary(diagnostics), "selection": {"winner": diagnostics["selectedModel"]["estimator"],
+                  "winnerTrialId": diagnostics["selectedModel"]["id"], "params": diagnostics["selectedModel"]["params"],
+                  "metric": "date_balanced_joint_entry_exit_normalized_mse", "trials": trial_summary(diagnostics["finalTrials"]),
+                  "holdoutUsedForSelection": False, "qualified": False, "deploymentQualified": False,
+                  "evidenceStatus": "OOS_FORECAST_IMPROVEMENT_NOT_SIGNIFICANCE_TESTED" if positive is not None and positive>0 else "NO_VALIDATED_FORECAST_EDGE"},
+              "metrics": metrics, "equity": equity, "trades": trades, "execution": execution,
+              "factors": [{"id": f["id"], "role": f["role"], "expression": f["expression"]} for f in strategy["factors"]],
+              "warnings": warnings}
+    return _finite_json(result)
+
+
+def run_statistical_quant(strategy, data, provenance=None):
+    from ..engine import _prepare_data, _finite_json
+    s = validate(strategy)
+    if provenance is not None and not isinstance(provenance, dict):
+        fail("INVALID_PROVENANCE", "来源记录须为对象")
+    p = copy.deepcopy(provenance or {})
+    panel, dates, audit = _prepare_data(data, s, p)
+    with threadpool_limits(limits=1):
+        samples = build_samples(panel, dates, s)
+        if s["model"]["family"] in ("event", "fundamental"):
+            valid_dates = samples.meta.loc[samples.meta.inputValid, "date"].nunique()
+            if valid_dates < s["validation"]["minTrainDates"]+40:
+                fail("MISSING_MODEL_DATA", "条件模型缺少足够实际可观测输入日期用于嵌套验证")
+        rows, fits, diagnostics = forecast(samples, s)
+        diagnostics["inputCoverage"] = {"totalOrigins": len(samples.meta),
+            "validInputOrigins": int(samples.meta.inputValid.sum()),
+            "invalidReasons": {str(k): int(v) for k, v in samples.meta.invalidReason.dropna().value_counts().items()},
+            "features": [{"name": name, "finiteOrigins": int(np.isfinite(samples.X[name]).sum())} for name in samples.X]}
+        factor_columns = [name for name in samples.X if name.startswith("factor:")]
+        if factor_columns:
+            # Hold q, labels, coverage mask, maturity and candidate budget fixed.
+            # Re-select/re-fit the state-only baseline in its own train folds.
+            baseline_samples = replace(samples, X=samples.X.drop(columns=factor_columns))
+            baseline_rows, baseline_fits, baseline_diagnostics = forecast(baseline_samples, s)
+            from .comparison import compare_factor_increment
+            diagnostics["factorIncrement"] = compare_factor_increment(
+                rows, baseline_rows, factor_columns, baseline_fits, baseline_diagnostics)
+        else:
+            diagnostics["factorIncrement"] = {"status": "not_applicable", "reason": "no_predictor_or_event_factor_columns",
+                "hedgeFactorsAblated": False}
+    artifact = _finite_json({"schemaVersion": 1, "predictionConfigHash": digest(prediction_config(s)),
+                            "dataFingerprint": audit["dataSha256"], "sourceStrategy": copy.deepcopy(s),
+                            "rows": rows, "totalRows": len(rows), "truncated": False,
+                            "targetDefinitions": list(samples.definitions.values()), "modelFits": fits,
+                            "hedgeFits": samples.hedge_fits, "diagnostics": diagnostics})
+    artifact["artifactId"] = digest(artifact)
+    return _envelope(s, p, audit, artifact, panel, dates)
+
+
+def execute_forecasts(strategy, data, artifact, provenance=None):
+    """No fitting or target construction. Only execute a verified frozen artifact.
+
+    Callers may change execution/portfolio/costs/name, never prediction
+    inputs. A bundle's original full-precision data and calendar must accompany it.
+    """
+    from ..engine import _prepare_data
+    s = validate(strategy)
+    if not isinstance(artifact, dict) or artifact.get("schemaVersion") != 1 or artifact.get("truncated") is not False:
+        fail("FORECAST_ARTIFACT_MISMATCH", "需要完整版本化预测产物")
+    a = copy.deepcopy(artifact)
+    ident = a.pop("artifactId", None)
+    try:
+        actual_id = digest(a)
+    except (ValueError, TypeError):
+        fail("FORECAST_ARTIFACT_MISMATCH", "预测产物包含无效数据")
+    if ident != actual_id or not isinstance(a.get("rows"), list) or a.get("totalRows") != len(a["rows"]):
+        fail("FORECAST_ARTIFACT_MISMATCH", "预测产物指纹或完整记录数不匹配")
+    if a.get("predictionConfigHash") != digest(prediction_config(s)):
+        fail("FORECAST_ARTIFACT_MISMATCH", "重放只能改变执行、组合与费用，不能替换预测研究配置")
+    if digest(prediction_config(validate(a.get("sourceStrategy")))) != a["predictionConfigHash"]:
+        fail("FORECAST_ARTIFACT_MISMATCH", "预测产物原始配置不匹配")
+    p = copy.deepcopy(provenance or {})
+    if not isinstance(p, dict):
+        fail("INVALID_PROVENANCE", "来源记录须为对象")
+    panel, dates, audit = _prepare_data(data, s, p)
+    if a.get("dataFingerprint") != audit["dataSha256"]:
+        fail("FORECAST_ARTIFACT_MISMATCH", "必须使用原始冻结行情与日历，不能以新取数据重放")
+    a["artifactId"] = ident
+    return _envelope(s, p, audit, a, panel, dates, True)

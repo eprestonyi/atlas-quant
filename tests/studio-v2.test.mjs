@@ -1,3 +1,4 @@
+import {buildWorkerSource} from '../scripts/worker-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -8,10 +9,6 @@ import {ApiError, validateBindings, validateExpression, validateStrategy} from '
 const models=['factor_score','ridge','elastic_net','hist_gradient_boosting','bayesian_ridge','huber','random_forest','extra_trees'];
 const strategy={schemaVersion:1,name:'Studio validation',universe:{symbols:['000001.SZ','000002.SZ','600000.SH'],start:'20230101',end:'20260930'},factors:[{id:'momentum_20',expression:'returns(close,20)',direction:1}],preprocess:{winsorize:true,standardize:true},model:{mode:'auto',candidates:models,horizon:5,target:'forward_return',metric:'rank_ic'},portfolio:{topN:2,maxWeight:.4,rebalanceDays:5,initialCapital:1000000},costs:{commissionBps:3,slippageBps:10,sellTaxBps:5},graph:{nodes:[],edges:[]}};
 const factorFixtures=[{id:'builtin_market',name:'Market factor',description:'Price returns',expression:'returns(close,20)',requiredFields:['close'],category:'动量',family:'momentum',direction:1,lookback:20},{id:'builtin_financial',name:'Financial factor',description:'Announced profitability',expression:'fd_roe',requiredFields:['fd_roe'],category:'财务质量',family:'financial_level',direction:1,lookback:0}];
-const validation=(await fs.readFile(new URL('../edge/validation.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/universe\.mjs';\n/,'');
-const universe=await fs.readFile(new URL('../edge/universe.mjs',import.meta.url),'utf8');
-const studio=await fs.readFile(new URL('../edge/studio.mjs',import.meta.url),'utf8');
-const worker=(await fs.readFile(new URL('../edge/worker.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/validation\.mjs';\n/,'').replace(/export default\s*/,'const productionWorker = ');
 // Only the provider transport is mocked. Tests dispatch through the complete
 // production HTTP router, session/auth, review parser, patch filter and audit.
 const providerWrapper=`
@@ -26,7 +23,7 @@ export default {async fetch(req,env,ctx){
  }};
  return productionWorker.fetch(req,injected,ctx);
 }};`;
-const script=`const RESEARCH_PRESETS={};const WEB_ASSETS={};const CATALOG=${JSON.stringify({factors:factorFixtures,models:models.map(id=>({id})),templates:[]})};const BUILD_ID='studio-v2-test';\n`+validation+'\n'+universe+'\n'+studio+'\n'+worker+'\n'+providerWrapper;
+const script=await buildWorkerSource({buildId:'studio-v2-test',catalog:{factors:factorFixtures,models:models.map(id=>({id})),templates:[]},wrapper:providerWrapper});
 const mf=new Miniflare({modules:true,script,compatibilityDate:'2026-08-01',d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{RUNNER_SECRET:'studio-test-only'}});
 const db=await mf.getD1Database('DB');
 await db.exec((await fs.readFile(new URL('../edge/schema.sql',import.meta.url),'utf8')).replaceAll('\n',' '));

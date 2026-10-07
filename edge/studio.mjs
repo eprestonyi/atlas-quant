@@ -1,3 +1,7 @@
+import {ApiError, textField, validateExpression} from './validation.mjs';
+import {NOW, random, json, parse, sha, rate, audit, body, safeError, factorItem} from './runtime.mjs';
+import {UniverseRuleError, compileUniverseCatalog, validateUniverseSelection, resolveUniverseSelection, universeResolutionHash, universeOptions} from './universe.mjs';
+
 /* Paged registry access: schema discovery is distinct from populated factor availability. */
 const STUDIO_MODEL_IDS=['factor_score','ridge','elastic_net','hist_gradient_boosting','bayesian_ridge','huber','random_forest','extra_trees'];
 // One bounded catalog per D1 binding, maximum two bindings in an isolate.
@@ -64,3 +68,5 @@ async function studioPrivate(req,env,path,owner){
  if(path.startsWith('/code/projects/')){const id=path.split('/')[3],r=await env.DB.prepare('SELECT * FROM code_projects WHERE id=? AND owner=?').bind(id,owner).first();if(!r)throw new ApiError('NOT_FOUND','代码项目不存在',404);if(req.method==='GET')return json({item:{id:r.id,name:r.name,language:r.language,code:r.code,version:r.version,updatedAt:r.updated_at}});if(req.method==='DELETE'){await env.DB.prepare('DELETE FROM code_projects WHERE id=? AND owner=?').bind(id,owner).run();return json({ok:true});}if(req.method==='PUT'){const input=await body(req,170000);if(input.version!==r.version)throw new ApiError('REVISION_CONFLICT','代码项目已被另一窗口更新。',409);const name=textField(input.name,'项目名称',80),code=sourceCode(input.code);if(!['python','dsl'].includes(input.language))throw new ApiError('LANGUAGE','请选择 Python 或 DSL');const time=NOW(),updated=await env.DB.prepare('UPDATE code_projects SET name=?,language=?,code=?,version=version+1,updated_at=? WHERE id=? AND owner=? AND version=? RETURNING *').bind(name,input.language,code,time,id,owner,r.version).first();if(!updated)throw new ApiError('REVISION_CONFLICT','版本冲突，请重新载入。',409);return json({item:{id,name,language:input.language,code,version:updated.version,updatedAt:time}});}}
  return null;
 }
+
+export {studioPublic, studioPrivate, resolveUniverseRules, fieldRecipe, fieldView, loadUniverseCatalog};

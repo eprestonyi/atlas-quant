@@ -1,3 +1,4 @@
+import {buildWorkerSource} from '../scripts/worker-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -13,8 +14,8 @@ test('factor IDs and object types reject at the edge before numerical execution'
 });
 
 test('large valid selection rules survive private strategy creation, update and readback',async()=>{
- const [v,u,s,w,schema]=await Promise.all(['validation.mjs','universe.mjs','studio.mjs','worker.mjs','schema.sql'].map(x=>fs.readFile(new URL('../edge/'+x,import.meta.url),'utf8')));
- const script='const RESEARCH_PRESETS={};const WEB_ASSETS={};const CATALOG={factors:[],models:[],templates:[]};const BUILD_ID="release-test";\n'+v.replace(/^import .* from '\.\/universe\.mjs';\n/,'')+'\n'+u+'\n'+s+'\n'+w.replace(/^import .* from '\.\/validation\.mjs';\n/,'');
+ const schema=await fs.readFile(new URL('../edge/schema.sql',import.meta.url),'utf8');
+ const script=await buildWorkerSource({buildId:'release-test'});
  const mf=new Miniflare({modules:true,script,compatibilityDate:'2026-08-01',d1Databases:['DB'],r2Buckets:['ARTIFACTS']});
  try {
   const db=await mf.getD1Database('DB');await db.exec(schema.replaceAll('\n',' '));

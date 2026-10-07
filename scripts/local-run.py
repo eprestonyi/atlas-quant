@@ -16,8 +16,11 @@ def main():
     p.add_argument("--source", choices=("demo", "upload", "tushare"), required=True)
     p.add_argument("--dataset", type=Path)
     p.add_argument("--output", type=Path)
+    p.add_argument("--snapshot-output", type=Path,
+                   help="Explicitly save private frozen inputs for execution-only replay (0600)")
     p.add_argument("--timeout", type=int, default=900)
     p.add_argument("--config", type=Path, help="Optional external private 0600 runner config for authorized provider/PCD reads")
+    p.add_argument("--no-cache", action="store_true", help="Verify fresh provider reads without using the configured cache")
     args = p.parse_args()
     try:
         if args.strategy.stat().st_size > 256000:
@@ -31,7 +34,15 @@ def main():
         cfg = load_config(args.config) if args.config else {}
         job = prepare_job(job, cfg)
         answer = execute_bounded(job, timeout=max(30, min(900, args.timeout)), token=os.environ.get("TUSHARE_TOKEN"),
-                                 cache_dir=cfg.get("cache_dir"), allowed_proxy_hosts=cfg.get("allowed_proxy_hosts"))
+                                 cache_dir=None if args.no_cache else cfg.get("cache_dir"), allowed_proxy_hosts=cfg.get("allowed_proxy_hosts"),
+                                 capture_snapshot=args.snapshot_output is not None)
+        snapshot = answer.pop("snapshot", None)
+        if args.snapshot_output and "error" not in answer:
+            if snapshot is None:
+                raise ValueError("Only statistical_quant experiments produce replay snapshots")
+            if args.output and args.output.resolve() == args.snapshot_output.resolve():
+                raise ValueError("Report and snapshot must be distinct files")
+            save_private_json(args.snapshot_output, snapshot)
     except (OSError, ValueError):
         answer = {"error": {"code": "LOCAL_INPUT", "message": "策略或上传文件无效。"}}
     content = json.dumps(answer, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
@@ -41,6 +52,18 @@ def main():
     else:
         print(content, end="")
     return 1 if "error" in answer else 0
+
+
+def save_private_json(path, value):
+    """Input snapshots can contain licensed/private data; do not inherit umask."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise ValueError("Private output must not be a symlink")
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as stream:
+        os.fchmod(stream.fileno(), 0o600)
+        json.dump(value, stream, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        stream.write("\n")
 
 
 if __name__ == "__main__":

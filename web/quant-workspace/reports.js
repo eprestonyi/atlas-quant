@@ -1,0 +1,674 @@
+// Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
+import { ESTIMATORS } from './defaults.js';
+export function createForecastReports(C, F, { onExecution }) {
+  const { esc: e, fmt, pct, dateText: d, render, api, toast, openModal, closeModal } = C;
+  const ui = {
+    artifactId: null,
+    runIdentity: null,
+    tab: 'forecasts',
+    page: 1,
+    query: '',
+    scope: 'latest',
+    status: 'all',
+    target: '',
+    tradePage: 1,
+    riskPage: 1,
+    riskFilter: 'events',
+    busy: false,
+    replay: null,
+    result: null,
+  };
+  const reasonLabel = (value) => {
+    if (!value) return '按预测入场';
+    const [key, ...rest] = String(value).split(':');
+    const name =
+      {
+        risk_limit_exit: '风险约束退出',
+        target_expiry: '预测目标到期退出',
+        delayed_target_expiry: '目标到期后延迟成交退出',
+        basket_leg_unavailable: '部分篮子腿不可成交',
+        a_share_t1_lock: 'A 股 T+1 锁定',
+        long_t_plus_one: '多头 T+1 尚不可卖',
+        adverse_one_price_bar: '不利方向单一价格行情，拒绝假定成交',
+        net_exposure_limit: '净敞口超限',
+        volatility_target_limit: '估计波动超过目标',
+        volatility_history_unavailable: '波动估计历史不足',
+        factor_exposure_limit: '因子暴露超限',
+        factor_exposure_unavailable: '因子风险数据不可用',
+        nonpositive_equity: '净值非正',
+        entry_clock_not_due: '尚未到入场检查日',
+        position_count_limit: '达到目标持仓数量上限',
+        insufficient_predicted_gross_edge: '预期剩余变化不足',
+        insufficient_predicted_edge_after_estimated_cost: '扣除估计成本后 edge 不足',
+        short_leg_forbidden: '当前方案不允许空头腿',
+        entry_unavailable_forecast_not_delayed: '入场日不可成交，取消本次入场',
+        basket_rebalance_band: '小于权重变化阈值',
+        exposure_limit: '敞口限额不足',
+        risk_inputs_unavailable: '风险输入不可用',
+        invalid_or_expired_forecast: '预测失效或到期',
+        target_outside_available_calendar: '目标超出已知交易日历',
+        forecast_edge_after_cost: '剩余预测变化覆盖预计费用',
+      }[key] || key;
+    return name + (rest.length ? '：' + rest.join(':') : '');
+  };
+  const reportDiagnostics = (r) => r.forecasts?.diagnostics || r.validation || {};
+  const tags = {
+    forecasts: '预测台账 · P / V / e',
+    validation: '预测检验',
+    targets: '目标与对冲定义',
+    models: '模型拟合',
+    execution: '独立执行',
+    provenance: '来源与复现',
+  };
+  const JSONView = (value) =>
+    `<pre class="sq-report-code">${e(JSON.stringify(value, null, 2))}</pre>`;
+  const table = (head, rows) =>
+    `<div class="sq-table-scroll"><table class="sq-table"><thead><tr>${head.map((x) => `<th>${e(x)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+  const cell = (v, n = 4) => `<td class="numeric">${fmt(v, n)}</td>`;
+  const stat = (label, value, note) =>
+    `<article class="sq-report-stat"><span>${e(label)}</span><strong>${e(value)}</strong><small>${e(note)}</small></article>`;
+  const targetName = (id, r = ui.result) => {
+    const def = r?.forecasts?.targetDefinitions?.find((x) => x.id === id);
+    return def
+      ? def.symbols.join(' / ') +
+          (def.construction === 'pca_residual'
+            ? ` · 投影列 ${Number(def.hedgeAudit?.projectionColumn) + 1}`
+            : '')
+      : id;
+  };
+  const pages = (page, total, action) =>
+    `<div class="sq-catalog-pagination"><span>匹配 ${total.toLocaleString()} 条 · 第 ${page} / ${Math.max(1, Math.ceil(total / 25))} 页 · 每页 25 条</span><div>${F.button(action, '上一页', { page: page - 1, small: true, disabled: page <= 1 })}${F.button(action, '下一页', { page: page + 1, small: true, disabled: page * 25 >= total })}</div></div>`;
+  function renderReport(r) {
+    const f = r.forecasts;
+    if (!f) return F.note('此历史报告没有新协议的预测产物；不会补造 P、V 或预测误差。', 'warning');
+    const runIdentity =
+      C.state.runId ||
+      JSON.stringify([
+        f.artifactId,
+        r.strategy?.execution,
+        r.strategy?.portfolio,
+        r.strategy?.costs,
+      ]);
+    if (ui.artifactId !== f.artifactId || ui.runIdentity !== runIdentity) {
+      Object.assign(ui, {
+        artifactId: f.artifactId,
+        runIdentity,
+        tab: 'forecasts',
+        page: 1,
+        query: '',
+        target: '',
+        status: 'all',
+        scope: 'latest',
+        tradePage: 1,
+        riskPage: 1,
+        riskFilter: 'events',
+        replay: null,
+      });
+    }
+    ui.result = r;
+    const v = reportDiagnostics(r),
+      m = v.metrics || {};
+    const evidence =
+      r.selection?.evidenceStatus === 'NO_VALIDATED_FORECAST_EDGE'
+        ? '当前没有验证出预测改善'
+        : '有样本外误差改善；尚未做显著性检验';
+    return `${r.provenance?.synthetic || r.provenance?.dataSource === 'demo' ? F.note('这份报告来自合成教学数据，不构成真实市场证据。', 'warning') : ''}<div class="sq-forecast-identity"><div><span class="sq-kicker">IMMUTABLE FORECAST ARTIFACT</span><code>${e(f.artifactId)}</code><small>${f.totalRows.toLocaleString()} 条完整预测 · ${f.targetDefinitions?.length || 0} 个冻结目标定义 · ${r.research?.executionOnly ? '复用既有预测，未重新拟合' : '独立生成与保存预测'}</small></div><a class="sq-button small" href="/quant/api/statistical-quant/forecasts/${encodeURIComponent(f.artifactId)}/download" download>下载完整私有产物</a></div><div class="sq-report-stats">${stat('成熟预测观测', fmt(m.observations, 0), '未成熟、失效、未交易记录仍保留')}${stat('归一化联合 RMSE', fmt(m.rmse, 6), '预期入场与未来目标共同误差')}${stat('相对无变化 MSE 改善', pct(m.relativeMseImprovement), '负值表示比无变化基准更差')}${stat('剩余变化 RMSE', fmt(m.remainingChangeRmse, 6), '入场到未来目标的变化误差')}</div>${F.note(`${evidence}。${d(v.holdoutStart)} — ${d(v.holdoutEnd)} 为顺序样本外报告期。模型滚动重拟合可使用此前已成熟的报告期标签，重叠标签不视为独立样本。`)}<div class="sq-report-tabs" role="group" aria-label="预测报告章节">${Object.entries(
+      tags
+    )
+      .map(([id, label]) =>
+        F.button('forecast-tab', label, {
+          id,
+          primary: ui.tab === id,
+          pressed: ui.tab === id,
+          small: true,
+        })
+      )
+      .join(
+        ''
+      )}</div>${({ forecasts: forecastRows, validation, targets, models, execution, provenance }[ui.tab] || forecastRows)(r)}${r.warnings?.length ? F.advanced('本次计算返回的边界与限制', `<ul class="sq-report-warning-list">${r.warnings.map((x) => `<li>${e(typeof x === 'string' ? x : x.message || JSON.stringify(x))}</li>`).join('')}</ul>`) : ''}`;
+  }
+  function selectedRows(r) {
+    let rows = [...(r.forecasts.rows || [])];
+    if (ui.scope === 'latest') {
+      const latest = new Map();
+      for (const row of rows) {
+        const key = targetName(row.targetId, r);
+        if (!latest.has(key) || row.date > latest.get(key).date) latest.set(key, row);
+      }
+      rows = [...latest.values()];
+    }
+    if (ui.status === 'mature') rows = rows.filter((x) => x.labelMaturedAt);
+    else if (ui.status === 'unmatured') rows = rows.filter((x) => !x.labelMaturedAt);
+    else if (ui.status !== 'all') rows = rows.filter((x) => x.status === ui.status);
+    if (ui.target) rows = rows.filter((x) => targetName(x.targetId, r) === ui.target);
+    const q = ui.query.toLowerCase().trim();
+    if (q)
+      rows = rows.filter((x) =>
+        [x.forecastId, x.date, x.targetId, targetName(x.targetId, r), x.invalidReason || '']
+          .join(' ')
+          .toLowerCase()
+          .includes(q)
+      );
+    return rows.sort(
+      (a, b) => b.date.localeCompare(a.date) || a.targetId.localeCompare(b.targetId)
+    );
+  }
+  function forecastRows(r) {
+    const rows = selectedRows(r),
+      page = Math.min(ui.page, Math.max(1, Math.ceil(rows.length / 25))),
+      shown = rows.slice((page - 1) * 25, page * 25),
+      names = [...new Set(r.forecasts.targetDefinitions.map((x) => targetName(x.id, r)))];
+    return F.panel(
+      '每一条预测都可核对',
+      `<div class="sq-report-controls"><label class="sq-search">${C.icon('search')}<input id="sq-forecast-search" aria-label="搜索预测记录" value="${e(ui.query)}" placeholder="日期、标的、forecastId"></label><select id="sq-forecast-scope" aria-label="预测时间范围"><option value="latest" ${ui.scope === 'latest' ? 'selected' : ''}>每组目标最新记录</option><option value="all" ${ui.scope === 'all' ? 'selected' : ''}>全部历史记录</option></select><select id="sq-forecast-status" aria-label="预测状态">${Object.entries(
+        {
+          all: '所有状态',
+          valid: '有效预测',
+          invalid: '失效预测',
+          mature: '标签已成熟',
+          unmatured: '标签未成熟',
+        }
+      )
+        .map(
+          ([key, label]) =>
+            `<option value="${key}" ${ui.status === key ? 'selected' : ''}>${label}</option>`
+        )
+        .join(
+          ''
+        )}</select><select id="sq-forecast-target" aria-label="预测目标"><option value="">全部目标</option>${names.map((x) => `<option value="${e(x)}" ${x === ui.target ? 'selected' : ''}>${e(x)}</option>`).join('')}</select></div>${table(
+        [
+          '观察日 / 目标',
+          '当前状态 P',
+          '预期入场',
+          '预期未来 V',
+          'e = P − V',
+          '剩余预期 bps',
+          '实现未来 / 误差',
+          '状态 / 记录',
+        ],
+        shown.map(
+          (row) =>
+            `<tr><td>${e(d(row.date))}<small>${e(targetName(row.targetId, r))}</small><small>h=${row.horizonSessions} · 目标 ${e(d(row.targetDate))}</small></td>${cell(row.currentState)}${cell(row.expectedEntry)}${cell(row.expectedFuture)}${cell(row.edgeGap)}${cell(row.expectedGrossBps, 2)}<td class="numeric">${fmt(row.realizedFuture, 4)}<small>${fmt(row.forecastError, 4)}</small></td><td><span class="sq-status ${row.status === 'valid' ? 'ready' : 'warning'}">${row.status === 'valid' ? '有效' : '失效'}</span><small>${row.labelMaturedAt ? '标签成熟' : '标签未成熟'}</small>${F.button('forecast-row', '查看记录', { id: row.forecastId, small: true })}</td></tr>`
+        )
+      )}${!shown.length ? F.empty('没有匹配预测', '更换范围、状态或搜索条件。') : ''}${pages(page, rows.length, 'forecast-page')}<p class="sq-subtle">P／V／e 使用对应目标的价格单位；不同篮子的绝对值不能直接混比。误差 = 实现未来 − 预期未来。最新记录可能因超出已知交易日历而失效，不会隐去。未知值显示 —。</p>`,
+      {
+        kicker: 'FORECAST LEDGER',
+        description:
+          '所有数据来自本次冻结产物。点击记录查看信息截止、数量定义、拟合 ID 和实际时间。',
+      }
+    );
+  }
+  function validation(r) {
+    const v = reportDiagnostics(r),
+      m = v.metrics || {};
+    return (
+      uncertainty(r) +
+      factorIncrement(r) +
+      F.panel(
+        '预测与无变化基准',
+        F.note(
+          m.weighting === 'equal_weight_daily_average'
+            ? `按观察日期等权聚合，每个日期先计算截面均值；共 ${m.observedDates ?? '—'} 个日期。此表偏差 = 预期 − 实际。`
+            : '此历史报告未声明日期权重口径；保留原统计值。此表偏差 = 预期 − 实际。'
+        ) +
+          table(
+            ['统计量', '数值', '解释'],
+            [
+              ['联合 MSE', m.mse, '预测归一化入场与退出状态'],
+              ['无变化 MSE', m.noChangeMse, '入场与退出均预测为当前状态'],
+              ['MSE 改善', m.mseImprovement, '无变化 MSE − 模型 MSE'],
+              ['归一化 MAE', m.mae, '绝对误差'],
+              ['入场 RMSE', m.entryRmse, '预期入场状态'],
+              ['目标 RMSE', m.exitRmse, '预期未来状态'],
+              ['剩余变化 RMSE', m.remainingChangeRmse, '预期剩余变化与实际变化'],
+              ['入场偏差', m.bias?.[0], '预期 − 实际'],
+              ['目标偏差', m.bias?.[1], '预期 − 实际'],
+            ].map(
+              ([label, value, help]) =>
+                `<tr><td>${label}</td>${cell(value, 7)}<td>${help}</td></tr>`
+            )
+          )
+      ) +
+      F.panel(
+        '按目标分别计量',
+        table(
+          ['目标', '成熟观测', '价格单位偏差', '价格单位 RMSE'],
+          (v.perTarget || [])
+            .slice((ui.page - 1) * 25, ui.page * 25)
+            .map(
+              (x) =>
+                `<tr><td>${e(targetName(x.targetId, r))}<small class="mono">${e(x.targetId)}</small></td>${cell(x.observations, 0)}${cell(x.priceBias)}${cell(x.priceRmse)}</tr>`
+            )
+        ) + pages(ui.page, v.perTarget?.length || 0, 'forecast-page')
+      ) +
+      F.panel(
+        '开发期模型比较',
+        table(
+          ['候选', '参数', '验证损失 / 状态'],
+          (v.finalTrials || []).map(
+            (x) =>
+              `<tr><td>${e(ESTIMATORS[x.estimator] || x.estimator || x.id)}<small>${e(x.id)}</small></td><td><code>${e(JSON.stringify(x.params || {}))}</code></td><td>${e(x.score !== undefined ? fmt(x.score, 7) : x.status || '未返回')}${F.button('forecast-trial', '折内证据', { id: x.id, small: true })}</td></tr>`
+          )
+        )
+      ) +
+      F.panel(
+        '按时间验证的证据',
+        `<dl class="sq-key-values"><dt>最终区间选模型</dt><dd>${v.selectionUsesHoldout === false ? '否' : v.selectionUsesHoldout === true ? '是' : '未返回证据'}</dd><dt>标签清除规则</dt><dd>${e(v.purgeRule || '未返回')}</dd><dt>顺序滚动拟合</dt><dd>${v.rollingRefitsUseMaturedPastHoldoutLabels ? '可使用此前成熟的报告期标签' : '未返回该证据'}</dd><dt>显著性检验</dt><dd>${v.significanceTested ? '引擎已记录' : '未提供独立显著性结论；均值区间另列'}</dd></dl>${F.advanced('外层折与训练边界', JSONView(v.outerFolds || []))}`,
+        { description: '误差改善不等于可获利，不把均值回归作为已经成立的前提。' }
+      )
+    );
+  }
+  function factorIncrement(r) {
+    const f = reportDiagnostics(r).factorIncrement;
+    if (!f) return F.note('此报告没有生成因子增量对照。不会从目录定义推断增量收益。');
+    if (f.status === 'not_applicable')
+      return F.note(
+        '当前没有额外预测或事件因子，因子增量对照不适用。PCA 对冲角色没有被当作预测特征移除。'
+      );
+    if (f.status !== 'available')
+      return F.panel(
+        '因子增量目前不可估计',
+        F.note(
+          '没有足够的双方有效且成熟的配对预测，本次没有计算预测改善。模型不可用不等于未来标签尚未成熟；不会把缺失改善填成 0。',
+          'warning'
+        ) +
+          incrementCoverage(f) +
+          `<div class="sq-actions">${F.button('forecast-baseline', '查看状态基准预测', { icon: 'book', small: true })}</div>`
+      );
+    return F.panel(
+      '这些因子是否改善了预测？',
+      `${table(
+        ['对照', '按日期均衡的联合 MSE'],
+        [
+          ['加入额外因子', f.withFactorsMse],
+          ['只保留模型自带状态', f.stateOnlyMse],
+          ['因子增量改善 · 基准减当前', f.dateBalancedMseImprovement],
+        ].map(([name, value]) => `<tr><td>${name}</td>${cell(value, 8)}</tr>`)
+      )}<div class="sq-report-stats">${stat('配对观察日期', fmt(f.pairedDates, 0), '相同目标、日期与双方有效成熟预测')}${stat('配对观测', fmt(f.pairedObservations, 0), '未把截面行数当作独立样本量')}${stat('相对 MSE 改善', pct(f.relativeMseImprovement), '负值表示加入因子后误差更高')}</div>${F.note(f.dateBalancedMseImprovement > 0 ? '这组因子在本次配对预测上降低了损失。该差异尚未进行因子增量显著性检验，不能解释为因果贡献或可获利。' : '这组因子没有降低本次配对预测损失。负向结果照常保留，不隐藏不利对照。', 'warning')}<p class="sq-subtle">实际移除的预测输入：${e((f.featuresRemoved || []).join('、'))}。基准在相同候选与验证预算内独立选模；冻结目标数量和事件/缺失输入掩码保持一致，但两个模型不一定生成相同范围的有效预测。对冲因子未被移除。</p>${incrementCoverage(f)}<div class="sq-actions">${F.button('forecast-baseline', '查看状态基准预测', { icon: 'book', small: true })}</div>${F.advanced(
+        '配对日期、模型与对照规则',
+        `${table(
+          ['日期', '成熟配对数', '加入因子 MSE', '状态基准 MSE'],
+          (f.dailyLosses || [])
+            .slice(0, 25)
+            .map(
+              (x) =>
+                `<tr><td>${e(d(x.date))}</td>${cell(x.observations, 0)}${cell(x.withFactorsMse, 8)}${cell(x.stateOnlyMse, 8)}</tr>`
+            )
+        )}<p class="sq-subtle">此处预览前 25 个日期；完整产物保留 ${f.dailyLosses?.length || 0} 个日期及全部基准预测。</p>${JSONView({ method: f.method, sameEventAndMissingInputMask: f.sameEventAndMissingInputMask, hedgeFactorsAblated: f.hedgeFactorsAblated, significanceTested: f.significanceTested, causalAttribution: f.causalAttribution, profitabilityEstablished: f.profitabilityEstablished, baselineSelectedModel: f.baselineValidation?.selectedModel })}`
+      )}`,
+      { kicker: 'ACTUALLY COMPUTED FEATURE ABLATION' }
+    );
+  }
+  function incrementCoverage(f) {
+    if (!f.coverage)
+      return F.note('此历史报告未返回完整对照覆盖表；配对数不能证明两个模型覆盖了相同记录。');
+    const c = f.coverage;
+    return `<h3>配对范围与未配对记录</h3>${table(
+      ['记录口径', '加入因子模型', '状态基准'],
+      [
+        ['有效预测', c.fullValidRows, c.baselineValidRows],
+        ['标签已成熟（含模型失效）', c.fullMatureRows, c.baselineMatureRows],
+        ['同时有效且成熟', c.fullValidMatureRows, c.baselineValidMatureRows],
+        ['有效但未配对', c.fullValidUnmatchedRows, c.baselineValidUnmatchedRows],
+        ['模型不可用', c.fullUnavailableModelRows, c.baselineUnavailableModelRows],
+        ['失效记录', c.fullInvalidRows, c.baselineInvalidRows],
+      ].map(
+        ([name, full, baseline]) => `<tr><td>${name}</td>${cell(full, 0)}${cell(baseline, 0)}</tr>`
+      )
+    )}<p class="sq-subtle">配对 ${fmt(c.matchedRows, 0)} 条 / ${fmt(c.matchedDates, 0)} 日期；${f.bothModelValidOnly === true ? '只比较双方均有效的预测' : '本报告未声明双方有效筛选'}。有效输出范围${f.outputValidityMasksIdentical === true ? '一致' : f.outputValidityMasksIdentical === false ? '不一致' : '未返回核对'}。原始未配对记录仍保留。这里没有单独的因子增量置信区间，不会相减两组基准区间制造显著性。</p>`;
+  }
+  function riskEvidence(r) {
+    const x = r.execution || {},
+      risk = x.riskAdapter;
+    if (!risk) return '';
+    const events = new Map();
+    for (const t of r.trades || [])
+      if (t.exitReason === 'risk_limit_exit') {
+        const v = events.get(t.date) || { exits: 0, pending: [] };
+        v.exits++;
+        events.set(t.date, v);
+      }
+    for (const decision of x.decisions || [])
+      if (decision.action === 'exit_pending') {
+        const v = events.get(decision.date) || { exits: 0, pending: [] };
+        v.pending.push(decision);
+        events.set(decision.date, v);
+      }
+    const all = x.ledger || [],
+      rows = all.filter(
+        (row) =>
+          ui.riskFilter === 'all' ||
+          (ui.riskFilter === 'events' &&
+            ((row.riskBreaches || []).length || events.has(row.date))) ||
+          (ui.riskFilter === 'missing' &&
+            ((row.unavailableRiskInputs?.factors || []).length ||
+              (row.unavailableRiskInputs?.volatilitySymbols || []).length))
+      ),
+      shown = rows.slice((ui.riskPage - 1) * 25, ui.riskPage * 25);
+    return F.panel(
+      '风险约束实际怎样生效',
+      `<dl class="sq-key-values"><dt>仓位缩放</dt><dd>${risk.sizingMode === 'volatility_target' ? '历史协方差波动目标' : '固定名义敞口'}</dd><dt>总 / 净敞口上限</dt><dd>${pct(risk.grossExposure)} / ${pct(risk.netExposureLimit)}</dd><dt>单股目标上限</dt><dd>${pct(risk.maxWeight)}</dd><dt>波动目标 / 窗口</dt><dd>${risk.sizingMode === 'volatility_target' ? `${pct(risk.targetAnnualVolatility)} / ${risk.volatilityLookback} 日` : '本次未启用波动目标'}</dd><dt>因子暴露约束</dt><dd>${(risk.factorExposureLimits || []).map((z) => `${e(z.factorId)} ≤ ${fmt(z.maxAbsExposure, 2)}`).join('；') || '没有配置'}</dd></dl><div class="sq-report-controls"><label class="sq-field"><span>风险日期筛选</span><select id="sq-risk-filter">${Object.entries(
+        {
+          events: '风险违例 / 风险退出 / 受限退出',
+          missing: '风险输入缺失日期',
+          all: '全部风险日期',
+        }
+      )
+        .map(
+          ([key, label]) =>
+            `<option value="${key}" ${ui.riskFilter === key ? 'selected' : ''}>${label}</option>`
+        )
+        .join('')}</select></label></div>${table(
+        ['日期 / 风险截止', '实际总 / 净敞口', '估计年化波动', '超限 / 退出', '核对'],
+        shown.map((row) => {
+          const event = events.get(row.date);
+          return `<tr><td>${e(d(row.date))}<small>${e(row.riskInformationCutoff || '未返回')}</small></td><td>${pct(row.risk?.gross ?? row.grossExposure)}<small>${pct(row.risk?.net ?? row.netExposure)}</small></td><td>${pct(row.risk?.annualVolatility)}</td><td>${e(row.riskBreaches?.map(reasonLabel).join('；') || '收盘未记录超限')}<small>${event?.exits ? `风险退出 ${event.exits} 条交易腿` : '无风险退出成交'}</small><small>${event?.pending.length ? `等待退出 ${event.pending.length} 项：${[...new Set(event.pending.map((x) => reasonLabel(x.reason)))].join('；')}` : ''}</small></td><td>${F.button('forecast-risk-detail', '风险明细', { id: row.date, small: true })}</td></tr>`;
+        })
+      )}${!shown.length ? F.empty('这个筛选下没有风险日期', '可切换“全部风险日期”检查逐日敞口；零事件不会被补造成风险触发。') : ''}${pages(ui.riskPage, rows.length, 'forecast-risk-page')}<p class="sq-subtle">风险信息来自前一收盘。目标限额与实际价格漂移分别记录；存在风险退出条件时，T+1 和篮子可成交性仍可能限制即时成交。</p>${F.advanced('查看风险实现与完整字段名', JSONView(risk))}`
+    );
+  }
+  function uncertainty(r) {
+    const u = reportDiagnostics(r).aggregateUncertainty;
+    if (!u) return F.note('本报告未返回依赖感知区间估计，不能据此展示统计显著性。');
+    return F.panel(
+      '历史平均预测损失改善区间',
+      `${F.note('按观察日期整体进行区块重采样，以保留日期内截面相关和部分时间依赖。这是历史平均损失与偏差的区间，不是单股未来价格的置信带。此处偏差采用 实际 − 预期。')}${
+        u.intervals
+          ? table(
+              ['统计量', '估计', '区间下界', '区间上界'],
+              Object.entries({
+                lossImprovement: '预测损失改善',
+                entryBias: '入场偏差',
+                exitBias: '未来目标偏差',
+                remainingChangeBias: '剩余变化偏差',
+              }).map(([key, label]) => {
+                const x = u.intervals[key];
+                return `<tr><td>${label}</td>${cell(x?.estimate, 7)}${cell(x?.lower, 7)}${cell(x?.upper, 7)}</tr>`;
+              })
+            )
+          : F.note('区间不可用：样本不足或本次计算未产生有效区间。')
+      }<p class="sq-subtle">状态 ${e(u.status)} · 观察日期 ${e(u.observedDates ?? '—')} · 预测记录 ${e(u.forecastRows ?? '—')} · 区块长度 ${e(u.blockLengthObservations ?? '—')} · 置信水平 ${pct(u.confidenceLevel)}</p>${F.advanced('区块敏感性与假设', JSONView({ blockSensitivity: u.blockSensitivity, assumptions: u.assumptions, limitations: u.limitations }))}`
+    );
+  }
+  function targets(r) {
+    const definitions = r.forecasts.targetDefinitions || [],
+      shown = definitions.slice((ui.page - 1) * 25, ui.page * 25);
+    return F.panel(
+      '同一次预测，使用同一组固定数量',
+      `${table(
+        ['定义 / 构造', '成员与数量', '形成区间', '单位 / 审计'],
+        shown.map(
+          (x) =>
+            `<tr><td><code>${e(x.id)}</code><small>${e(typeof x.construction === 'object' ? JSON.stringify(x.construction) : x.construction)}</small></td><td>${x.symbols.map((symbol, n) => `${e(symbol)} × ${fmt(Array.isArray(x.quantities) ? x.quantities[n] : x.quantities?.[symbol], 6)}`).join('<br>')}</td><td>${e(d(x.formationStart))}<small>${e(d(x.formationEnd))}</small></td><td>${e(x.unit)}${F.button('forecast-target-detail', '定义证据', { id: x.id, small: true })}</td></tr>`
+        )
+      )}${pages(ui.page, definitions.length, 'forecast-page')}${F.note('两腿 OLS、PCA 与固定数量定义计量目标。未来状态由独立 F 模型预测。OLS 截距不是交易腿；PCA 投影不自动构成市场 beta 中性、协整或价格收敛证据。')}`
+    );
+  }
+  function models(r) {
+    const rows = r.forecasts.modelFits || [],
+      shown = rows.slice((ui.page - 1) * 25, ui.page * 25);
+    return F.panel(
+      '每次 F 拟合的可用信息',
+      `${table(
+        ['模型拟合', '训练观察日期', '最晚标签成熟', '估计器 / 检查'],
+        shown.map(
+          (x) =>
+            `<tr><td>${e(d(x.fitDate))}<small class="mono">${e(x.id)}</small></td><td>${e(d(x.trainStart))} → ${e(d(x.trainEnd))}<small>${fmt(x.trainDates, 0)} 个观察日期</small></td><td>${e(d(x.labelEndMax))}<small>截止 ${e(d(x.informationCutoff))}</small></td><td>${e(ESTIMATORS[x.estimator] || x.estimator || r.selection?.winner)}${x.status === 'invalid' ? `<small class="sq-status warning">${e(x.invalidReason === 'MISSING_MODEL_DATA' ? '模型数据不足，本次未拟合' : x.invalidReason || '本次拟合不可用')}</small>` : ''}${F.button('forecast-fit', '拟合审计', { id: x.id, small: true })}</td></tr>`
+        )
+      )}${pages(ui.page, rows.length, 'forecast-page')}`,
+      {
+        description:
+          '预处理、去相关和状态效应来自实际训练拟合。不会把“模型族名含回归”当作已证明的均值回归。',
+      }
+    );
+  }
+  function replayFactorLimits(r, cfg) {
+    const limits = cfg.portfolio.factorExposureLimits || [];
+    return `<h3>这次执行的因子暴露限制</h3><p class="sq-subtle">使用原研究已冻结的因子数据，限制研究池内标准化暴露 |wᵀz|；不会新增因子或重新训练预测。</p><div class="sq-factor-risk">${
+      (r.strategy.factors || [])
+        .map((f) => {
+          const limit = limits.find((x) => x.factorId === f.id);
+          return `<label><input type="checkbox" data-sq-replay-risk-factor="${e(f.id)}" ${limit ? 'checked' : ''}><span>${e(f.name || f.id)}</span><input type="number" data-sq-replay-risk-max="${e(f.id)}" aria-label="执行方案 ${e(f.name || f.id)} 最大绝对暴露" value="${e(limit?.maxAbsExposure ?? 0.5)}" min="0" max="5" step=".05" ${limit ? '' : 'disabled'}></label>`;
+        })
+        .join('') || '<p class="sq-subtle">原研究没有额外因子；这里不补造风险暴露输入。</p>'
+    }</div>`;
+  }
+  function replayForm(r) {
+    const cfg = ui.replay || {
+      execution: structuredClone(r.strategy.execution),
+      portfolio: structuredClone(r.strategy.portfolio),
+      costs: structuredClone(r.strategy.costs),
+    };
+    ui.replay = cfg;
+    const input = (label, path, value, min, max, step = 1) =>
+      `<label class="sq-field"><span>${label}</span><input type="number" id="sq-replay-${path.replaceAll('.', '-')}" data-sq-replay="${path}" min="${min}" max="${max}" step="${step}" value="${e(value)}"></label>`;
+    return F.advanced(
+      '复用这份预测，创建新的执行方案',
+      `${F.note('预测、目标数量、原始行情和日历均保持冻结。这里只变更执行、仓位与费用，不重新拟合模型。')}<div class="sq-form-grid"><label class="sq-field"><span>执行方向</span><select data-sq-replay="execution.side"><option value="long_short" ${cfg.execution.side === 'long_short' ? 'selected' : ''}>理论多空</option><option value="long_only" ${cfg.execution.side === 'long_only' ? 'selected' : ''}>仅多头</option></select></label>${input('最小预期剩余 edge（bps）', 'execution.minEdgeBps', cfg.execution.minEdgeBps, 0, 10000)}${input('最多目标持仓', 'execution.maxPositions', cfg.execution.maxPositions, 1, 50)}${input('目标总敞口', 'portfolio.grossExposure', cfg.portfolio.grossExposure, 0.1, 2, 0.1)}${input('单标的权重上限', 'portfolio.maxWeight', cfg.portfolio.maxWeight, 0.01, 1, 0.01)}${input('净敞口绝对上限', 'portfolio.netExposureLimit', cfg.portfolio.netExposureLimit ?? 2, 0, 2, 0.1)}<label class="sq-field"><span>仓位缩放</span><select data-sq-replay="portfolio.sizingMode"><option value="fixed" ${(cfg.portfolio.sizingMode || 'fixed') === 'fixed' ? 'selected' : ''}>固定名义敞口</option><option value="volatility_target" ${cfg.portfolio.sizingMode === 'volatility_target' ? 'selected' : ''}>历史协方差波动目标</option></select></label>${input('目标年化波动', 'portfolio.targetAnnualVolatility', cfg.portfolio.targetAnnualVolatility ?? 0.1, 0.01, 1, 0.01)}${input('波动窗口', 'portfolio.volatilityLookback', cfg.portfolio.volatilityLookback ?? 60, 20, 252)}${input('调仓检查间隔', 'portfolio.rebalanceDays', cfg.portfolio.rebalanceDays, 1, 60)}${input('初始资金（元）', 'portfolio.initialCapital', cfg.portfolio.initialCapital, 10000, 1e9, 10000)}${input('权重变化阈值（bps）', 'portfolio.rebalanceThresholdBps', cfg.portfolio.rebalanceThresholdBps, 0, 10000)}${input('佣金（bps）', 'costs.commissionBps', cfg.costs.commissionBps, 0, 100, 0.1)}${input('最低佣金（元）', 'costs.minCommission', cfg.costs.minCommission, 0, 1000, 0.1)}${input('滑点（bps）', 'costs.slippageBps', cfg.costs.slippageBps, 0, 200, 0.1)}${input('卖出税费（bps）', 'costs.sellTaxBps', cfg.costs.sellTaxBps, 0, 100, 0.1)}${input('过户费（bps）', 'costs.transferBps', cfg.costs.transferBps, 0, 100, 0.01)}${input('年化理论借券费（bps）', 'costs.borrowAnnualBps', cfg.costs.borrowAnnualBps, 0, 10000)}</div>${replayFactorLimits(r, cfg)}<div class="sq-actions">${F.button('forecast-execute', ui.busy ? '正在提交' : '复用预测运行执行', { primary: true, icon: 'play', disabled: ui.busy })}</div>`,
+      false
+    );
+  }
+  function execution(r) {
+    const x = r.execution || {},
+      m = r.metrics;
+    let body = F.note(
+      '本次是完整的纯预测研究：未创建持仓、交易或净值。预测诊断已完成，可以继续研究独立执行方案。'
+    );
+    if (x.enabled && m) {
+      body = `<div class="sq-report-stats">${stat('执行净收益', pct(m.totalReturn), '实际模拟成交后，扣除全部声明成本')}${stat('最大回撤', pct(m.maxDrawdown), '现金加有符号持仓的净值')}${stat('交易腿数', fmt(m.tradeCount, 0), '每笔成交引用 forecastId')}${stat('累计费用', fmt(m.totalCosts), '佣金、滑点、税费、过户及借券')}</div>${F.panel('独立执行净值', C.equityChart(r.equity || []) + `<p class="sq-subtle">预测误差不是现金 PnL。净值来自实际模拟的成交、费用和持仓估值。</p>`)}${F.panel(
+        '交易与预测引用',
+        table(
+          ['成交日 / 标的', '方向 / 数量', '成交价 / 名义额', '费用', '预测 / 退出原因'],
+          (r.trades || [])
+            .slice((ui.tradePage - 1) * 25, ui.tradePage * 25)
+            .map(
+              (t) =>
+                `<tr><td>${e(d(t.date))}<small>${e(t.symbol)}</small></td><td>${e(t.side)}<small>${fmt(t.signedQuantity, 4)}</small></td><td>${fmt(t.price, 4)}<small>${fmt(t.notional, 2)}</small></td>${cell(t.cost, 2)}<td>${F.button('forecast-row', '对应预测', { id: t.forecastId, small: true })}<small>${e(reasonLabel(t.exitReason))}</small></td></tr>`
+            )
+        ) + pages(ui.tradePage, r.trades?.length || 0, 'forecast-trade-page')
+      )}${F.advanced('执行决策、未成交原因与费用合计', JSONView({ costBreakdown: m.costBreakdown, decisions: (x.decisions || []).slice(0, 200), previewLimit: 200, totalDecisions: x.decisions?.length, completeRecord: '完整报告 JSON 保留全部决策' }))}`;
+    }
+    return `${body}${riskEvidence(r)}${replayForm(r)}${F.panel('执行边界', `<dl class="sq-key-values"><dt>预测产物</dt><dd><code>${e(r.forecasts.artifactId)}</code></dd><dt>此次重新拟合</dt><dd>${r.research?.predictionRefitPerformed === false ? '否，复用已冻结预测' : r.research?.predictionRefitPerformed === true ? '本次生成了新的预测' : '未返回证据'}</dd><dt>借券库存</dt><dd>${x.shortInventoryVerified ? '已验证' : '理论假设，未核验实际券源'}</dd><dt>到期终止</dt><dd>不能任意顺延入场；到期不可成交退出按实际可成交时点处理。</dd><dt>成交单位</dt><dd>${e(x.unit === 'fractional_adjusted_research_units' ? '可分割的复权研究单位；未按交易所整手撮合' : x.unit || '预测研究尚未执行')}</dd></dl>`)}`;
+  }
+  function provenance(r) {
+    return F.panel(
+      '数据与研究身份',
+      `<dl class="sq-key-values"><dt>引擎版本</dt><dd>${e(r.engineVersion)}</dd><dt>数据指纹</dt><dd><code>${e(r.forecasts.dataFingerprint)}</code></dd><dt>预测配置指纹</dt><dd><code>${e(r.forecasts.predictionConfigHash)}</code></dd><dt>完整预测记录</dt><dd>${r.forecasts.totalRows} · 截断 ${r.forecasts.truncated ? '是' : '否'}</dd></dl>${F.advanced('完整配置', JSONView(r.strategy))}${F.advanced('供应商、日历与字段证据', JSONView(r.provenance), true)}`
+    );
+  }
+  function targetDetail(def) {
+    if (!def) return F.note('没有返回这个目标的数量定义。', 'warning');
+    return `<div class="sq-report-detail"><h3>固定的篮子数量</h3><p class="sq-subtle">当前状态、预期入场、未来目标及实现标签都使用这组数量。数量为负表示该目标中的反向腿。</p>${table(
+      ['标的', '固定数量'],
+      def.symbols.map(
+        (symbol, n) =>
+          `<tr><td>${e(symbol)}</td>${cell(Array.isArray(def.quantities) ? def.quantities[n] : def.quantities?.[symbol], 7)}</tr>`
+      )
+    )}<dl class="sq-key-values"><dt>构造方式</dt><dd>${e({ pair_ols: '两腿价格 OLS', pca_residual: '历史 PCA 投影', fixed: '明确的固定数量', single_asset: '单资产 · 数量 1' }[def.construction] || def.construction)}</dd><dt>形成区间</dt><dd>${e(d(def.formationStart))} — ${e(d(def.formationEnd))}</dd><dt>计量单位</dt><dd>${def.kind === 'asset_price' ? '复权研究价格 / 元' : '复权研究篮子价值 / 元'}</dd></dl>${F.advanced('对冲构造与身份审计', JSONView({ id: def.id, unit: def.unit, hedgeAudit: def.hedgeAudit }))}</div>`;
+  }
+  function rowDetail(row, r) {
+    const definition = r.forecasts.targetDefinitions.find((x) => x.id === row.targetId);
+    const reason =
+      {
+        target_outside_available_calendar: '目标时间超出已返回的交易日历，因此不允许交易。',
+        model_unavailable: '当前模型没有生成有限预测值。',
+        missing_input: '输入状态缺失，未生成可执行预测。',
+      }[row.invalidReason] || row.invalidReason;
+    return `<div class="sq-report-detail">${F.note(row.status === 'valid' ? `有效预测；${row.labelMaturedAt ? '未来标签已经成熟，可以核对预测误差。' : '未来标签尚未成熟，实际状态与误差暂缺。'}` : `此预测失效：${reason || '运行时条件不满足'}。`, 'valid' === row.status ? 'info' : 'warning')}<div class="sq-timeline"><div><span>${e(d(row.date))} · 收盘后</span><strong>观察与信息截止</strong><small>仅使用该时点可知的数据</small></div><div><span>${e(d(row.entryDate))} · 开盘</span><strong>预期入场时点</strong><small>不可成交则不顺延入场</small></div><div><span>${e(d(row.targetDate))} · 开盘</span><strong>未来目标时点</strong><small>入场后 ${e(row.horizonSessions)} 个交易日</small></div></div>${table(
+      ['预测量', '数值', '含义'],
+      [
+        ['当前状态 P', row.currentState, '观察收盘时，固定数量的目标价值'],
+        ['预期入场', row.expectedEntry, '模型预测下一开盘的目标状态'],
+        ['预期未来 V', row.expectedFuture, '模型预测声明期限后的目标状态'],
+        ['e = P − V', row.edgeGap, '当前状态相对预期未来的差距'],
+        ['预期剩余变化', row.expectedGrossPnl, '预期未来 − 预期入场，尚未扣除费用'],
+        ['预期剩余变化 / bps', row.expectedGrossBps, '按观察时已知的正名义尺度归一'],
+        ['实际入场状态', row.realizedEntry, '行情标签，不代表必然获得成交'],
+        ['实际未来状态', row.realizedFuture, '标签成熟后观测到的未来值'],
+        ['预测误差', row.forecastError, '实际未来 − 预期未来'],
+      ].map(([name, value, help]) => `<tr><td>${name}</td>${cell(value, 6)}<td>${help}</td></tr>`)
+    )}${F.note('没有经校准的单笔未来价格置信带。预测数值是条件估计，不是承诺的成交价或收益。')}${targetDetail(definition)}${F.advanced('预测身份与模型引用', `<dl class="sq-key-values"><dt>forecastId</dt><dd><code>${e(row.forecastId)}</code></dd><dt>modelFitId</dt><dd><code>${e(row.modelFitId)}</code></dd><dt>信息截止</dt><dd>${e(row.informationCutoff)}</dd><dt>标签成熟时点</dt><dd>${e(d(row.labelMaturedAt))}</dd></dl>`)}${F.advanced('查看原始记录', JSONView(row))}</div>`;
+  }
+  function fitDetail(fit) {
+    if (!fit) return F.note('没有找到这个拟合记录。', 'warning');
+    return `<div class="sq-report-detail">${fit.status === 'invalid' ? F.note(fit.invalidReason === 'MISSING_MODEL_DATA' ? '这个时点缺少满足条件的训练输入，模型未能拟合。未来标签仍可能已经成熟，不把模型失败当作标签未到期。' : '本次拟合不可用：' + (fit.invalidReason || '未返回原因'), 'warning') : ''}<dl class="sq-key-values"><dt>估计器</dt><dd>${e(ESTIMATORS[fit.estimator] || fit.estimator)}</dd><dt>实际参数</dt><dd><code>${e(JSON.stringify(fit.params || {}))}</code></dd><dt>拟合时点</dt><dd>${e(d(fit.fitDate))}</dd><dt>训练观察日期</dt><dd>${e(d(fit.trainStart))} — ${e(d(fit.trainEnd))}</dd><dt>最晚标签成熟</dt><dd>${e(d(fit.labelEndMax))}</dd><dt>训练规模</dt><dd>${fmt(fit.trainDates, 0)} 日期 / ${fmt(fit.trainRows, 0)} 行</dd><dt>保留输入</dt><dd>${e((fit.featureNames || []).join('、'))}</dd></dl>${
+      fit.stateEffects?.length
+        ? table(
+            ['状态输入', '预测剩余变化效应', '是否观察到负向效应'],
+            fit.stateEffects.map(
+              (x) =>
+                `<tr><td>${e(x.feature)}</td>${cell(x.remainingChangeEffect, 7)}<td>${x.negativeEffectObserved ? '是' : '否'}</td></tr>`
+            )
+          ) + F.note('这是训练状态在四分位区间内扰动的条件效应，不是因果归因或均值回归证明。')
+        : ''
+    }${F.advanced('去相关与输入剔除', JSONView(fit.decorrelation))}${F.advanced('查看原始拟合记录', JSONView(fit))}</div>`;
+  }
+  async function handle(el) {
+    const action = el.dataset.sq;
+    if (!action?.startsWith('forecast-')) return false;
+    const r = ui.result;
+    if (!r) return true;
+    if (action === 'forecast-tab') {
+      ui.tab = el.dataset.id;
+      ui.page = 1;
+      render();
+    }
+    if (action === 'forecast-page') {
+      ui.page = Number(el.dataset.page);
+      render();
+    }
+    if (action === 'forecast-risk-detail') {
+      const row = r.execution?.ledger?.find((x) => x.date === el.dataset.id);
+      if (row)
+        openModal(
+          '逐日风险证据',
+          `${table(
+            ['因子', '实际 z-score 暴露', '声明上限'],
+            Object.entries(row.risk?.factorExposures || {}).map(
+              ([id, value]) =>
+                `<tr><td>${e(id)}</td>${cell(value)}${cell(r.execution.riskAdapter?.factorExposureLimits?.find((x) => x.factorId === id)?.maxAbsExposure)}</tr>`
+            )
+          )}<p class="sq-subtle">${e(row.riskBreaches?.map(reasonLabel).join('；') || '收盘未记录超限')}</p>${F.advanced('查看原始日账本', JSONView(row))}`,
+          true
+        );
+    }
+    if (action === 'forecast-risk-page') {
+      ui.riskPage = Number(el.dataset.page);
+      render();
+    }
+    if (action === 'forecast-baseline') {
+      const rows = reportDiagnostics(r).factorIncrement?.baselineRows || [];
+      openModal(
+        '模型自带状态 · 实际基准预测',
+        `${F.note('这是移除额外预测/事件因子后实际重跑的基准；目标数量和标签保持一致。此处预览最后 25 条，完整产物保留全部基准记录。')}${table(
+          ['日期 / 目标', '当前状态', '预期入场', '预期未来', '误差'],
+          rows
+            .slice(-25)
+            .map(
+              (x) =>
+                `<tr><td>${e(d(x.date))}<small>${e(targetName(x.targetId, r))}</small></td>${cell(x.currentState)}${cell(x.expectedEntry)}${cell(x.expectedFuture)}${cell(x.forecastError)}</tr>`
+            )
+        )}`,
+        true
+      );
+    }
+    if (action === 'forecast-trade-page') {
+      ui.tradePage = Number(el.dataset.page);
+      render();
+    }
+    if (action === 'forecast-row') {
+      const row = r.forecasts.rows.find((x) => x.forecastId === el.dataset.id);
+      if (row) openModal('预测记录 · P / V / e', rowDetail(row, r), true);
+    }
+    if (action === 'forecast-target-detail') {
+      openModal(
+        '冻结目标定义',
+        targetDetail(r.forecasts.targetDefinitions.find((x) => x.id === el.dataset.id)),
+        true
+      );
+    }
+    if (action === 'forecast-fit')
+      openModal(
+        '模型拟合审计',
+        fitDetail(r.forecasts.modelFits.find((x) => x.id === el.dataset.id)),
+        true
+      );
+    if (action === 'forecast-trial')
+      openModal(
+        '候选模型验证证据',
+        JSONView((reportDiagnostics(r).finalTrials || []).find((x) => x.id === el.dataset.id)),
+        true
+      );
+    if (action === 'forecast-execute') {
+      const invalid = [
+        ...document.querySelectorAll('[data-sq-replay],[data-sq-replay-risk-max]'),
+      ].find((x) => !x.checkValidity());
+      if (invalid) {
+        invalid.reportValidity();
+        return true;
+      }
+      ui.busy = true;
+      render();
+      try {
+        await onExecution(r.forecasts.artifactId, {
+          ...ui.replay,
+          execution: { ...ui.replay.execution, enabled: true },
+        });
+        toast('已提交独立执行，将复用同一预测产物。');
+      } finally {
+        ui.busy = false;
+        render();
+      }
+    }
+    return true;
+  }
+  let searchTimer;
+  function onInput(el) {
+    if (el.dataset.sqReplayRiskMax) {
+      const limit = ui.replay?.portfolio.factorExposureLimits?.find(
+        (x) => x.factorId === el.dataset.sqReplayRiskMax
+      );
+      if (limit) limit.maxAbsExposure = el.value === '' ? null : Number(el.value);
+    }
+    if (el.id === 'sq-forecast-search') {
+      ui.query = el.value;
+      ui.page = 1;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(render, 180);
+    }
+    if (el.dataset.sqReplay) {
+      const [part, key] = el.dataset.sqReplay.split('.');
+      if (!ui.replay || !['execution', 'portfolio', 'costs'].includes(part)) return;
+      ui.replay[part][key] =
+        el.type === 'number' ? (el.value === '' ? null : Number(el.value)) : el.value;
+    }
+  }
+  function onChange(el) {
+    if (el.dataset.sqReplayRiskFactor && ui.replay) {
+      const id = el.dataset.sqReplayRiskFactor;
+      ui.replay.portfolio.factorExposureLimits = (
+        ui.replay.portfolio.factorExposureLimits || []
+      ).filter((x) => x.factorId !== id);
+      if (el.checked)
+        ui.replay.portfolio.factorExposureLimits.push({ factorId: id, maxAbsExposure: 0.5 });
+      render();
+    }
+    if (el.id === 'sq-risk-filter') {
+      ui.riskFilter = el.value;
+      ui.riskPage = 1;
+      render();
+    }
+    const mapping = {
+      'sq-forecast-scope': 'scope',
+      'sq-forecast-status': 'status',
+      'sq-forecast-target': 'target',
+    };
+    if (mapping[el.id]) {
+      ui[mapping[el.id]] = el.value;
+      ui.page = 1;
+      render();
+    }
+    onInput(el);
+  }
+  return { render: renderReport, handle, onInput, onChange, ui };
+}

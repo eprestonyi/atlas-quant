@@ -1,5 +1,6 @@
 import {validateUniverseSelection} from './universe.mjs';
-export class ApiError extends Error{constructor(code,message,status=400){super(message);this.code=code;this.status=status;}}
+import {ApiError} from './errors.mjs';
+export {ApiError} from './errors.mjs';
 export const FIELDS=new Set('open high low close raw_close vol amount adj_factor turnover_rate turnover_rate_f volume_ratio pe pe_ttm pb ps ps_ttm dv_ratio dv_ttm total_share float_share free_share total_mv circ_mv'.split(' '));
 const WINDOWS=new Set('lag returns delta ts_mean ts_std ts_min ts_max ts_sum ts_rank'.split(' '));
 const UNARY=new Set('rank zscore log abs sqrt sign'.split(' '));
@@ -74,9 +75,24 @@ export function validateStatArbConfig(input,n,factors){
  for(const [key,lo,hi,int] of [['formationDays',60,504,true],['residualWindow',20,252,true],['components',1,10,true],['refitDays',1,126,true],['entryZ',.25,6,false],['exitZ',0,5.9,false],['stopZ',.3,10,false],['maxHoldingDays',1,252,true],['grossExposure',.1,2,false],['borrowAnnualBps',0,10000,false],['maxHalfLife',1,252,false]])a[key]=number(a[key],key,lo,hi,int);
  if(!(a.exitZ<a.entryZ&&a.entryZ<a.stopZ))fail('须满足退出阈值 < 入场阈值 < 止损阈值');if(a.residualWindow>a.formationDays)fail('残差窗口不可超过形成窗口');if(a.method==='pca_residual'&&a.components>n-2)fail('PCA成分数最多为股票数减2');if(a.method==='factor_residual'&&!factors)fail('显式因子残差至少需要一个因子');return Object.fromEntries(Object.keys(defaults).map(k=>[k,a[k]]));
 }
-function validateUniverseState(u){
- if(u.selection===undefined)return {};let selection;try{selection=validateUniverseSelection(u.selection);}catch(e){fail(e.message);}
+export function validateUniverseState(u,{strictSnapshot=false}={}){
+ const evidenceKeys=['resolutionHash','snapshotHash','subsetPolicy','catalogSnapshot'];
+ if(u.selection===undefined){
+  if(strictSnapshot&&evidenceKeys.some(key=>u[key]!==undefined))fail('股票池版本证据必须与完整selection一起保存');
+  return {};
+ }
+ let selection;try{selection=validateUniverseSelection(u.selection);}catch(e){fail(e.message);}
  const hash=(v,label)=>{if(typeof v!=='string'||!/^[a-f0-9]{64}$/.test(v))fail(label+'无效，请重新解析股票池');return v;};
- if(!['all','explicit'].includes(u.subsetPolicy))fail('请明确使用完整筛选结果或自行选择研究子集');
- return {selection,resolutionHash:hash(u.resolutionHash,'结果版本'),snapshotHash:hash(u.snapshotHash,'目录版本'),subsetPolicy:u.subsetPolicy,...(u.catalogSnapshot&&typeof u.catalogSnapshot==='object'&&!Array.isArray(u.catalogSnapshot)?{catalogSnapshot:{hash:hash(u.catalogSnapshot.hash,'快照版本'),asOf:typeof u.catalogSnapshot.asOf==='string'?u.catalogSnapshot.asOf.slice(0,80):null,historicalMembershipVerified:false}}:{})};
+ if(typeof u.subsetPolicy!=='string'||!['all','explicit'].includes(u.subsetPolicy))fail('请明确使用完整筛选结果或自行选择研究子集');
+ let catalogSnapshot;
+ if(strictSnapshot&&u.catalogSnapshot!==undefined){
+  const snap=u.catalogSnapshot;
+  if(!snap||typeof snap!=='object'||Array.isArray(snap)||Object.keys(snap).some(key=>!['hash','asOf','historicalMembershipVerified'].includes(key)))fail('目录快照结构或字段无效');
+  if(snap.historicalMembershipVerified!==undefined&&snap.historicalMembershipVerified!==false)fail('尚未验证历史成员，不能标记为已验证');
+  if(snap.asOf!==undefined&&snap.asOf!==null&&(typeof snap.asOf!=='string'||snap.asOf.length>80))fail('目录快照日期无效');
+  catalogSnapshot={hash:hash(snap.hash,'快照版本'),asOf:snap.asOf??null,historicalMembershipVerified:false};
+ }else if(!strictSnapshot&&u.catalogSnapshot&&typeof u.catalogSnapshot==='object'&&!Array.isArray(u.catalogSnapshot)){
+  catalogSnapshot={hash:hash(u.catalogSnapshot.hash,'快照版本'),asOf:typeof u.catalogSnapshot.asOf==='string'?u.catalogSnapshot.asOf.slice(0,80):null,historicalMembershipVerified:false};
+ }
+ return {selection,resolutionHash:hash(u.resolutionHash,'结果版本'),snapshotHash:hash(u.snapshotHash,'目录版本'),subsetPolicy:u.subsetPolicy,...(catalogSnapshot?{catalogSnapshot}:{})};
 }

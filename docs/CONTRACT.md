@@ -1,6 +1,8 @@
-# Atlas Quant v0.3 contract
+# Historical Atlas Quant v0.3 contract
 
-The default product follows five steps: **universe → baseline and factors → observations and signals → execution and costs → validation and report**. The new strategy example is [stat-arb.json](../engine/examples/stat-arb.json); the endpoint contract is [API.md](API.md). `schemaVersion: 1` is retained. New research explicitly sends `research.mode: 'stat_arb'`; older strategies without a mode remain `legacy_long_only` and keep their original long-only behavior.
+**Architecture decision, 2026-10-08:** new core research must first generate horizon-specific expected-price or fixed-basket-state forecasts before an independent execution layer can backtest them. The accepted [forecast research contract](FORECAST_RESEARCH_CONTRACT.md) defines that requirement and its acceptance gates. The v0.3 behavior documented below does **not** implement it; its z-score rules and historical reports must not be represented as forecast-driven research.
+
+The historical v0.3 product follows five steps: **universe → baseline and factors → observations and signals → execution and costs → validation and report**. The new strategy example is [stat-arb.json](../engine/examples/stat-arb.json); the endpoint contract is [API.md](API.md). `schemaVersion: 1` is retained. New research explicitly sends `research.mode: 'stat_arb'`; older strategies without a mode remain `legacy_long_only` and keep their original long-only behavior.
 
 ## Research input
 
