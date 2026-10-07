@@ -20,7 +20,7 @@ def _error(code, message):
 def claim_request(request_id):
     from . import __version__
     return {"requestId": request_id, "runnerVersion": "atlas-quant-runner/" + __version__,
-            "engineVersion": __version__}
+            "engineVersion": __version__, "transportFormats": ["atlas.quant.bundle/1"]}
 
 
 def validate_receipt(response, intent, *, terminal_only=False):

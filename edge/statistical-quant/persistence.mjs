@@ -1,3 +1,9 @@
+import { readPrivateObject } from '../private-objects.mjs';
+export { readPrivateObject } from '../private-objects.mjs';
+import { ownedForecastStage, streamDocumentResponse, transportView } from '../bundles/user-api.mjs';
+import { parsedStage } from '../bundles/storage.mjs';
+import { pageRecords, pageQuery } from '../bundles/pages.mjs';
+import { reportSummary } from '../bundles/publication.mjs';
 import { ApiError } from '../errors.mjs';
 import { validateStoredStatisticalQuant } from './validation.mjs';
 import { NOW, json, parse, sha } from '../runtime.mjs';
@@ -45,19 +51,6 @@ export async function ownedForecast(env, owner, id) {
   if (!row) throw notFound();
   return row;
 }
-export async function readPrivateObject(env, key, expectedHash = null) {
-  const object = await env.ARTIFACTS.get(key);
-  if (!object) throw new ApiError('ARTIFACT_UNAVAILABLE', '私有研究产物暂不可读取', 503);
-  const text = await object.text();
-  const contentHash = expectedHash ?? /\/([a-f0-9]{64})\.json$/.exec(key)?.[1];
-  if (contentHash && (!isHash(contentHash) || (await sha(text)) !== contentHash))
-    throw new ApiError('ARTIFACT_INTEGRITY', '私有研究产物完整性校验失败', 503);
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new ApiError('ARTIFACT_INTEGRITY', '私有研究产物格式校验失败', 503);
-  }
-}
 export async function quantRun(env, jobId) {
   return env.DB.prepare('SELECT * FROM quant_runs WHERE job_id=?').bind(jobId).first();
 }
@@ -75,8 +68,22 @@ export async function claimMetadata(env, job) {
       .bind(artifact.job_id, job.owner)
       .first();
     if (!original) throw new ApiError('ARTIFACT_UNAVAILABLE', '来源研究配置暂不可读取', 503);
+    const bundle = await env.DB.prepare(
+      "SELECT s.bundle_id FROM quant_bundle_forecasts b JOIN quant_bundle_stages s ON s.id=b.stage_id WHERE b.owner=? AND b.forecast_id=? AND s.owner=b.owner AND s.status='committed'"
+    )
+      .bind(job.owner, artifact.id)
+      .first();
     return {
       ...metadata,
+      ...(bundle
+        ? {
+            sourceTransport: {
+              format: 'atlas.quant.bundle',
+              version: 1,
+              bundleId: bundle.bundle_id
+            }
+          }
+        : {}),
       forecastArtifactId: artifact.id,
       originalStrategy: validateStoredStatisticalQuant(parse(original.spec))
     };
@@ -232,6 +239,42 @@ export async function persistForecastCompletion(env, job, result, prepared) {
 
 export async function forecastResponse(req, env, owner, id, download = false) {
   const record = await ownedForecast(env, owner, id);
+  const bundleStage = await ownedForecastStage(env, owner, id);
+  if (bundleStage) {
+    const parsed = await parsedStage(bundleStage);
+    if (download)
+      return streamDocumentResponse(env, bundleStage, parsed, 'forecast', {
+        prefix:
+          JSON.stringify({ forecast: forecastView(record) }).slice(0, -1) +
+          ',"artifact":{"artifactId":"' +
+          id +
+          '",',
+        suffix: '}}',
+        unwrap: true,
+        filename: `atlas-forecast-${id}.json`
+      });
+    const params = new URL(req.url).searchParams;
+    if (params.has('bundleId') && params.get('bundleId') !== bundleStage.bundle_id)
+      throw new ApiError('BUNDLE_VERSION_CHANGED', '预测版本不一致', 409);
+    params.set('collection', 'forecasts');
+    const page = await pageRecords(env, bundleStage, parsed, pageQuery(params, parsed));
+    return json({
+      forecast: forecastView(record),
+      artifact: {
+        ...reportSummary(parsed).forecasts,
+        sourceStrategy: parsed.metadata.forecast.sourceStrategy,
+        rows: page.items,
+        targetDefinitions: page.related.targets,
+        modelFits: page.related.modelFits,
+        totalRows: record.row_count,
+        truncated: page.items.length !== record.row_count
+      },
+      offset: page.offset,
+      limit: page.limit,
+      preview: true,
+      transport: transportView(bundleStage, parsed, record.job_id)
+    });
+  }
   const artifact = await readPrivateObject(env, record.artifact_key, record.artifact_hash);
   if (download)
     return json({ forecast: forecastView(record), artifact }, 200, {

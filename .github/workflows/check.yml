@@ -28,6 +28,7 @@ jobs:
       - run: node web/tests/research-flow.mjs
       - run: node web/tests/research-dom.mjs
       - run: node web/tests/statistical-dom.mjs
+      - run: node web/tests/sharded-report-dom.mjs
       - name: Reproduce the complete synthetic report
         run: |
           .venv/bin/python scripts/local-run.py engine/examples/basic.json --source demo --output private/first.json
@@ -46,3 +47,9 @@ jobs:
           .venv/bin/python scripts/audit-report.py private/forecast-first.json
           .venv/bin/python scripts/replay-execution.py private/forecast-first.json private/forecast-input.json --output private/execution.json
           .venv/bin/python scripts/audit-report.py private/execution.json --source-report private/forecast-first.json
+      - name: Reproduce complete bundle transport and independently audit the frozen replay
+        run: |
+          .venv/bin/python scripts/local-run.py engine/examples/statistical-quant.json --source demo --bundle-output private/forecast-bundle
+          .venv/bin/python scripts/audit-bundle.py private/forecast-bundle
+          .venv/bin/python scripts/replay-execution.py --source-bundle private/forecast-bundle --bundle-output private/execution-bundle
+          .venv/bin/python scripts/audit-bundle.py private/execution-bundle --source-bundle private/forecast-bundle

@@ -41,7 +41,7 @@ def _envelope(strategy, provenance, audit, artifact, panel, dates, execution_onl
     return _finite_json(result)
 
 
-def run_statistical_quant(strategy, data, provenance=None):
+def run_statistical_quant(strategy, data, provenance=None, *, plan_sink=None):
     from ..engine import _prepare_data, _finite_json
     s = validate(strategy)
     if provenance is not None and not isinstance(provenance, dict):
@@ -50,6 +50,16 @@ def run_statistical_quant(strategy, data, provenance=None):
     panel, dates, audit = _prepare_data(data, s, p)
     with threadpool_limits(limits=1):
         samples = build_samples(panel, dates, s)
+        if plan_sink is not None:
+            from .validation import forecast_origins
+            holdout, origins = forecast_origins(samples, s)
+            plan_sink({"schemaVersion": 1, "source": "samples_before_model_fitting",
+                "baselineRequired": any(name.startswith("factor:") for name in samples.X),
+                "holdoutStart": holdout,
+                "origins": [{"date": row.date, "targetId": row.targetId,
+                             "entryDate": row.entryDate, "targetDate": row.targetDate,
+                             "inputValid": bool(row.inputValid)}
+                            for row in samples.meta.loc[origins].itertuples()]})
         if s["model"]["family"] in ("event", "fundamental"):
             valid_dates = samples.meta.loc[samples.meta.inputValid, "date"].nunique()
             if valid_dates < s["validation"]["minTrainDates"]+40:
