@@ -225,7 +225,7 @@ class BundleAudit:
             elif "collection" in part:
                 yield from self.collection_bytes(part["collection"])
             else:
-                yield b'{"artifactId":' + canonical(part["wrapArtifactId"]) + b"," 
+                yield b'{"artifactId":' + canonical(part["wrapArtifactId"]) + b","
                 pending = None
                 first = True
                 for raw in self.document_bytes("forecast"):
