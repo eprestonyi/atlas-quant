@@ -20,12 +20,14 @@ from urllib.parse import urlparse
 import requests
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from . import __version__
 from .provider import ProviderError, load_tushare, load_tushare_proxy, validate_upload
 from .fixtures import make_demo_data
+from .connectors import PCDReadClient, join_pcd_asof
 
-MAX_JOB_BYTES = 22 * 1024 * 1024
-MAX_RESULT_BYTES = 12 * 1024 * 1024
-DEFAULT_TIMEOUT = 600
+MAX_JOB_BYTES = 26 * 1024 * 1024
+MAX_RESULT_BYTES = 24 * 1024 * 1024
+DEFAULT_TIMEOUT = 900
 STOP = False
 
 
@@ -79,6 +81,14 @@ def load_config(path):
         secret_value = access["serviceToken"]
         if not isinstance(secret_value, str) or not 32 <= len(secret_value) <= 512 or any(c.isspace() for c in secret_value):
             raise RunnerError("CONFIG_PROVIDER", "私有行情服务凭据格式无效。")
+    pcd_access = config.get("pcd_access")
+    if pcd_access is not None:
+        if not isinstance(pcd_access, dict) or set(pcd_access) != {"url", "token"}:
+            raise RunnerError("CONFIG_PCD", "PCD 私有配置需包含固定 url 与 token。")
+        try:
+            PCDReadClient(pcd_access["url"], pcd_access["token"])
+        except (ProviderError, ValueError, TypeError):
+            raise RunnerError("CONFIG_PCD", "PCD 读取地址或凭据无效。") from None
     delivery = Path(config.get("delivery_dir", str(target.parent / "delivery"))).expanduser()
     if not delivery.is_absolute() or delivery.is_symlink():
         raise RunnerError("CONFIG_DELIVERY", "结果重试目录必须是绝对私有路径。")
@@ -108,6 +118,10 @@ def prepare_job(job, config):
     prepared = dict(job)
     if job.get("dataSource") == "tushare" and config.get("provider_access"):
         prepared["providerAccess"] = dict(config["provider_access"])
+    strategy = job.get("strategy")
+    bindings = strategy.get("dataBindings") if isinstance(strategy, dict) else None
+    if isinstance(bindings, dict) and bindings.get("pcd") and config.get("pcd_access"):
+        prepared["pcdAccess"] = dict(config["pcd_access"])
     return prepared
 
 
@@ -123,11 +137,20 @@ def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None):
             raise
         raise RunnerError("INVALID_JOB", "任务不是有效 JSON。") from None
     strategy = job["strategy"]
+    data_bindings = strategy.get("dataBindings") or {}
+    if not isinstance(data_bindings, dict):
+        raise RunnerError("INVALID_DATA_BINDINGS", "数据映射必须是对象。")
+    pcd_bindings = data_bindings.get("pcd") or {}
+    if not isinstance(pcd_bindings, dict):
+        raise RunnerError("INVALID_DATA_BINDINGS", "PCD 映射必须是对象。")
+    deferred = set(pcd_bindings)
     source = job.get("dataSource")
     if source == "demo":
+        if pcd_bindings:
+            raise RunnerError("PCD_REAL_DATA_REQUIRED", "PCD 披露因子需搭配真实行情或导入数据，不能使用教程价格。")
         data, provenance = make_demo_data(strategy)
     elif source == "upload":
-        data, provenance = validate_upload(strategy, job.get("dataset"))
+        data, provenance = validate_upload(strategy, job.get("dataset"), deferred_fields=deferred)
     elif source == "tushare":
         access = job.get("providerAccess")
         # Separate cache directories by workspace before token fingerprinting.
@@ -137,18 +160,30 @@ def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None):
                 raise RunnerError("INVALID_JOB_OWNER", "任务身份无效。")
             cache_dir = str(Path(cache_dir) / owner)
         if token:
-            data, provenance = load_tushare(strategy, token, cache_dir)
+            data, provenance = load_tushare(strategy, token, cache_dir, deferred_fields=deferred)
         elif isinstance(access, dict):
             url = access.get("proxyUrl", "")
             parsed = urlparse(url) if isinstance(url, str) else None
             hosts = allowed_proxy_hosts or ["atlas-aletheia.com"]
             if not parsed or parsed.scheme != "https" or parsed.hostname not in hosts or parsed.port not in (None, 443):
                 raise RunnerError("PROVIDER_PROXY_FORBIDDEN", "行情代理域名未获运行端授权。")
-            data, provenance = load_tushare_proxy(strategy, url, access.get("serviceToken"), cache_dir)
+            data, provenance = load_tushare_proxy(strategy, url, access.get("serviceToken"), cache_dir, deferred_fields=deferred)
         else:
             raise ProviderError("TUSHARE_TOKEN_MISSING", "本任务没有获授权的 Tushare 数据入口；不会自动改用演示数据。")
     else:
         raise RunnerError("DATA_SOURCE", "数据来源必须为 demo、upload 或 tushare。")
+    if pcd_bindings:
+        access = job.get("pcdAccess")
+        if not isinstance(access, dict) or set(access) != {"url", "token"}:
+            raise RunnerError("PCD_ACCESS_MISSING", "尚未配置 PCD 私有只读连接。")
+        client = PCDReadClient(access["url"], access["token"])
+        data, pcd_provenance = join_pcd_asof(data, provenance["tradingDates"], pcd_bindings, client)
+        external = {**provenance.get("externalFields", {}), **pcd_provenance.pop("externalFields")}
+        provenance.update(pcd_provenance, externalFields=external)
+        from .provider import canonical_hash, _records
+        provenance["dataFingerprint"] = canonical_hash(_records(data))
+        provenance.setdefault("datasets", []).append("PCD_SELECTED_OBSERVATIONS")
+        provenance.setdefault("warnings", []).append("PCD 仅使用显式映射的主体、记录与单位；可用日不早于系统获知及来源时间，缺失不填零。十进制原值保存在 PCD，研究矩阵使用 float64。")
     # Deferred import: data ingestion errors remain distinguishable from engine errors.
     from .engine import run_research
     try:
@@ -351,7 +386,7 @@ def _serve(config, spool, *, once=False):
     flush_completions(client, spool)
     while not STOP:
         try:
-            claimed = client.post("claim", {"runnerVersion": "atlas-quant-runner/0.1", "leaseSeconds": config.get("job_timeout", DEFAULT_TIMEOUT) + 90})
+            claimed = client.post("claim", {"runnerVersion": "atlas-quant-runner/" + __version__, "engineVersion": __version__, "leaseSeconds": config.get("job_timeout", DEFAULT_TIMEOUT) + 90})
             job = claimed.get("job")
             if job is None:
                 if once:
@@ -363,7 +398,7 @@ def _serve(config, spool, *, once=False):
             identity = {"id": job["id"], "leaseToken": job["leaseToken"]}
             def heartbeat():
                 try:
-                    return client.post("heartbeat", dict(identity, status="running"))
+                    return client.post("heartbeat", dict(identity, status="running", engineVersion=__version__))
                 except RunnerError:
                     return None  # A transient network error is not a cancellation.
             answer = execute_bounded(prepare_job(job, config), timeout=config.get("job_timeout", DEFAULT_TIMEOUT),

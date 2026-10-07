@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .research_registry import is_external_field
+
 FIELDS = frozenset("open high low close raw_close vol amount adj_factor turnover_rate turnover_rate_f volume_ratio pe pe_ttm pb ps ps_ttm dv_ratio dv_ttm total_share float_share free_share total_mv circ_mv".split())
 WINDOW_FUNCTIONS = frozenset("lag returns delta ts_mean ts_std ts_min ts_max ts_sum ts_rank".split())
 UNARY_FUNCTIONS = frozenset("rank zscore log abs sqrt sign".split())
@@ -55,7 +57,7 @@ def _parse(expression):
             _number(node)
             return 0
         if isinstance(node, ast.Name):
-            if node.id not in FIELDS:
+            if node.id not in FIELDS and not is_external_field(node.id):
                 raise FactorError(f"不支持的字段：{node.id}")
             fields.add(node.id)
             return 0

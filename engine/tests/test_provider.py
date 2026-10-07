@@ -188,7 +188,7 @@ def test_upload_duplicates_and_invalid_calendar_rejected():
 
 def test_universe_budget():
     s = strategy()
-    s["universe"]["symbols"] *= 11
+    s["universe"]["symbols"] *= 26
     with pytest.raises(ProviderError) as e:
         validate_universe(s)
     assert e.value.code == "UNIVERSE_LIMIT"
@@ -200,7 +200,7 @@ def test_provider_disallows_arbitrary_parameters_and_apis():
         client.call("daily", {"ts_code": "000001.SZ", "start_date": "20230102", "end_date": "20230106", "token": "override"})
     assert e.value.code == "PROVIDER_PARAMS"
     with pytest.raises(ProviderError) as e:
-        client.call("income", {})
+        client.call("arbitrary_unregistered_api", {})
     assert e.value.code == "DATASET_FORBIDDEN"
 
 

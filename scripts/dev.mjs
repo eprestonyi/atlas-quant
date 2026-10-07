@@ -1,9 +1,11 @@
 import {Miniflare} from 'miniflare';
 import fs from 'node:fs/promises';
+import {seedLocal} from './seed-registry.mjs';
 const root=new URL('../',import.meta.url),port=Number(process.env.PORT||8895);
-const mf=new Miniflare({modules:true,scriptPath:new URL('dist/worker.mjs',root).pathname,compatibilityDate:'2026-08-01',host:'127.0.0.1',port,d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{RUNNER_SECRET:'local-development-runner-secret-not-for-deployment'}});
+const mf=new Miniflare({modules:true,scriptPath:new URL('dist/worker.mjs',root).pathname,compatibilityDate:'2026-08-01',host:'127.0.0.1',port,d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{TUSHARE_PUBLIC_AUTHORIZED:'true',RUNNER_SECRET:'local-development-runner-secret-not-for-deployment'}});
 const db=await mf.getD1Database('DB');await db.exec((await fs.readFile(new URL('edge/schema.sql',root),'utf8')).replaceAll('\n',' '));
+console.log('Registry:',await seedLocal(db));
 await mf.ready;console.log(`Atlas Quant preview: http://127.0.0.1:${port}/quant/`);
 let last=(await fs.stat(new URL('dist/worker.mjs',root))).mtimeMs;
-const timer=setInterval(async()=>{const now=(await fs.stat(new URL('dist/worker.mjs',root))).mtimeMs;if(now!==last){last=now;await mf.setOptions({modules:true,scriptPath:new URL('dist/worker.mjs',root).pathname,compatibilityDate:'2026-08-01',host:'127.0.0.1',port,d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{RUNNER_SECRET:'local-development-runner-secret-not-for-deployment'}});console.log('Preview updated');}},1500);
+const timer=setInterval(async()=>{const now=(await fs.stat(new URL('dist/worker.mjs',root))).mtimeMs;if(now!==last){last=now;await mf.setOptions({modules:true,scriptPath:new URL('dist/worker.mjs',root).pathname,compatibilityDate:'2026-08-01',host:'127.0.0.1',port,d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{TUSHARE_PUBLIC_AUTHORIZED:'true',RUNNER_SECRET:'local-development-runner-secret-not-for-deployment'}});console.log('Preview updated');}},1500);
 async function close(){clearInterval(timer);await mf.dispose();process.exit(0);}process.on('SIGINT',close);process.on('SIGTERM',close);

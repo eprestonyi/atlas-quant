@@ -1,0 +1,42 @@
+/* Development-only integration harness. Creates two versions of a private code project on localhost. Does not submit runs or deploy. Run from project root with the local API running on port 8895. */
+import fs from 'node:fs/promises';import vm from 'node:vm';import assert from 'node:assert/strict';
+const root=process.cwd();let cookie='';const handlers={};const nodes=new Map();
+function fakeNode(){return {innerHTML:'',append(){},remove(){},style:{},classList:{contains:()=>false},addEventListener(){},focus(){}};}
+nodes.set('#app',fakeNode());nodes.set('#toast-root',fakeNode());nodes.set('#modal-root',fakeNode());
+const document={querySelector:s=>nodes.get(s)||null,querySelectorAll:()=>[],addEventListener:(event,fn)=>(handlers[event]||=[]).push(fn),createElement:fakeNode,body:{style:{},append(){}},getElementById:()=>null,hidden:false};
+const context={document,location:{hash:'#dashboard',origin:'http://127.0.0.1:8895'},localStorage:{getItem:()=>null,setItem(){}},setTimeout:()=>1,clearTimeout(){},setInterval(){},AbortController,AbortSignal,URL,URLSearchParams,TextEncoder,TextDecoder,Blob,console,window:{addEventListener(){}},fetch:async(url,options={})=>{const headers={...options.headers,...(cookie?{cookie}:{})};const r=await fetch(new URL(url,'http://127.0.0.1:8895'),{...options,headers});if(r.headers.get('set-cookie'))cookie=r.headers.get('set-cookie').split(';')[0];return r;}};context.window.location=context.location;context.window.document=document;
+vm.createContext(context);
+let studio=await fs.readFile(root+'/web/studio.js','utf8');studio=studio.replace('return {render:renderApp,bind,initialize};','return {render:renderApp,bind,initialize,__test:{v,handle,lint,groups,addFeatures,moveFactor,saveCode,loadFactors,loadFields,selectUniverse,canUse,mapped,uploaded,custom,contextualStatus}};');vm.runInContext(studio,context);
+let source=await fs.readFile(root+'/web/app.js','utf8');source=source.replace('  init();','  globalThis.qa={state,studio,normalizeStrategy,validateStrategy,forecastReport,api,render,baseStrategy};');vm.runInContext(source,context);
+const q=context.qa;await q.api('/session').then(x=>q.state.session=x);q.state.catalog=await q.api('/catalog');q.state.factors=q.state.catalog.factors;q.state.loading=false;
+await q.studio.initialize();const t=q.studio.__test;let checks=0;
+for(const view of ['dashboard','lab','strategies','factors','runs']){q.state.view=view;const h=q.studio.render();assert(h.includes('v2-shell'));assert(!h.includes('[object Object]'));checks++;}
+for(const step of ['data','factors','targets','models','validation','portfolio','reports','code']){q.state.view='studio';q.state.studioStep=step;const h=q.studio.render();assert(h.includes('<h1>'));assert(!h.includes('[object Object]'));checks++;}
+for(const tab of ['fields','builder']){q.state.studioStep='factors';t.v.catalogTab=tab;if(tab==='fields')await t.loadFields();assert(q.studio.render().includes('v2-main'));checks++;}
+for(const language of ['dsl','python','json']){t.v.editorLanguage=language;q.state.studioStep='code';assert(q.studio.render().includes('v2-code-editor'));checks++;}
+const before=q.state.strategy.factors.length;await t.handle({dataset:{v2:'pack',id:'trend'}});assert(q.state.strategy.factors.length>before);assert(q.state.strategy.graph.groups.some(g=>g.name==='趋势延续'));checks++;
+const normalized=q.normalizeStrategy(q.state.strategy);assert(normalized.graph.groups.length===q.state.strategy.graph.groups.length);checks++;
+t.v.filters.database='PCD';await t.loadFactors();assert(t.v.catalog.items.length===24);assert(t.v.catalog.total>10000);assert(t.v.catalog.items.every(f=>f.availability.status==='needs_mapping'));const h=q.studio.render();assert(!h.includes('[object Object]'));checks++;
+const n=q.state.strategy.factors.length;await assert.rejects(async()=>t.addFeatures([t.v.catalog.items[0]]),/数据条件/);assert(q.state.strategy.factors.length===n);checks++;
+// Mapping changes contextual permission without changing source availability.
+const pcd=t.v.catalog.items[0],alias=pcd.requiredFields[0],rawAvailability=JSON.stringify(pcd.availability);q.state.strategy.dataBindings={pcd:{[alias]:{fieldId:'WRONG_FIELD',unitCode:'shares',records:[{ts_code:q.state.strategy.universe.symbols[0],entityId:'test-entity',recordId:'test-record'}]}}};assert.equal(t.canUse(pcd),false);checks++;
+q.state.strategy.dataBindings.pcd[alias].fieldId=pcd.fieldId;assert.equal(t.canUse(pcd),true);assert.equal(t.contextualStatus(pcd),'已配置映射，运行时校验');assert.equal(JSON.stringify(pcd.availability),rawAvailability);q.state.view='studio';q.state.studioStep='factors';t.v.catalogTab='factors';const mappedHTML=q.studio.render();assert(mappedHTML.includes('已配置映射，运行时校验'));assert(mappedHTML.includes('data-v2-drag="factor:'+pcd.id+'"'));t.addFeatures([pcd]);assert(q.state.strategy.factors.some(f=>f.id===pcd.id));checks++;
+q.state.strategy.dataBindings={pcd:{}};q.state.dataSource='upload';const pitData=(prefix='pcd')=>{const key=prefix==='pcd'?alias:prefix+'_qa';return {rows:[{ts_code:q.state.strategy.universe.symbols[0],trade_date:'20250103',close:10,[key]:2,[key+'__available_date']:'20250102'}],provenance:{externalFields:{[key]:{source:'QA_UPLOAD',path:prefix==='pcd'?pcd.fieldId:'qa.'+key,dataType:'number',availabilityPolicy:'point_in_time_asof',availableDateColumn:key+'__available_date'}}}};};
+q.state.dataset=pitData();assert.equal(t.canUse(pcd),true);assert.equal(t.contextualStatus(pcd),'已导入 PIT 字段，运行时校验');assert.equal(JSON.stringify(pcd.availability),rawAvailability);checks++;
+await t.custom('rank('+alias+')','PIT 自定义研究 QA');assert(q.state.strategy.factors.some(f=>f.expression==='rank('+alias+')'));checks++;
+q.state.dataset=pitData();q.state.dataset.provenance.externalFields[alias].path='WRONG_FIELD';assert.equal(t.canUse(pcd),false);checks++;
+q.state.dataset=pitData();q.state.dataset.rows[0][alias+'__available_date']='20250106';assert.equal(t.canUse(pcd),false);checks++;
+q.state.dataset=pitData();delete q.state.dataset.rows[0][alias+'__available_date'];assert.equal(t.canUse(pcd),false);checks++;
+q.state.dataset=pitData();delete q.state.dataset.provenance.externalFields[alias];assert.equal(t.canUse(pcd),false);checks++;
+for(const prefix of ['fd','ext','model']){q.state.dataset=pitData(prefix);const def={fields:[prefix+'_qa','close'],availability:{status:'needs_mapping'}};assert.equal(t.canUse(def),true);checks++;}
+q.state.dataSource='tushare';assert.equal(t.canUse({fields:['model_qa'],availability:{status:'needs_mapping'}}),false);q.state.dataset=null;checks++;
+const lint=await t.lint('returns(close,20)');assert(lint.valid);assert.equal(lint.lookback,20);const invalid=await t.lint('lag(close,-1)');assert(!invalid.valid);checks+=2;
+t.v.editorLanguage='python';t.v.projectName='v2 UI contract QA';t.v.code.python='result = {"qa": True}\nprint("atlas")';await t.saveCode();assert(t.v.projectId);assert.equal(t.v.projectVersion,1);t.v.code.python+='\nprint("revision")';await t.saveCode();assert.equal(t.v.projectVersion,2);checks+=2;
+await t.handle({dataset:{v2:'review-manual'}});assert.equal(t.v.review.providerExecuted,false);checks++;
+q.state.view='studio';q.state.studioStep='code';assert(q.studio.render().includes('v2 UI contract QA'));checks++;
+const evidence=process.env.ATLAS_FORECAST_REPORT;const report=evidence?JSON.parse(await fs.readFile(evidence,'utf8')):null;if(report){
+assert(report.predictions);q.state.report=report;q.state.predictionScope='latest';const forecast=q.forecastReport(report);assert(forecast.includes('最早成交'));assert(!forecast.includes('[object Object]'));assert((forecast.match(/<tr>/g)||[]).length<=51);checks++;
+q.state.predictionScope='all';q.state.predictionPage=1;const history=q.forecastReport(report);assert((history.match(/<tr>/g)||[]).length<=51);assert(history.includes('第 2 /'));checks++;
+}
+const un=t.v.featuredUniverses[0];if(un){await t.selectUniverse(un.id);assert(q.state.strategy.universe.symbols.length>=3);assert(q.state.strategy.universe.symbols.length<=50);assert.equal(q.state.strategy.universe.presetId,un.id);q.state.view='studio';q.state.studioStep='data';const dataPage=q.studio.render();assert((dataPage.match(/data-v2-member=/g)||[]).length<=40);checks++;}
+console.log(JSON.stringify({passed:checks,factorTotal:t.v.catalog.total,renderedRows:t.v.catalog.items.length,codeProjectVersion:t.v.projectVersion,universeTotal:t.v.universeTotal,errors:t.v.errors}));

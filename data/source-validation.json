@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-10-07T10:48:33.239578+00:00",
+  "metadataOnly": true,
+  "tushare": {
+    "status": "verified_private_https",
+    "universeCounts": {
+      "securities": 5911,
+      "currentlyListed": 5572,
+      "excludedFromASharePools": 1,
+      "universes": 1354
+    },
+    "sourceGaps": [],
+    "curatedNavigationPools": 15,
+    "recommendedSubsetRule": "Ascending security code, first 20, explicitly labeled; no performance ranking.",
+    "financialProbe": {
+      "ts_code": "600519.SH",
+      "requestedRange": [
+        "20240101",
+        "20250930"
+      ],
+      "fina_indicator": {
+        "rows": 9,
+        "columns": 24,
+        "explicitFinancialFields": 21
+      },
+      "income": {
+        "rows": 7,
+        "columns": 17
+      },
+      "balancesheet": {
+        "rows": 8,
+        "columns": 18
+      },
+      "cashflow": {
+        "rows": 10,
+        "columns": 13
+      }
+    },
+    "observedRevisionAmbiguity": {
+      "ts_code": "000858.SZ",
+      "ann_date": "20250828",
+      "end_date": "20250630",
+      "fields": [
+        "roe",
+        "debt_to_assets"
+      ],
+      "policy": "Quarantine conflicting field/disclosure as null; retain audit sample/count/hash."
+    },
+    "completedResearch": {
+      "engineVersion": "0.2.0",
+      "source": "TUSHARE_PRO",
+      "synthetic": false,
+      "symbols": [
+        "600519.SH",
+        "000858.SZ",
+        "000568.SZ"
+      ],
+      "start": "20230101",
+      "end": "20250930",
+      "rows": 2001,
+      "datasets": [
+        "trade_cal",
+        "daily",
+        "adj_factor",
+        "fina_indicator"
+      ],
+      "providerCalls": 16,
+      "externalFieldCoverage": {
+        "fd_debt_to_assets": 0.9885057471264368,
+        "fd_roe": 0.9885057471264368
+      },
+      "financialAmbiguousDisclosures": 2,
+      "winner": "factor_score",
+      "trialCount": 14,
+      "dataFingerprint": "53de5ede9179802b841f26811632efcac72413299b3ed7c1eb83e311824899b4",
+      "artifactVisibility": "Private operator validation report; not a published recommendation."
+    }
+  },
+  "PCD": {
+    "registryFields": 17073,
+    "numericSchemaFields": 4870,
+    "observedCompanies": 1,
+    "observations": 3,
+    "aShareMappedObservedCompanies": 0,
+    "connectorReadback": "verified",
+    "publicationPrecision": "UNKNOWN",
+    "firstConservativeAvailableSession": "20261005"
+  },
+  "FD": {
+    "meaning": "FinancialDB",
+    "logicalDatabases": {
+      "PCD": "Public Company Disclosure: original company facts, evidence and versions",
+      "MKT": "Market & Price: prices, volumes, quotes and FX",
+      "EXT": "External Research & Estimates: external research, consensus and third-party estimates",
+      "MODEL": "Internal Calculations & Models: calculations, forecasts, valuations and scenarios"
+    },
+    "architectureConfirmation": "User confirmed; existing Atlas PCD architecture document corroborates the four logical ownership boundaries.",
+    "servingLayer": "Combined query layer, not a fifth fact database.",
+    "vendorFinancialAdapter": "Tushare fina_indicator, income, balancesheet and cashflow are vendor interfaces, not a fifth database.",
+    "compatibilityNamespace": "Existing fd_ formula aliases and FD filter keys identify compatibility names for vendor financial fields; they do not define FinancialDB ownership.",
+    "physicalTopology": "Four logical databases do not imply four independently deployed servers.",
+    "memoryBoundary": "Memory DB holds methods/preferences, not current financial facts."
+  },
+  "EXT_MODEL": {
+    "schemaAuthorityReferences": {
+      "EXT": 35,
+      "MODEL": 14,
+      "countsAreNotObservationCoverage": true
+    },
+    "EXT": {
+      "vendorFinancialAdapter": "TUSHARE_FUNDAMENTAL",
+      "vendorFinancialResearchVerified": true,
+      "externalResearchConsensusHostedHistoryVerified": false,
+      "ownedNumericPITUploadSupported": true
+    },
+    "MODEL": {
+      "quantGeneratedResearchOutputs": true,
+      "ownedNumericPITUploadSupported": true,
+      "existingModelDatabaseHostedHistoryVerified": false,
+      "uploadedOriginalTrainingHistoryIndependentlyVerified": false
+    }
+  },
+  "limitations": [
+    "Interface reachability, schema inventory, observed values, historical point-in-time coverage and completed research are separate evidence.",
+    "No credentials, numeric company facts or raw licensed prices are included in this metadata artifact."
+  ],
+  "fourDatabaseAliasValidation": {
+    "dataClassification": "SYNTHETIC_TEST_ONLY",
+    "expression": "pcd_margin+ext_growth+model_return+returns(close,5)",
+    "numericalComparison": "passed against independent pandas arithmetic",
+    "engineBacktest": "passed with synthetic provenance preserved",
+    "futureAvailabilityRejection": "provider and engine",
+    "sourceRecordRequirement": "nonblank source and path for each external alias",
+    "addedTests": 14,
+    "relatedTestsPassed": 94,
+    "providesHostedExternalOrModelData": false
+  }
+}

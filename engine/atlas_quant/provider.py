@@ -15,13 +15,16 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 import requests
+from .connectors import (EXTERNAL_RE, EXTRA_DATASETS, RESPONSE_LIMITS, FINANCIAL_ALIASES,
+                         validate_endpoint, validate_external_fields,
+                         load_financial_history, join_financial_asof)
 
 OFFICIAL_URL = "https://api.tushare.pro"
-MAX_SYMBOLS = 20
-MAX_ROWS = 80000
+MAX_SYMBOLS = 50
+MAX_ROWS = 110000
 MAX_CALENDAR_DAYS = 3660
 MAX_RESPONSE_BYTES = 12 * 1024 * 1024
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_UPLOAD_BYTES = 24 * 1024 * 1024
 MAX_CACHE_FILES = 32
 REQUIRED = ["ts_code", "trade_date", "open", "high", "low", "close", "raw_close", "vol", "amount", "adj_factor"]
 OPTIONAL_FIELDS = frozenset("turnover_rate turnover_rate_f volume_ratio pe pe_ttm pb ps ps_ttm dv_ratio dv_ttm total_share float_share free_share total_mv circ_mv".split())
@@ -31,6 +34,7 @@ DATASETS = {
     "daily": "ts_code,trade_date,open,high,low,close,vol,amount",
     "adj_factor": "ts_code,trade_date,adj_factor",
     "daily_basic": "ts_code,trade_date," + ",".join(sorted(OPTIONAL_FIELDS)),
+    **EXTRA_DATASETS,
 }
 
 
@@ -63,7 +67,7 @@ def validate_universe(strategy):
     u = strategy["universe"]
     symbols, start, end = u.get("symbols"), u.get("start"), u.get("end")
     if not isinstance(symbols, list) or not 1 <= len(symbols) <= MAX_SYMBOLS:
-        raise ProviderError("UNIVERSE_LIMIT", "证券池须包含 1–20 只 A 股。")
+        raise ProviderError("UNIVERSE_LIMIT", "证券池须包含 1–50 只 A 股。")
     if any(not isinstance(s, str) or not SYMBOL_RE.fullmatch(s) for s in symbols) or len(set(symbols)) != len(symbols):
         raise ProviderError("INVALID_SYMBOL", "证券代码须为唯一的六位 A 股代码及 SH/SZ/BJ 后缀。")
     a, b = parse_date(start), parse_date(end)
@@ -85,10 +89,10 @@ def _factor_fields(strategy):
     return required_fields(expressions) if expressions else set()
 
 
-def _validate_panel(strategy, rows, *, allow_raw_defaults=False):
+def _validate_panel(strategy, rows, *, allow_raw_defaults=False, external_fields=None):
     symbols, start, end = validate_universe(strategy)
     if not isinstance(rows, list) or not rows or len(rows) > MAX_ROWS:
-        raise ProviderError("DATASET_SIZE", "数据须为非空记录数组，最多 80,000 行。")
+        raise ProviderError("DATASET_SIZE", "数据须为非空记录数组，最多 110,000 行。")
     if any(not isinstance(row, dict) for row in rows):
         raise ProviderError("INVALID_DATASET", "每条记录必须是对象。")
     frame = pd.DataFrame(rows)
@@ -100,7 +104,9 @@ def _validate_panel(strategy, rows, *, allow_raw_defaults=False):
     if any(c not in frame for c in REQUIRED):
         raise ProviderError("MISSING_COLUMNS", "数据必须包含 ts_code、trade_date、OHLC、raw_close、vol、amount、adj_factor。")
     optional = sorted(OPTIONAL_FIELDS.intersection(frame.columns))
-    frame = frame[REQUIRED + optional].copy()
+    external = sorted(c for c in frame.columns if EXTERNAL_RE.fullmatch(c) and not c.endswith("__available_date"))
+    companions = [c+"__available_date" for c in external if c+"__available_date" in frame]
+    frame = frame[REQUIRED + optional + external + companions].copy()
     if any(not isinstance(v, str) or v not in symbols for v in frame.ts_code):
         raise ProviderError("DATASET_SYMBOL", "数据包含证券池外代码。")
     dates = frame.trade_date.tolist()
@@ -112,6 +118,7 @@ def _validate_panel(strategy, rows, *, allow_raw_defaults=False):
             raise ProviderError("DATASET_RANGE", "数据包含请求范围外日期。")
     if frame.duplicated(["ts_code", "trade_date"]).any():
         raise ProviderError("DUPLICATE_OBSERVATION", "同一证券与日期不能有重复记录。")
+    validate_external_fields(frame, external_fields)
     for col in REQUIRED[2:]:
         try:
             # bools should not silently become numeric observations.
@@ -142,7 +149,7 @@ def _validate_panel(strategy, rows, *, allow_raw_defaults=False):
     return frame.sort_values(["trade_date", "ts_code"]).reset_index(drop=True)
 
 
-def validate_upload(strategy, dataset):
+def validate_upload(strategy, dataset, *, deferred_fields=None):
     """Accept already adjusted research OHLC, or explicit raw prices with factor=1."""
     if not isinstance(dataset, dict):
         raise ProviderError("INVALID_DATASET", "上传数据必须包含 rows。")
@@ -179,8 +186,8 @@ def validate_upload(strategy, dataset):
             derived.append(r)
         rows = derived
     has_adjustment = isinstance(rows, list) and any("raw_close" in r or "adj_factor" in r for r in rows if isinstance(r, dict))
-    frame = _validate_panel(strategy, rows, allow_raw_defaults=not has_adjustment)
-    missing_factor_fields = _factor_fields(strategy)-set(frame.columns)
+    frame = _validate_panel(strategy, rows, allow_raw_defaults=not has_adjustment, external_fields=meta.get("externalFields"))
+    missing_factor_fields = _factor_fields(strategy)-set(frame.columns)-set(deferred_fields or ())
     if missing_factor_fields:
         raise ProviderError("MISSING_FACTOR_DATA", "上传缺少所选因子字段：" + ", ".join(sorted(missing_factor_fields)))
     symbols, start, end = validate_universe(strategy)
@@ -212,6 +219,12 @@ def validate_upload(strategy, dataset):
     if not has_adjustment:
         provenance["derivedColumns"].update({"raw_close": {"formula": "close", "classification": "USER_ASSUMED_UNADJUSTED"}, "adj_factor": {"formula": "1", "classification": "USER_ASSUMED_UNADJUSTED"}})
     provenance["optionalFieldCoverage"] = {c: float(frame[c].notna().mean()) for c in sorted(OPTIONAL_FIELDS.intersection(frame.columns))}
+    external_mapping = validate_external_fields(frame, meta.get("externalFields"))
+    if external_mapping:
+        provenance["externalFields"] = external_mapping
+        provenance["externalAvailabilityFingerprint"] = canonical_hash(_records(frame[["ts_code", "trade_date"] + [c+"__available_date" for c in external_mapping]]))
+        if any(field.startswith("model_") for field in external_mapping):
+            provenance["warnings"].append("导入 MODEL 数值逐行验证所声明的可用日期与来源路径；原模型训练截止时间、历史生成记录及独立预测性质仍须由上传者提供证据，Atlas 未独立验证。")
     for key in ("source", "license", "asOf"):
         if isinstance(meta.get(key), str):
             provenance["declared" + key[0].upper() + key[1:]] = meta[key][:300]
@@ -237,21 +250,26 @@ class TushareClient:
     def call(self, api_name, params):
         if api_name not in DATASETS:
             raise ProviderError("DATASET_FORBIDDEN", "不允许此 Tushare 接口。")
-        expected = {"exchange", "start_date", "end_date"} if api_name == "trade_cal" else {"ts_code", "start_date", "end_date"}
-        if not isinstance(params, dict) or set(params) != expected:
-            raise ProviderError("PROVIDER_PARAMS", "行情接口参数不在允许范围内。")
-        a, b = parse_date(params["start_date"]), parse_date(params["end_date"])
-        if b < a or (b-a).days > MAX_CALENDAR_DAYS:
-            raise ProviderError("DATE_RANGE_LIMIT", "行情日期范围超出限制。")
-        if api_name == "trade_cal":
-            if params["exchange"] != "SSE":
-                raise ProviderError("PROVIDER_PARAMS", "本版本仅支持 SSE 官方交易日历。")
-        elif not isinstance(params["ts_code"], str) or not SYMBOL_RE.fullmatch(params["ts_code"]):
-            raise ProviderError("PROVIDER_PARAMS", "行情证券代码无效。")
-        if self.calls >= 64:
+        if api_name in EXTRA_DATASETS:
+            validate_endpoint(api_name, params)
+        else:
+            expected = {"exchange", "start_date", "end_date"} if api_name == "trade_cal" else {"ts_code", "start_date", "end_date"}
+            if not isinstance(params, dict) or set(params) != expected:
+                raise ProviderError("PROVIDER_PARAMS", "行情接口参数不在允许范围内。")
+            a, b = parse_date(params["start_date"]), parse_date(params["end_date"])
+            if b < a or (b-a).days > MAX_CALENDAR_DAYS:
+                raise ProviderError("DATE_RANGE_LIMIT", "行情日期范围超出限制。")
+            if api_name == "trade_cal":
+                if params["exchange"] != "SSE":
+                    raise ProviderError("PROVIDER_PARAMS", "本版本仅支持 SSE 官方交易日历。")
+            elif not isinstance(params["ts_code"], str) or not SYMBOL_RE.fullmatch(params["ts_code"]):
+                raise ProviderError("PROVIDER_PARAMS", "行情证券代码无效。")
+        if self.calls >= 512:
             raise ProviderError("PROVIDER_BUDGET", "本次数据请求已达到接口预算。")
         self.calls += 1
-        payload = {"api_name": api_name, "params": params, "fields": DATASETS[api_name]}
+        # Tushare's documented membership default includes its numbered hierarchy
+        # fields. Validate the full required response contract below in either case.
+        payload = {"api_name": api_name, "params": params, "fields": "" if api_name == "index_member_all" else DATASETS[api_name]}
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
         if self.proxy_url:
             headers["Authorization"] = "Bearer " + self.service_token
@@ -292,17 +310,21 @@ class TushareClient:
         fields, items = data["fields"], data["items"]
         if any(not isinstance(f, str) for f in fields) or len(set(fields)) != len(fields) or not set(DATASETS[api_name].split(",")).issubset(fields):
             raise ProviderError("TUSHARE_RESPONSE", "行情数据缺少必要字段。")
-        if len(items) >= 6000:
+        if len(items) >= RESPONSE_LIMITS.get(api_name, 6000):
             raise ProviderError("TUSHARE_TRUNCATED", "行情响应触及行数上限，拒绝使用可能截断的数据。")
         if any(not isinstance(row, list) or len(row) != len(fields) for row in items):
             raise ProviderError("TUSHARE_RESPONSE", "行情字段与记录长度不一致。")
         return pd.DataFrame(items, columns=fields)
 
 
-def _load(strategy, client, cache_dir, cache_identity):
+def _load(strategy, client, cache_dir, cache_identity, *, deferred_fields=None):
     symbols, start, end = validate_universe(strategy)
     optional_required = sorted(_factor_fields(strategy).intersection(OPTIONAL_FIELDS))
-    key = canonical_hash({"version": 2, "symbols": symbols, "start": start, "end": end, "dailyBasicFields": optional_required})
+    financial_required = sorted(_factor_fields(strategy).intersection(FINANCIAL_ALIASES))
+    unavailable_external = {f for f in _factor_fields(strategy) if EXTERNAL_RE.fullmatch(f)} - set(FINANCIAL_ALIASES) - set(deferred_fields or ())
+    if unavailable_external:
+        raise ProviderError("EXTERNAL_DATA_REQUIRED", "所选 PCD/EXT/MODEL 字段需要导入带有逐行可用日期及来源记录的数据，或配置已实现的私有映射；Tushare 不会自动提供或伪造这些字段。")
+    key = canonical_hash({"version": 4, "symbols": symbols, "start": start, "end": end, "dailyBasicFields": optional_required, "financialFields": financial_required})
     cache_path = None
     if cache_dir:
         root = Path(cache_dir) / hashlib.sha256(cache_identity.encode()).hexdigest()[:24]
@@ -311,7 +333,7 @@ def _load(strategy, client, cache_dir, cache_identity):
         if cache_path.exists() and time.time()-cache_path.stat().st_mtime < 3600 and cache_path.stat().st_size <= MAX_UPLOAD_BYTES:
             try:
                 cached = json.loads(cache_path.read_text())
-                frame = _validate_panel(strategy, cached["rows"])
+                frame = _validate_panel(strategy, cached["rows"], external_fields=cached["provenance"].get("externalFields"))
                 provenance = cached["provenance"]
                 if canonical_hash(_records(frame)) == provenance["dataFingerprint"]:
                     provenance = dict(provenance, cacheHit=True)
@@ -366,6 +388,11 @@ def _load(strategy, client, cache_dir, cache_identity):
             daily = daily.merge(basic[["ts_code", "trade_date"] + optional_required], on=["ts_code", "trade_date"], how="left", validate="one_to_one")
         panels.append(daily)
     frame = _validate_panel(strategy, _records(pd.concat(panels, ignore_index=True)))
+    financial_provenance = {}
+    if financial_required:
+        reports = pd.concat([load_financial_history(client, symbol, start, end) for symbol in symbols], ignore_index=True)
+        frame, financial_provenance = join_financial_asof(frame, reports, financial_required, dates)
+        frame = _validate_panel(strategy, _records(frame), external_fields=financial_provenance["externalFields"])
     if not set(frame.trade_date).issubset(dates):
         raise ProviderError("CALENDAR_MISMATCH", "行情记录包含官方日历之外的交易日。")
     provenance = {"source": "TUSHARE_PRO", "classification": "PROVIDER_DATA", "synthetic": False,
@@ -379,6 +406,14 @@ def _load(strategy, client, cache_dir, cache_identity):
     provenance["observedColumns"] = ["raw_close", "vol", "amount", "adj_factor"] + optional_required
     provenance["derivedColumns"] = {c: {"formula": "raw_" + c + " * adj_factor / first_adj_factor", "classification": "CORPORATE_ACTION_ADJUSTED"} for c in ("open", "high", "low", "close")}
     provenance["optionalFieldCoverage"] = {c: float(frame[c].notna().mean()) for c in optional_required}
+    if financial_provenance:
+        provenance.update(financial_provenance)
+        provenance["datasets"].append("fina_indicator")
+        provenance["observedColumns"].extend(financial_required)
+        provenance["externalFieldCoverage"] = {c: float(frame[c].notna().mean()) for c in financial_required}
+        provenance["warnings"].append("财务指标按公告日后的首个交易日对齐；Tushare 原始发布版本完整性未经独立核实，不把当前供应商快照称为完全无修订的历史档案。")
+        if financial_provenance.get("financialAmbiguousDisclosures"):
+            provenance["warnings"].append("同证券、公告日、报告期与字段存在冲突版本：这些披露值已隔离为缺失，未猜测版本顺序；具体范围保存在 financialAmbiguitySample。")
     if optional_required:
         provenance["warnings"].append("daily_basic 按交易日期合并，缺失值保留；尚未验证历史修订版本与当时可获知时间。")
     if cache_path:
@@ -394,9 +429,9 @@ def _load(strategy, client, cache_dir, cache_identity):
     return frame, provenance
 
 
-def load_tushare(strategy, token, cache_dir=None):
-    return _load(strategy, TushareClient(token), cache_dir, token)
+def load_tushare(strategy, token, cache_dir=None, *, deferred_fields=None):
+    return _load(strategy, TushareClient(token), cache_dir, token, deferred_fields=deferred_fields)
 
 
-def load_tushare_proxy(strategy, proxy_url, service_token, cache_dir=None):
-    return _load(strategy, TushareClient(None, proxy_url=proxy_url, service_token=service_token), cache_dir, service_token)
+def load_tushare_proxy(strategy, proxy_url, service_token, cache_dir=None, *, deferred_fields=None):
+    return _load(strategy, TushareClient(None, proxy_url=proxy_url, service_token=service_token), cache_dir, service_token, deferred_fields=deferred_fields)

@@ -8,7 +8,8 @@ import {Miniflare} from 'miniflare';
 
 const validation=await fs.readFile(new URL('../edge/validation.mjs',import.meta.url),'utf8');
 const worker=(await fs.readFile(new URL('../edge/worker.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/validation\.mjs';\n/,'');
-const script='const WEB_ASSETS={"index.html":{body:"Atlas Quant",type:"text/html"}};const CATALOG={factors:[],models:[],templates:[]};const BUILD_ID="queue-race-test";\n'+validation+'\n'+worker;
+const studio=await fs.readFile(new URL('../edge/studio.mjs',import.meta.url),'utf8');
+const script='const RESEARCH_PRESETS={};const WEB_ASSETS={"index.html":{body:"Atlas Quant",type:"text/html"}};const CATALOG={factors:[],models:[],templates:[]};const BUILD_ID="queue-race-test";\n'+validation+'\n'+studio+'\n'+worker;
 const secret='queue-test-only-secret-not-production';
 const mf=new Miniflare({modules:true,script,compatibilityDate:'2026-08-01',d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{RUNNER_SECRET:secret}});
 const db=await mf.getD1Database('DB');

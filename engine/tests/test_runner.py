@@ -53,6 +53,28 @@ def test_proxy_job_cannot_send_credentials_to_arbitrary_host():
     assert e.value.code == "PROVIDER_PROXY_FORBIDDEN"
 
 
+def test_private_pcd_config_requires_explicit_mapping_and_fixed_host(tmp_path):
+    access = {"url": "https://yicapital-pcd-v3.eprestonyi.workers.dev", "token": "private-pcd-reader"*3}
+    path = config(tmp_path / "config.json", pcd_access=access)
+    cfg = load_config(path)
+    job = {"id": "test", "dataSource": "upload", "strategy": {"dataBindings": {"pcd": {
+        "pcd_assets": {"fieldId": "total_assets", "unitCode": "USD", "records": []}}}}}
+    prepared = prepare_job(job, cfg)
+    assert prepared["pcdAccess"] == access and "pcdAccess" not in job
+    assert "pcdAccess" not in prepare_job(dict(job, strategy={}), cfg)
+    assert "pcdAccess" not in prepare_job(dict(job, strategy=None), cfg)
+    config(path, pcd_access=dict(access, url="https://unrelated.test"))
+    with pytest.raises(RunnerError) as error:
+        load_config(path)
+    assert error.value.code == "CONFIG_PCD"
+
+
+def test_private_pcd_facts_cannot_be_combined_with_synthetic_tutorial():
+    with pytest.raises(RunnerError) as error:
+        run_job({"dataSource": "demo", "strategy": {"dataBindings": {"pcd": {"pcd_assets": {}}}}})
+    assert error.value.code == "PCD_REAL_DATA_REQUIRED"
+
+
 def test_tushare_missing_credentials_never_selects_demo():
     with pytest.raises(ProviderError) as e:
         run_job({"strategy": {}, "dataSource": "tushare"})

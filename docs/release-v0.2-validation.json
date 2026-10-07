@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "scope": "ATLAS_QUANT_V02_RELEASE_ACCEPTANCE",
+  "verifiedAt": "2026-10-07T11:13:13.086785+00:00",
+  "production": {
+    "url": "https://atlas-aletheia.com/quant/",
+    "build": "0.2.0-ba570bdd0757",
+    "workerDeploymentId": "0015b5f67824483aa93dfc0556de10b8",
+    "health": {
+      "ok": true,
+      "service": "Atlas Quant",
+      "version": "0.2.0-ba570bdd0757",
+      "runner": {
+        "online": true,
+        "lastSeen": "2026-10-07T11:12:07.025Z",
+        "state": "ready",
+        "engineVersion": "0.2.0"
+      },
+      "capabilities": {
+        "demo": true,
+        "upload": true,
+        "tushareHosted": true,
+        "localTushare": true,
+        "aiReview": true,
+        "pythonBrowser": true,
+        "studio": true
+      }
+    },
+    "realTushareRun": {
+      "status": "completed",
+      "engineVersion": "0.2.0",
+      "source": "TUSHARE_PRO",
+      "synthetic": false,
+      "symbols": 3,
+      "start": "20230101",
+      "end": "20250930",
+      "featureIds": [
+        "momentum_20",
+        "announced_roe",
+        "announced_leverage"
+      ],
+      "predictionRows": 405,
+      "modelTrials": 14,
+      "winner": "factor_score",
+      "holdoutUsedForSelection": false,
+      "evidenceStatus": "POSITIVE_WINDOW_MEANS_NOT_SIGNIFICANCE_TESTED",
+      "rawReportRedistributed": false
+    }
+  },
+  "catalog": {
+    "logicalDatabases": [
+      "PCD",
+      "MKT",
+      "EXT",
+      "MODEL"
+    ],
+    "universes": 1354,
+    "curatedNavigationUniverses": 15,
+    "builtInFactorRecipes": 397,
+    "builtInFactorFamilies": 50,
+    "registeredMetadataFields": 17073,
+    "totalFieldCatalogWithMarketAndFinancialAdapters": 17117,
+    "numericMetadataFields": 4870,
+    "fieldRecipeTemplatesRequiringData": 14610,
+    "factorCatalogTotalBeforeCommunity": 15007,
+    "researchPacks": 15,
+    "strategyTemplates": 15,
+    "modelFamilies": 8,
+    "parameterTrials": 14,
+    "countsAreNotValidatedAlpha": true
+  },
+  "checks": {
+    "pythonCleanPinnedEnvironment": {
+      "passed": 127,
+      "seconds": 16.24
+    },
+    "nodeApiAndRunner": {
+      "passed": 41,
+      "seconds": 3.84
+    },
+    "frontendSourceVMAndLocalApiAssertions": {
+      "passed": 43,
+      "browserTestCount": false
+    },
+    "productionBrowser": {
+      "realPointerDrag": {
+        "beforeFeatures": 3,
+        "afterFeatures": 5,
+        "module": "defensive",
+        "duplicateFeaturesExcluded": true
+      },
+      "pythonPandas": {
+        "success": true,
+        "elapsedMs": 9361,
+        "nonFiniteSerializedAsNull": true
+      },
+      "codeProjectSavedAndReadBackVersion": 1,
+      "aiReview": {
+        "providerExecuted": true,
+        "futureDataLeakageFlagged": true,
+        "patchExplicitlyApplied": true
+      },
+      "horizontalOverflowAt1280": false,
+      "browserErrorLogCount": 0
+    },
+    "sourceSecretScan": {
+      "candidateFiles": 71,
+      "bytesScanned": 14215612,
+      "actualCredentialMatches": 0,
+      "ignoredPrivateFilesIncluded": false
+    }
+  },
+  "computationalBound": {
+    "scope": "LOCAL_SYNTHETIC_COMPUTATIONAL_BOUND",
+    "marketRows": 104400,
+    "symbols": 50,
+    "factors": 32,
+    "modelFamilies": 8,
+    "configs": 14,
+    "seconds": 288.63237091699557,
+    "reportBytes": 16144021,
+    "predictionRows": 20550,
+    "trades": 20500,
+    "ledger": {
+      "passed": true,
+      "maxCashReconciliationError": 2.283400135638658e-10,
+      "maxEquityIdentityError": 2.3283064365386963e-10,
+      "reconciledTotalCosts": 6561.861144293828,
+      "allFillsAfterSignal": true,
+      "nonNegativeCashAndPositions": true
+    },
+    "evidenceStatus": "NO_VALIDATED_EDGE"
+  },
+  "limits": {
+    "symbolsPerRun": 50,
+    "factorsPerRun": 32,
+    "marketRowsPerRun": 110000,
+    "datasetAndReportBytes": 25165824,
+    "pythonBrowserSeconds": 120,
+    "serverJobSeconds": 900
+  },
+  "openGaps": [
+    "PCD currently verified only one company, one document and three observations; schema scale is not a populated historical panel.",
+    "EXT and MODEL support provenance and availability-dated imported fields; independent databases are not assumed populated.",
+    "Browser Python is exploratory and is not arbitrary server-side Python strategy execution.",
+    "Factor grouping organizes one shared feature matrix; arbitrary executable DAG branches are not implemented.",
+    "Universe lists are current member snapshots; historical membership and survivorship bias remain explicit limitations.",
+    "A single Mac mini runner is not a high-concurrency service or an uptime guarantee.",
+    "Community factor definitions and versioning exist; community moderation and governance remain future work."
+  ]
+}

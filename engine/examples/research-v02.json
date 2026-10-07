@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "name": "多家族因子与八类模型研究",
+  "universe": {
+    "symbols": ["000001.SZ", "000002.SZ", "600000.SH", "600036.SH", "600519.SH"],
+    "start": "20230101",
+    "end": "20260930"
+  },
+  "factors": [
+    {"id": "momentum_60", "expression": "returns(close,60)", "direction": 1},
+    {"id": "reversal_5", "expression": "returns(close,5)", "direction": -1},
+    {"id": "volatility_20", "expression": "ts_std(returns(close,1),20)", "direction": -1},
+    {"id": "illiquidity_20", "expression": "ts_mean(abs(returns(close,1))/max(amount,1),20)", "direction": -1},
+    {"id": "range_position_20", "expression": "(close-ts_min(low,20))/(ts_max(high,20)-ts_min(low,20))", "direction": 1},
+    {"id": "volume_variation_20", "expression": "ts_std(vol,20)/ts_mean(vol,20)", "direction": -1},
+    {"id": "intraday_momentum_20", "expression": "ts_mean((close-open)/open,20)", "direction": 1},
+    {"id": "downside_risk_20", "expression": "sqrt(ts_mean(min(returns(close,1),0)*min(returns(close,1),0),20))", "direction": -1}
+  ],
+  "preprocess": {"winsorize": true, "standardize": true},
+  "model": {
+    "mode": "auto",
+    "candidates": ["factor_score", "ridge", "elastic_net", "hist_gradient_boosting", "bayesian_ridge", "huber", "random_forest", "extra_trees"],
+    "horizon": 5,
+    "target": "forward_excess_return",
+    "metric": "rank_ic"
+  },
+  "portfolio": {"topN": 3, "maxWeight": 0.4, "rebalanceDays": 5, "initialCapital": 1000000},
+  "costs": {"commissionBps": 3, "slippageBps": 10, "sellTaxBps": 5},
+  "graph": {"nodes": [], "edges": []}
+}

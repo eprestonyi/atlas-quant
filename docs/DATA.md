@@ -6,7 +6,7 @@ Atlas Quant 区分合成教学、用户上传和 provider 数据。来源标签�
 |---|---|---|
 | 确定性合成数据 | `SYNTHETIC_EDUCATIONAL_ONLY` | 浏览器教学模式、本地 `--source demo` |
 | 用户上传 | `USER_PROVIDED_UNVERIFIED` | 浏览器 CSV/JSON、本地 `--source upload` |
-| Tushare Pro | `PROVIDER_DATA` / `TUSHARE_PRO` | 个人本地 `--source tushare`；公共托管默认关闭 |
+| Tushare Pro | `PROVIDER_DATA` / `TUSHARE_PRO` | 个人本地 `--source tushare`；运营方配置授权后的托管入口 |
 
 合成价格和日历用于测试流程。合成日历只去除周末，不模拟中国法定节假日、停牌或真实涨跌停。provider 报错时不会退回合成数据。
 
@@ -69,17 +69,61 @@ research_OHLC = raw_OHLC * adj_factor / first_observed_adj_factor
 
 这使价格成为以本次区间首个观测因子为基准的复权研究单位。成交量和成交额保留提供方原单位。不同取数起点会改变归一化单位，不能直接把研究数量当作券商股数。
 
-日历完整性、股票身份、日期范围、重复记录、OHLC 和复权完整性均被校验。停牌/缺失数据不填充。公开文档的接口积分和频次可能变化；目前 daily_basic、adj_factor、trade_cal 通常需要至少 2000 积分，实际权限以当前账号和接口返回为准。限流与权限错误明确返回，系统不购买权限，也不绕过限制。[官方权限频次表](https://tushare.pro/document/2?doc_id=290)
+日历完整性、股票身份、日期范围、重复记录、OHLC 和复权完整性均被校验。停牌/缺失数据不填充。公开文档的接口积分和频次可能变化；实际积分、频次和访问权限以当前官方文档、账号与接口返回为准。限流与权限错误明确返回，系统不购买权限，也不绕过限制。[官方权限频次表](https://tushare.pro/document/2?doc_id=290)
 
-`stock_basic` 的当前上市列表不是历史股票池。本版研究由用户指定股票池，没有依赖当前列表宣称消除了存活偏差，也没有历史指数成分服务。
+`stock_basic` 的当前上市列表和目录中的指数/行业成员快照不是历史股票池。目录保留完整成员、来源日期与快照哈希；推荐计算子集只是代码升序前 20 只，不代表收益排名。研究由用户明确选择子集，当前成员不证明历史成员资格，也不消除存活或事后选择偏差。
+
+## 财务与跨库字段
+
+Financial DB 包含 PCD、MKT、EXT、MODEL 四个逻辑库。Tushare 日行情归 MKT，供应商财务指标归 EXT；`fd_` 命名兼容旧适配器，不是第五库，也不表示已核对公司原始披露。[四库架构](ARCHITECTURE.md)
+
+财务来源为官方 [fina_indicator](https://tushare.pro/document/2?doc_id=79)。当前按所选因子请求 21 个指标：`eps,bps,ocfps,roe,roa,roic,grossprofit_margin,netprofit_margin,debt_to_assets,current_ratio,quick_ratio,assets_turn,inv_turn,ar_turn,or_yoy,netprofit_yoy,ocf_to_or,fcff,fcfe,ebit,ebitda`，表达式中加 `fd_` 前缀。
+
+财报按公告日后的首个官方交易日进入特征；报告期末不是可用日。适配器按年度有界取数并读取前两年的历史用于初始可用值，不把季度/累计数据自动当作 TTM。同证券、公告日、报告期的冲突字段隔离为 null 并保留冲突摘要；较旧报告期的迟到更新不能覆盖较新的报告期。原始披露版本是否完整由供应商历史覆盖决定，当前未独立核验。
+
+`income`、`balancesheet` 和 `cashflow` 的只读访问已单独验证，但其所有字段尚未自动形成时点因子。当前可运行财务配方来自明确登记的 `fina_indicator` 字段。
+
+外部上传数值列使用 `pcd_`、`fd_`、`ext_` 或 `model_` 加 1–60 个小写字母、数字或下划线。每行非空值须有对应的 `<alias>__available_date`（YYYYMMDD），并在 provenance 显式登记：
+
+```json
+{
+  "externalFields": {
+    "ext_example": {
+      "source": "MY_AUTHORIZED_VENDOR",
+      "path": "dataset.metric",
+      "dataType": "decimal",
+      "availabilityPolicy": "point_in_time_asof",
+      "availableDateColumn": "ext_example__available_date"
+    }
+  }
+}
+```
+
+这是 provenance 的局部示例，不含实际数值。允许的数值类型为 `number`、`decimal`、`integer`。字段缺失、未来可知日期、无效日期、字符串、布尔值和非有限数会被拒绝；不会将文本字段自动编码成有效因子。`ext_`/`model_` 上传支持不代表外部历史数据库已经接通。MODEL 的历史输出同样只能在其当时真正生成后使用，不能把事后重算值回填成历史预测。
+
+PCD 目录含 17,073 个字段，其中 4,870 个为 decimal/integer；可检索不等于有观测。当前生产只观察到 Apple 三个事实，没有 A 股已映射事实，不能把它们绑定到其他证券。PCD 连接以 `strategy.dataBindings.pcd` 精确声明字段、单位、证券—主体—记录：
+
+```json
+{
+  "pcd_example": {
+    "fieldId": "REPLACE_WITH_REAL_FIELD_ID",
+    "unitCode": "REPLACE_WITH_REAL_UNIT",
+    "records": [{"ts_code": "600000.SH", "entityId": "REAL_MATCHING_ENTITY", "recordId": "REAL_RECORD"}]
+  }
+}
+```
+
+以上仅为结构示例，不能直接运行。真实连接器检查身份、字段、单位、期间和版本；相同期间的多口径须显式选择或先聚合。可知时间取原文发布时间、取得时间、观察值时间、选值时间和记录创建时间的保守最大值，再移至下一个交易日。UNKNOWN 发布时间不会按报告期回填。原始精确十进制值留在 PCD，研究矩阵转换为 float64。
+
+声明可知日期不等于独立核验了来源；上传者提供的时间与授权属于声明。来源覆盖和真实连接证据见 [DATA_SOURCES.md](DATA_SOURCES.md)。
 
 ## 授权与公开使用
 
 代码开源许可不包括行情分发许可。Tushare [服务协议](https://tushare.pro/document/1?doc_id=405) 对个人使用、账号转让和商业使用有具体约束；[官方价格表](https://tushare.pro/document/2?doc_id=290) 区分个人与机构服务。因此，已有 token 可成功调用，不足以证明可以向 Atlas 所有用户提供共享数据服务。
 
-公共托管 Tushare 默认关闭；只有运营方已取得适用的明确授权后，才能考虑开启公共能力。私有代理和个人本地运行不是对数据许可的绕过。使用者应只上传和处理有权使用的数据，也不要把有再分发限制的原始数据提交到开源仓库。
+托管 Tushare 在运营方配置授权后通过 `TUSHARE_PUBLIC_AUTHORIZED=true` 开启，当前状态由 `/quant/api/health` 的 `capabilities.tushareHosted` 返回。已有运营者授权接入配置；此部署事实与适用于其他部署者的第三方数据条款分开。私有代理和个人本地运行不改变数据许可。使用者应只上传和处理有权使用的数据，也不要把有再分发限制的原始数据提交到开源仓库。
 
-私有运营者已完成一次真实 Tushare 到生产研究队列的技术验证，脱敏摘要见 [tushare-validation.json](tushare-validation.json)。这证明该次请求与计算成功，不授予公共供数权利；原始行情与完整私有报告没有随开源代码发布。
+早期真实 Tushare 到生产研究队列的脱敏摘要见 [tushare-validation.json](tushare-validation.json)。v0.2 的 [source-validation.json](../data/source-validation.json) 单独记录三只 A 股、2,001 行、公告时点财务指标和 14 个候选的完成实验。这些证据只证明各次取数与计算成功；原始行情与完整私有报告没有随开源代码发布。
 
 使用 Tushare 数据的产品应标明“数据来源：Tushare数据”。[官方 FAQ](https://tushare.pro/document/1?doc_id=122)
 
@@ -89,6 +133,6 @@ research_OHLC = raw_OHLC * adj_factor / first_observed_adj_factor
 
 排队/运行任务不在该定时清理查询中。因此，“30天”是残留终态任务的清理阈值，不是覆盖所有状态的硬性最长保留保证。
 
-策略、实验元信息、审计记录和运行报告单独保留，不适用上述原始上传删除规则。报告包含衍生价格、成交和持仓；当前没有一键删除整个工作区或恢复丢失 cookie 的公共流程。发布因子只公开定义和贡献元信息，不附带这些私有数据。
+策略、代码项目、实验元信息、审计记录和运行报告单独保留，不适用上述原始上传删除规则。报告包含衍生价格、成交和持仓；当前没有一键删除整个工作区或恢复丢失 cookie 的公共流程。发布因子只公开定义和贡献元信息，不附带这些私有数据。
 
 本地 CLI 输出由本地使用者管理。可选 provider 缓存用工作区/凭据指纹隔离，使用 0600 JSON 文件，最多每个缓存身份 32 个文件；1 小时是缓存复用有效期，不代表文件会在 1 小时后自动删除。缓存可能含有受数据许可限制的行情，勿上传公开目录。

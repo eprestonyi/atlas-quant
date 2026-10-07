@@ -3,15 +3,19 @@ import pandas as pd
 import pytest
 
 from atlas_quant.factors import FactorError, evaluate_expression, load_catalog, validate_expression
+from atlas_quant.research_registry import build_catalog, field_registry
 
 
 @pytest.fixture
 def panel():
-    dates = pd.bdate_range("2023-01-01", periods=120).strftime("%Y%m%d")
+    dates = pd.bdate_range("2023-01-01", periods=620).strftime("%Y%m%d")
     index = pd.MultiIndex.from_product([dates, ["000001.SZ", "000002.SZ", "600000.SH"]], names=["trade_date", "ts_code"])
     rng = np.random.default_rng(19)
-    close = 50 * np.exp(np.cumsum(rng.normal(0, 0.02, (120, 3)), axis=0)).ravel()
+    close = 50 * np.exp(np.cumsum(rng.normal(0, 0.02, (620, 3)), axis=0)).ravel()
     frame = pd.DataFrame({"close": close, "open": close * 0.997, "high": close * 1.01, "low": close * 0.99, "vol": rng.uniform(10, 100, len(index)), "amount": rng.uniform(100, 1000, len(index))}, index=index)
+    for field in field_registry():
+        if field["id"] not in frame:
+            frame[field["id"]] = rng.uniform(1, 30, len(index))
     return frame
 
 
@@ -29,19 +33,27 @@ def test_restricted_ast_rejects_unsafe_or_future_expressions(expression):
 
 def test_catalog_metadata_and_all_factors_causal(panel):
     catalog = load_catalog()
-    assert 15 <= len(catalog["factors"]) <= 25
+    assert len(catalog["factors"]) >= 300
+    assert catalog == build_catalog()
+    assert len({(f["expression"], f["direction"]) for f in catalog["factors"]}) == len(catalog["factors"])
+    for template in catalog["externalRecipeTemplates"]:
+        meta = validate_expression(template["expression"].format(field="pcd_example"))
+        assert meta["fields"] == ["pcd_example"] and meta["lookback"] == template["lookback"]
+        assert template["providesData"] is False
     assert len({f["id"] for f in catalog["factors"]}) == len(catalog["factors"])
     future = panel.copy()
-    boundary = panel.index.get_level_values("trade_date").unique()[90]
+    boundary = panel.index.get_level_values("trade_date").unique()[550]
     later = future.index.get_level_values("trade_date") >= boundary
     future.loc[later, :] *= 17
     for factor in catalog["factors"]:
         metadata = validate_expression(factor["expression"])
         assert metadata["lookback"] == factor["lookback"]
+        assert metadata["fields"] == factor["requiredFields"]
         before = evaluate_expression(factor["expression"], panel)
         after = evaluate_expression(factor["expression"], future)
         pd.testing.assert_series_equal(before.loc[~later], after.loc[~later])
         assert np.isfinite(before.dropna()).all()
+        assert before.loc[~later].notna().any(), factor["id"]
 
 
 def test_lag_is_per_symbol_and_calendar_missing_rows_not_skipped(panel):
@@ -71,6 +83,6 @@ def test_invalid_domains_become_missing_not_infinite(panel):
 def test_field_requirement_and_frame_order(panel):
     assert validate_expression("ts_mean(close,5)/lag(open,2)")["fields"] == ["close", "open"]
     with pytest.raises(FactorError):
-        evaluate_expression("pe_ttm", panel)
+        evaluate_expression("pcd_missing", panel)
     with pytest.raises(FactorError):
         evaluate_expression("close", panel.iloc[::-1])

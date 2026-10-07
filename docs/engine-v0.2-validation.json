@@ -1,0 +1,636 @@
+{
+  "schemaVersion": 1,
+  "scope": "LOCAL_ENGINE_V02_SYNTHETIC_NUMERICAL_VALIDATION",
+  "validationDate": "2026-10-07",
+  "engineVersion": "0.2.0",
+  "python": "3.12.13",
+  "syntheticOnly": true,
+  "realProviderCallsMadeByThisValidation": false,
+  "productionDeploymentVerified": false,
+  "tests": {
+    "wholeEngineDirectory": {
+      "passed": 104,
+      "seconds": 15.08,
+      "command": "PYTHONPATH=engine .venv/bin/python -m pytest -q engine/tests"
+    },
+    "pinnedCleanEnvironmentNumericalSuite": {
+      "passed": 57,
+      "seconds": 16.91,
+      "command": "PYTHONPATH=engine private/clean-env/bin/python -m pytest -q engine/tests/test_engine.py engine/tests/test_factors.py engine/tests/test_research_expansion.py"
+    }
+  },
+  "catalog": {
+    "recipes": 397,
+    "families": 50,
+    "ohlcvRecipes": 253,
+    "dailyBasicRecipes": 78,
+    "financialPITRecipes": 66,
+    "modelFamilies": 8,
+    "parameterConfigurations": 14,
+    "rawFieldsAreNotFactors": true
+  },
+  "stress": [
+    {
+      "scope": "LOCAL_SYNTHETIC_COMPUTATIONAL_BOUND",
+      "engineVersion": "0.2.0",
+      "marketRows": 65200,
+      "symbols": 50,
+      "calendarSessions": 1304,
+      "factors": 16,
+      "modelFamilies": 8,
+      "configs": 14,
+      "seconds": 90.07125883299159,
+      "reportBytes": 10279133,
+      "predictionRows": 13100,
+      "equityRows": 262,
+      "trades": 13050,
+      "winner": "factor_score",
+      "trialStatuses": [
+        {
+          "trialId": "factor_score:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "ridge:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "ridge:1",
+          "status": "complete"
+        },
+        {
+          "trialId": "elastic_net:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "elastic_net:1",
+          "status": "complete"
+        },
+        {
+          "trialId": "hist_gradient_boosting:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "hist_gradient_boosting:1",
+          "status": "complete"
+        },
+        {
+          "trialId": "bayesian_ridge:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "huber:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "huber:1",
+          "status": "complete"
+        },
+        {
+          "trialId": "random_forest:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "random_forest:1",
+          "status": "complete"
+        },
+        {
+          "trialId": "extra_trees:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "extra_trees:1",
+          "status": "complete"
+        }
+      ],
+      "holdoutUsedForSelection": false,
+      "evidenceStatus": "NO_VALIDATED_EDGE",
+      "resultSha256": "42345e6391b05c0427bff431b963e7066edc067fc26970f40091e490f971dd11",
+      "strategy": {
+        "schemaVersion": 1,
+        "name": "50 symbol synthetic computational bound",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "000002.SZ",
+            "000003.SZ",
+            "000004.SZ",
+            "000005.SZ",
+            "000006.SZ",
+            "000007.SZ",
+            "000008.SZ",
+            "000009.SZ",
+            "000010.SZ",
+            "000011.SZ",
+            "000012.SZ",
+            "000013.SZ",
+            "000014.SZ",
+            "000015.SZ",
+            "000016.SZ",
+            "000017.SZ",
+            "000018.SZ",
+            "000019.SZ",
+            "000020.SZ",
+            "000021.SZ",
+            "000022.SZ",
+            "000023.SZ",
+            "000024.SZ",
+            "000025.SZ",
+            "000026.SZ",
+            "000027.SZ",
+            "000028.SZ",
+            "000029.SZ",
+            "000030.SZ",
+            "000031.SZ",
+            "000032.SZ",
+            "000033.SZ",
+            "000034.SZ",
+            "000035.SZ",
+            "000036.SZ",
+            "000037.SZ",
+            "000038.SZ",
+            "000039.SZ",
+            "000040.SZ",
+            "000041.SZ",
+            "000042.SZ",
+            "000043.SZ",
+            "000044.SZ",
+            "000045.SZ",
+            "000046.SZ",
+            "000047.SZ",
+            "000048.SZ",
+            "000049.SZ",
+            "000050.SZ"
+          ],
+          "start": "20211001",
+          "end": "20260930"
+        },
+        "factors": [
+          {
+            "id": "momentum_20",
+            "expression": "returns(close,20)",
+            "direction": 1
+          },
+          {
+            "id": "reversal_20",
+            "expression": "returns(close,20)",
+            "direction": -1
+          },
+          {
+            "id": "volatility_20",
+            "expression": "ts_std(returns(close,1),20)",
+            "direction": -1
+          },
+          {
+            "id": "range_20",
+            "expression": "ts_mean((high-low)/close,20)",
+            "direction": -1
+          },
+          {
+            "id": "volume_surge_20",
+            "expression": "vol/ts_mean(vol,20)-1",
+            "direction": 1
+          },
+          {
+            "id": "volume_variation_20",
+            "expression": "ts_std(vol,20)/ts_mean(vol,20)",
+            "direction": -1
+          },
+          {
+            "id": "liquidity_20",
+            "expression": "log(ts_mean(amount,20))",
+            "direction": 1
+          },
+          {
+            "id": "illiquidity_20",
+            "expression": "ts_mean(abs(returns(close,1))/max(amount,1),20)",
+            "direction": -1
+          },
+          {
+            "id": "trend_strength_20",
+            "expression": "close/ts_mean(close,20)-1",
+            "direction": 1
+          },
+          {
+            "id": "range_position_20",
+            "expression": "(close-ts_min(low,20))/(ts_max(high,20)-ts_min(low,20))",
+            "direction": 1
+          },
+          {
+            "id": "rsi_ratio_20",
+            "expression": "ts_mean(max(delta(close,1),0),20)/ts_mean(abs(delta(close,1)),20)",
+            "direction": 1
+          },
+          {
+            "id": "downside_risk_20",
+            "expression": "sqrt(ts_mean(min(returns(close,1),0)*min(returns(close,1),0),20))",
+            "direction": -1
+          },
+          {
+            "id": "overnight_momentum_20",
+            "expression": "ts_mean(open/lag(close,1)-1,20)",
+            "direction": 1
+          },
+          {
+            "id": "intraday_momentum_20",
+            "expression": "ts_mean((close-open)/open,20)",
+            "direction": 1
+          },
+          {
+            "id": "breakout_20",
+            "expression": "close/lag(ts_max(high,20),1)-1",
+            "direction": 1
+          },
+          {
+            "id": "drawdown_20",
+            "expression": "close/ts_max(close,20)-1",
+            "direction": 1
+          }
+        ],
+        "model": {
+          "mode": "auto",
+          "candidates": [
+            "factor_score",
+            "ridge",
+            "elastic_net",
+            "hist_gradient_boosting",
+            "bayesian_ridge",
+            "huber",
+            "random_forest",
+            "extra_trees"
+          ],
+          "horizon": 5
+        },
+        "portfolio": {
+          "topN": 50,
+          "maxWeight": 0.02,
+          "rebalanceDays": 1,
+          "initialCapital": 1000000
+        }
+      },
+      "ledger": {
+        "passed": true,
+        "maxCashReconciliationError": 1.1582201864257513e-10,
+        "maxEquityIdentityError": 1.1641532182693481e-10,
+        "reconciledTotalCosts": 3938.3617022143794,
+        "allFillsAfterSignal": true,
+        "nonNegativeCashAndPositions": true
+      },
+      "performanceInterpretation": "Observed local runtime; not a latency guarantee. Holding all symbols is a computation/ledger stress, not a claim of predictive effectiveness."
+    },
+    {
+      "scope": "LOCAL_SYNTHETIC_COMPUTATIONAL_BOUND",
+      "engineVersion": "0.2.0",
+      "marketRows": 104400,
+      "symbols": 50,
+      "calendarSessions": 2088,
+      "factors": 32,
+      "modelFamilies": 8,
+      "configs": 14,
+      "seconds": 288.63237091699557,
+      "reportBytes": 16144021,
+      "predictionRows": 20550,
+      "equityRows": 411,
+      "trades": 20500,
+      "winner": "factor_score",
+      "trialStatuses": [
+        {
+          "trialId": "factor_score:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "ridge:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "ridge:1",
+          "status": "complete"
+        },
+        {
+          "trialId": "elastic_net:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "elastic_net:1",
+          "status": "complete"
+        },
+        {
+          "trialId": "hist_gradient_boosting:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "hist_gradient_boosting:1",
+          "status": "complete"
+        },
+        {
+          "trialId": "bayesian_ridge:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "huber:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "huber:1",
+          "status": "complete"
+        },
+        {
+          "trialId": "random_forest:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "random_forest:1",
+          "status": "complete"
+        },
+        {
+          "trialId": "extra_trees:0",
+          "status": "complete"
+        },
+        {
+          "trialId": "extra_trees:1",
+          "status": "complete"
+        }
+      ],
+      "holdoutUsedForSelection": false,
+      "evidenceStatus": "NO_VALIDATED_EDGE",
+      "resultSha256": "5f30c8dd04d48b123983f85f1d2227af28eac0d0a47f8395d89aaa9a806e6b9b",
+      "strategy": {
+        "schemaVersion": 1,
+        "name": "50 symbol synthetic computational bound",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "000002.SZ",
+            "000003.SZ",
+            "000004.SZ",
+            "000005.SZ",
+            "000006.SZ",
+            "000007.SZ",
+            "000008.SZ",
+            "000009.SZ",
+            "000010.SZ",
+            "000011.SZ",
+            "000012.SZ",
+            "000013.SZ",
+            "000014.SZ",
+            "000015.SZ",
+            "000016.SZ",
+            "000017.SZ",
+            "000018.SZ",
+            "000019.SZ",
+            "000020.SZ",
+            "000021.SZ",
+            "000022.SZ",
+            "000023.SZ",
+            "000024.SZ",
+            "000025.SZ",
+            "000026.SZ",
+            "000027.SZ",
+            "000028.SZ",
+            "000029.SZ",
+            "000030.SZ",
+            "000031.SZ",
+            "000032.SZ",
+            "000033.SZ",
+            "000034.SZ",
+            "000035.SZ",
+            "000036.SZ",
+            "000037.SZ",
+            "000038.SZ",
+            "000039.SZ",
+            "000040.SZ",
+            "000041.SZ",
+            "000042.SZ",
+            "000043.SZ",
+            "000044.SZ",
+            "000045.SZ",
+            "000046.SZ",
+            "000047.SZ",
+            "000048.SZ",
+            "000049.SZ",
+            "000050.SZ"
+          ],
+          "start": "20181001",
+          "end": "20260930"
+        },
+        "factors": [
+          {
+            "id": "momentum_20",
+            "expression": "returns(close,20)",
+            "direction": 1
+          },
+          {
+            "id": "reversal_20",
+            "expression": "returns(close,20)",
+            "direction": -1
+          },
+          {
+            "id": "volatility_20",
+            "expression": "ts_std(returns(close,1),20)",
+            "direction": -1
+          },
+          {
+            "id": "range_20",
+            "expression": "ts_mean((high-low)/close,20)",
+            "direction": -1
+          },
+          {
+            "id": "volume_surge_20",
+            "expression": "vol/ts_mean(vol,20)-1",
+            "direction": 1
+          },
+          {
+            "id": "volume_variation_20",
+            "expression": "ts_std(vol,20)/ts_mean(vol,20)",
+            "direction": -1
+          },
+          {
+            "id": "liquidity_20",
+            "expression": "log(ts_mean(amount,20))",
+            "direction": 1
+          },
+          {
+            "id": "illiquidity_20",
+            "expression": "ts_mean(abs(returns(close,1))/max(amount,1),20)",
+            "direction": -1
+          },
+          {
+            "id": "trend_strength_20",
+            "expression": "close/ts_mean(close,20)-1",
+            "direction": 1
+          },
+          {
+            "id": "range_position_20",
+            "expression": "(close-ts_min(low,20))/(ts_max(high,20)-ts_min(low,20))",
+            "direction": 1
+          },
+          {
+            "id": "rsi_ratio_20",
+            "expression": "ts_mean(max(delta(close,1),0),20)/ts_mean(abs(delta(close,1)),20)",
+            "direction": 1
+          },
+          {
+            "id": "downside_risk_20",
+            "expression": "sqrt(ts_mean(min(returns(close,1),0)*min(returns(close,1),0),20))",
+            "direction": -1
+          },
+          {
+            "id": "overnight_momentum_20",
+            "expression": "ts_mean(open/lag(close,1)-1,20)",
+            "direction": 1
+          },
+          {
+            "id": "intraday_momentum_20",
+            "expression": "ts_mean((close-open)/open,20)",
+            "direction": 1
+          },
+          {
+            "id": "breakout_20",
+            "expression": "close/lag(ts_max(high,20),1)-1",
+            "direction": 1
+          },
+          {
+            "id": "drawdown_20",
+            "expression": "close/ts_max(close,20)-1",
+            "direction": 1
+          },
+          {
+            "id": "rebound_20",
+            "expression": "close/ts_min(close,20)-1",
+            "direction": -1
+          },
+          {
+            "id": "trend_efficiency_20",
+            "expression": "delta(close,20)/ts_sum(abs(delta(close,1)),20)",
+            "direction": 1
+          },
+          {
+            "id": "trend_persistence_20",
+            "expression": "ts_mean(sign(max(returns(close,1),0)),20)",
+            "direction": 1
+          },
+          {
+            "id": "mean_return_20",
+            "expression": "ts_mean(returns(close,1),20)",
+            "direction": 1
+          },
+          {
+            "id": "historical_sharpe_20",
+            "expression": "ts_mean(returns(close,1),20)/ts_std(returns(close,1),20)",
+            "direction": 1
+          },
+          {
+            "id": "bollinger_position_20",
+            "expression": "(close-ts_mean(close,20))/ts_std(close,20)",
+            "direction": 1
+          },
+          {
+            "id": "parkinson_volatility_20",
+            "expression": "sqrt(ts_mean(log(high/low)*log(high/low),20)/(4*log(2)))",
+            "direction": -1
+          },
+          {
+            "id": "max_return_20",
+            "expression": "ts_max(returns(close,1),20)",
+            "direction": -1
+          },
+          {
+            "id": "min_return_20",
+            "expression": "ts_min(returns(close,1),20)",
+            "direction": 1
+          },
+          {
+            "id": "return_dispersion_20",
+            "expression": "ts_mean(abs(returns(close,1)),20)",
+            "direction": -1
+          },
+          {
+            "id": "volume_rank_20",
+            "expression": "ts_rank(vol,20)",
+            "direction": 1
+          },
+          {
+            "id": "amount_surge_20",
+            "expression": "amount/ts_mean(amount,20)-1",
+            "direction": 1
+          },
+          {
+            "id": "money_flow_20",
+            "expression": "ts_sum(((2*close-high-low)/(high-low))*vol,20)/ts_sum(vol,20)",
+            "direction": 1
+          },
+          {
+            "id": "volume_weighted_return_20",
+            "expression": "ts_sum(returns(close,1)*vol,20)/ts_sum(vol,20)",
+            "direction": 1
+          },
+          {
+            "id": "moving_average_change_20",
+            "expression": "ts_mean(close,20)/lag(ts_mean(close,20),20)-1",
+            "direction": 1
+          },
+          {
+            "id": "momentum_60",
+            "expression": "returns(close,60)",
+            "direction": 1
+          }
+        ],
+        "model": {
+          "mode": "auto",
+          "candidates": [
+            "factor_score",
+            "ridge",
+            "elastic_net",
+            "hist_gradient_boosting",
+            "bayesian_ridge",
+            "huber",
+            "random_forest",
+            "extra_trees"
+          ],
+          "horizon": 5
+        },
+        "portfolio": {
+          "topN": 50,
+          "maxWeight": 0.02,
+          "rebalanceDays": 1,
+          "initialCapital": 1000000
+        }
+      },
+      "ledger": {
+        "passed": true,
+        "maxCashReconciliationError": 2.283400135638658e-10,
+        "maxEquityIdentityError": 2.3283064365386963e-10,
+        "reconciledTotalCosts": 6561.861144293828,
+        "allFillsAfterSignal": true,
+        "nonNegativeCashAndPositions": true
+      },
+      "performanceInterpretation": "Observed local runtime; not a latency guarantee. Holding all symbols is a computation/ledger stress, not a claim of predictive effectiveness."
+    }
+  ],
+  "cleanCLIExample": {
+    "command": "private/clean-env/bin/python scripts/local-run.py engine/examples/research-v02.json --source demo --output private/research-v02-example.json",
+    "status": "completed",
+    "target": "forward_excess_return",
+    "modelFamilies": 8,
+    "configurations": 14,
+    "predictionRows": 945,
+    "winner": "ridge",
+    "evidenceStatus": "POSITIVE_WINDOW_MEANS_NOT_SIGNIFICANCE_TESTED",
+    "ledger": {
+      "passed": true,
+      "maxCashReconciliationError": 1.1059455573558807e-09,
+      "maxEquityIdentityError": 1.1641532182693481e-09,
+      "reconciledTotalCosts": 28066.372890387454,
+      "allFillsAfterSignal": true,
+      "nonNegativeCashAndPositions": true
+    }
+  },
+  "sourceFingerprintsAtPackaging": {
+    "engine/atlas_quant/engine.py": "a97e5d964bb492a7e759906451b473c6033a9c1fa58c94df21a3a31b48330c01",
+    "engine/atlas_quant/factors.py": "885c2981307f9368d38de7b094b65d6d80a0cbbf34f54a30d7e1bcdb9c7231c3",
+    "engine/atlas_quant/research_registry.py": "2b7be71b1dbda43415deebc04dd276361307f6284a13d7b1e00d480fb66d6b51",
+    "engine/atlas_quant/catalog.json": "1171b71d15c097d99075871fb1a67a5f302ca25c858b86ce536fd2edc4464140",
+    "engine/examples/research-v02.json": "28f81dd72ae4b855747df7cbc826f75a9b8df22952a6cdbe6aad0266173050e6",
+    "engine/requirements.lock.txt": "048d7a135615c0709703d83dec2d1a19e013038d55ca7a5b94d73c30e978624b"
+  }
+}

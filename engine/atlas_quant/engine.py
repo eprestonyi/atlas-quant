@@ -16,18 +16,22 @@ import warnings as pywarnings
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor, RandomForestRegressor
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import ElasticNet, Ridge
+from sklearn.linear_model import BayesianRidge, ElasticNet, HuberRegressor, Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from threadpoolctl import threadpool_limits
 
 from .factors import FactorError, evaluate_expression, validate_expression
+from .research_registry import MODEL_REGISTRY, TARGETS, is_external_field
 
-ENGINE_VERSION = "0.1.0"
-MODEL_NAMES = {"factor_score": "等权因子基线", "ridge": "Ridge", "elastic_net": "ElasticNet", "hist_gradient_boosting": "Histogram Gradient Boosting"}
+ENGINE_VERSION = "0.2.0"
+MAX_SYMBOLS = 50
+MAX_FACTORS = 32
+MAX_DATA_ROWS = 110_000
+MODEL_NAMES = {key: spec["name"] for key, spec in MODEL_REGISTRY.items()}
 
 
 class ResearchError(ValueError):
@@ -80,16 +84,16 @@ def validate_strategy(strategy):
             raise ResearchError("INVALID_STRATEGY", f"{section} 须为对象")
     u = s.get("universe", {})
     symbols = u.get("symbols", [])
-    if not isinstance(symbols, list) or not 3 <= len(symbols) <= 20 or any(not isinstance(x, str) for x in symbols) or len(set(symbols)) != len(symbols):
-        raise ResearchError("INVALID_UNIVERSE", "股票池须包含 3–20 个不重复 A 股代码")
+    if not isinstance(symbols, list) or not 3 <= len(symbols) <= MAX_SYMBOLS or any(not isinstance(x, str) for x in symbols) or len(set(symbols)) != len(symbols):
+        raise ResearchError("INVALID_UNIVERSE", f"股票池须包含 3–{MAX_SYMBOLS} 个不重复 A 股代码")
     if any(not isinstance(x, str) or not re.fullmatch(r"\d{6}\.(SH|SZ|BJ)", x) for x in symbols):
         raise ResearchError("INVALID_UNIVERSE", "股票代码须为 000001.SZ 等 A 股格式")
     start, end = _date(u.get("start")), _date(u.get("end"))
     if start >= end or (pd.Timestamp(end) - pd.Timestamp(start)).days > 366 * 8:
         raise ResearchError("INVALID_RANGE", "起止日期须递增且不超过 8 年")
     factors = s.get("factors", [])
-    if not isinstance(factors, list) or not 1 <= len(factors) <= 12:
-        raise ResearchError("INVALID_FACTORS", "须选择 1–12 个因子")
+    if not isinstance(factors, list) or not 1 <= len(factors) <= MAX_FACTORS:
+        raise ResearchError("INVALID_FACTORS", f"须选择 1–{MAX_FACTORS} 个因子")
     ids = set()
     for factor in factors:
         if not isinstance(factor, dict) or not isinstance(factor.get("id"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", factor["id"]):
@@ -117,6 +121,9 @@ def validate_strategy(strategy):
     if model["mode"] == "manual" and len(names) != 1:
         raise ResearchError("INVALID_MODEL", "手动模式仅允许一个模型系列")
     model["horizon"] = _number(model.get("horizon", 5), "预测期", 1, 20, True)
+    model.setdefault("target", "forward_return")
+    if not isinstance(model["target"], str) or model["target"] not in TARGETS:
+        raise ResearchError("INVALID_TARGET", "预测目标须为 forward_return 或 forward_excess_return")
     if model.get("metric", "rank_ic") != "rank_ic":
         raise ResearchError("INVALID_MODEL", "v1 仅支持预先固定的 rank_ic 选择指标")
     model["metric"] = "rank_ic"
@@ -150,8 +157,8 @@ def _prepare_data(data, strategy, provenance):
     missing = required - set(data.columns)
     if missing:
         raise ResearchError("MISSING_FIELDS", "行情缺少字段：" + ", ".join(sorted(missing)))
-    if len(data) > 50_000:
-        raise ResearchError("DATA_LIMIT", "单次最多 50000 行行情")
+    if len(data) > MAX_DATA_ROWS:
+        raise ResearchError("DATA_LIMIT", f"单次最多 {MAX_DATA_ROWS} 行行情")
     df = data.copy()
     df["trade_date"] = df["trade_date"].astype(str)
     for dt in df["trade_date"].unique():
@@ -165,6 +172,38 @@ def _prepare_data(data, strategy, provenance):
     factor_fields = set().union(*(set(validate_expression(f["expression"])["fields"]) for f in strategy["factors"]))
     if factor_fields - set(df.columns):
         raise ResearchError("MISSING_FACTOR_DATA", "缺少所选因子数据：" + ", ".join(sorted(factor_fields - set(df.columns))))
+    external_audit, availability_columns = [], []
+    for field in sorted(f for f in factor_fields if is_external_field(f)):
+        registry = provenance.get("externalFields")
+        meta = registry.get(field) if isinstance(registry, dict) else None
+        companion = field + "__available_date"
+        if (not isinstance(meta, dict) or meta.get("availabilityPolicy") != "point_in_time_asof"
+                or not isinstance(meta.get("dataType"), str) or meta["dataType"] not in {"number", "decimal", "integer"}
+                or meta.get("availableDateColumn") != companion
+                or not isinstance(meta.get("source"), str) or not meta["source"].strip()
+                or not isinstance(meta.get("path"), str) or not meta["path"].strip()
+                or companion not in df):
+            raise ResearchError("EXTERNAL_FIELD_PIT_REQUIRED", f"外部字段 {field} 需要数值类型、来源路径与逐行可知日期证明")
+        observed = df[field].notna()
+        if df.loc[observed, field].map(lambda value: isinstance(value, (bool, str)) or not isinstance(value, (int, float, np.number))).any():
+            raise ResearchError("EXTERNAL_FIELD_NONNUMERIC", f"外部字段 {field} 不允许把文本或布尔值自动转为数值")
+        converted = pd.to_numeric(df[field], errors="coerce")
+        if not np.isfinite(converted[observed]).all():
+            raise ResearchError("EXTERNAL_FIELD_NONNUMERIC", f"外部字段 {field} 含非数值或非有限观测")
+        availability = df.loc[observed, companion]
+        if availability.isna().any():
+            raise ResearchError("EXTERNAL_FIELD_PIT_REQUIRED", f"外部字段 {field} 缺少可知日期")
+        availability = availability.astype(str)
+        for date in availability.unique():
+            _date(date)
+        if (availability > df.loc[observed, "trade_date"]).any():
+            raise ResearchError("FUTURE_EXTERNAL_FIELD", f"外部字段 {field} 包含信号日尚不可知的数据")
+        df[field] = converted
+        df[companion] = df[companion].where(df[companion].notna(), "").astype(str)
+        availability_columns.append(companion)
+        external_audit.append({"field": field, "source": meta["source"], "path": meta["path"], "observedValues": int(observed.sum()), "availableDateColumn": companion, "availabilityPolicy": "point_in_time_asof", "latestAvailableDate": availability.max() if len(availability) else None, "independentSourcePublicationVerified": False})
+        if field.startswith("model_"):
+            external_audit[-1]["independentTrainingHistoryVerified"] = False
     numeric = sorted((required | factor_fields) - {"ts_code", "trade_date"})
     for field in numeric:
         df[field] = pd.to_numeric(df[field], errors="coerce")
@@ -189,19 +228,21 @@ def _prepare_data(data, strategy, provenance):
     if len(dates) < 180:
         raise ResearchError("INSUFFICIENT_DATA", "至少需要 180 个交易日，另需因子预热与预测期")
     df = df.sort_values(["trade_date", "ts_code"])
-    row_bytes = df[["trade_date", "ts_code"] + numeric].to_csv(index=False, float_format="%.17g").encode()
+    row_bytes = df[["trade_date", "ts_code"] + numeric + availability_columns].to_csv(index=False, float_format="%.17g").encode()
     calendar_bytes = json.dumps(dates, separators=(",", ":")).encode()
     digest = hashlib.sha256(row_bytes + b"\ncalendar:" + calendar_bytes).hexdigest()
     idx = pd.MultiIndex.from_product([dates, sorted(u["symbols"])], names=["trade_date", "ts_code"])
     panel = df.set_index(["trade_date", "ts_code"])[numeric].reindex(idx)
-    return panel, dates, {"dataSha256": digest, "calendarSha256": hashlib.sha256(calendar_bytes).hexdigest(), "observedRows": len(df), "expectedRows": len(panel), "calendarProvided": calendar_verified}
+    return panel, dates, {"dataSha256": digest, "calendarSha256": hashlib.sha256(calendar_bytes).hexdigest(), "observedRows": len(df), "expectedRows": len(panel), "calendarProvided": calendar_verified, "externalFieldAudit": external_audit}
 
 
-def _build_samples(panel, dates, factors, horizon):
+def _build_samples(panel, dates, factors, horizon, target="forward_return"):
     X = pd.DataFrame({f["id"]: evaluate_expression(f["expression"], panel) * f["direction"] for f in factors}, index=panel.index)
     opens = panel["open"].groupby(level="ts_code", sort=False)
     entry, exit_ = opens.shift(-1), opens.shift(-(horizon + 1))
     y = (exit_ / entry - 1).replace([np.inf, -np.inf], np.nan)
+    if target == "forward_excess_return":
+        y = y - y.groupby(level="trade_date").transform("mean")
     date_ends = {date: dates[i + horizon + 1] if i + horizon + 1 < len(dates) else None for i, date in enumerate(dates)}
     ends = pd.Series(panel.index.get_level_values("trade_date").map(date_ends), index=panel.index, dtype="object")
     valid = X.notna().any(axis=1) & y.notna() & panel["close"].notna()
@@ -220,12 +261,7 @@ def _time_folds(dates, count=3):
 def _trial_specs(names):
     specs = []
     for name in names:
-        grids = {
-            "factor_score": [{}],
-            "ridge": [{"alpha": 1.0}, {"alpha": 10.0}],
-            "elastic_net": [{"alpha": 0.0001, "l1_ratio": 0.2}, {"alpha": 0.001, "l1_ratio": 0.5}],
-            "hist_gradient_boosting": [{"max_leaf_nodes": 7, "l2_regularization": 1.0}, {"max_leaf_nodes": 15, "l2_regularization": 5.0}],
-        }[name]
+        grids = MODEL_REGISTRY[name]["grid"]
         for i, params in enumerate(grids):
             specs.append({"id": name, "trialId": f"{name}:{i}", "name": MODEL_NAMES[name], "params": params})
     return specs
@@ -248,8 +284,17 @@ def _fit_predict(spec, X_train, y_train, X_test, preprocess):
         estimator = Ridge(**spec["params"])
     elif spec["id"] == "elastic_net":
         estimator = ElasticNet(**spec["params"], max_iter=3000, tol=1e-5, selection="cyclic")
-    else:
+    elif spec["id"] == "bayesian_ridge":
+        estimator = BayesianRidge(max_iter=500, tol=1e-5)
+    elif spec["id"] == "huber":
+        estimator = HuberRegressor(**spec["params"], max_iter=500, tol=1e-5)
+    elif spec["id"] in {"random_forest", "extra_trees"}:
+        cls = RandomForestRegressor if spec["id"] == "random_forest" else ExtraTreesRegressor
+        estimator = cls(**spec["params"], n_estimators=64, max_features=0.7, random_state=17, n_jobs=1)
+    elif spec["id"] == "hist_gradient_boosting":
         estimator = HistGradientBoostingRegressor(**spec["params"], max_iter=80, min_samples_leaf=20, learning_rate=0.06, max_bins=64, early_stopping=False, random_state=17)
+    else:
+        raise ValueError("未知模型系列")
     steps.append(("model", estimator))
     pipe = Pipeline(steps)
     with pywarnings.catch_warnings(record=True) as captured:
@@ -270,6 +315,9 @@ def _fit_predict(spec, X_train, y_train, X_test, preprocess):
     if hasattr(estimator, "coef_"):
         audit["coefficients"] = estimator.coef_.tolist()
         audit["intercept"] = float(estimator.intercept_)
+    if hasattr(estimator, "feature_importances_"):
+        audit["impurityFeatureImportances"] = estimator.feature_importances_.tolist()
+        audit["importanceCaution"] = "Training impurity importance is biased by correlated features and is not causal attribution or holdout validation."
     return pred, audit
 
 
@@ -427,6 +475,41 @@ def _simulate(panel, dates, predictions, strategy):
     return metrics, equity, trades, ledger, skipped
 
 
+def _forecast_report(predictions, truth, label_end, panel, dates, strategy, model_id):
+    """Expose only frozen-model holdout forecasts with honest output units."""
+    is_estimate = MODEL_REGISTRY[model_id]["predictionKind"] == "target_estimate"
+    target = TARGETS[strategy["model"]["target"]]
+    rank = predictions.groupby(level="trade_date").rank(method="average", ascending=False)
+    percentiles = predictions.groupby(level="trade_date").rank(pct=True)
+    vol = evaluate_expression("ts_std(returns(close,1),20)", panel) * np.sqrt(252)
+    downside = evaluate_expression("sqrt(ts_mean(min(returns(close,1),0)*min(returns(close,1),0),20))", panel) * np.sqrt(252)
+    next_dates = {d: dates[i + 1] if i + 1 < len(dates) else None for i, d in enumerate(dates)}
+    rows = []
+    for (date, symbol), value in predictions.items():
+        idx = (date, symbol)
+        rows.append({"date": date, "symbol": symbol, "score": float(value), "rank": float(rank.loc[idx]), "percentile": float(percentiles.loc[idx]), "predictedTarget": float(value) if is_estimate else None, "actualTarget": truth.loc[idx], "labelEnd": label_end.loc[idx], "earliestExecutionDate": next_dates[date], "trailingVolatility20Annualized": vol.loc[idx], "trailingDownside20Annualized": downside.loc[idx]})
+    mature = pd.DataFrame({"prediction": predictions, "actual": truth}).dropna()
+    metrics = None
+    if is_estimate and len(mature):
+        errors = mature.prediction - mature.actual
+        metrics = {"observations": len(mature), "mae": float(errors.abs().mean()), "rmse": float(np.sqrt((errors * errors).mean())), "directionAccuracy": float((np.sign(mature.prediction) == np.sign(mature.actual)).mean()), "calibratedProbability": False, "period": "terminal_holdout_only"}
+    latest_date = max(row["date"] for row in rows) if rows else None
+    return {"target": target, "horizonSessions": strategy["model"]["horizon"], "period": "terminal_holdout_only", "frozenModel": True, "scoreInterpretation": "predicted_target_higher_is_better" if is_estimate else "mean_factor_percentile_higher_is_better_not_return", "predictedTargetUnit": target["unit"] if is_estimate else None, "riskInterpretation": "Trailing 20-session annualized observed risk, not predicted future risk or confidence interval.", "latestDate": latest_date, "rows": rows, "latest": sorted((row for row in rows if row["date"] == latest_date), key=lambda row: (row["rank"], row["symbol"])), "errorMetrics": metrics, "confidenceInterval": None}
+
+
+def _training_diagnostics(X, mask):
+    train = X.loc[mask]
+    correlation = train.corr(min_periods=30)
+    pairs = []
+    for i, first in enumerate(train.columns):
+        for second in train.columns[i + 1:]:
+            value = correlation.loc[first, second]
+            if np.isfinite(value) and abs(value) >= 0.9:
+                pairs.append({"first": first, "second": second, "correlation": float(value)})
+    pairs.sort(key=lambda row: -abs(row["correlation"]))
+    return {"period": "final_purged_training_only", "featureCoverage": {col: float(train[col].notna().mean()) for col in train}, "highCorrelationPairs": pairs[:50], "highCorrelationThreshold": 0.9, "totalHighCorrelationPairs": len(pairs), "automaticallyDroppedFeatures": [], "note": "Correlated window recipes are not independent evidence. Diagnostics do not select features using holdout."}
+
+
 def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
     """Run deterministic research. No provider call, network, file or trade side effect."""
     s = validate_strategy(strategy)
@@ -434,7 +517,7 @@ def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
         raise ResearchError("INVALID_PROVENANCE", "provenance 须为对象")
     provenance = copy.deepcopy(provenance or {})
     panel, dates, data_audit = _prepare_data(data, s, provenance)
-    X, y, label_end, valid = _build_samples(panel, dates, s["factors"], s["model"]["horizon"])
+    X, y, label_end, valid = _build_samples(panel, dates, s["factors"], s["model"]["horizon"], s["model"]["target"])
     counts = valid.groupby(level="trade_date").sum()
     eligible_dates = counts[counts >= 3].index.tolist()
     if len(eligible_dates) < 180:
@@ -474,6 +557,12 @@ def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
         warn.append("股票池少于10只，截面RankIC离散且不稳定，模型比较证据较弱。")
     if data_audit["observedRows"] < data_audit["expectedRows"]:
         warn.append("输入行情有缺失交易日；因子保留缺失，跨缺失窗口可能不可用。")
+    if data_audit["externalFieldAudit"]:
+        warn.append("外部数值字段已检查声明的逐行可知日期不晚于信号日；源文件时间戳和发布真实性仍依赖上传者/连接器，字段目录本身不是历史数据。")
+    if any(item["field"].startswith("model_") for item in data_audit["externalFieldAudit"]):
+        warn.append("MODEL 输入保留所声明的来源记录与可用日期；原模型训练截止、历史生成记录及独立预测性质尚未独立核实。")
+    if s["model"]["target"] == "forward_excess_return":
+        warn.append("超额收益目标相对同日可观测标签的用户股票池均值，不是官方指数；缺失标签会改变基准组成。")
     outer_records = []
     with threadpool_limits(limits=1):
         outer_folds = _time_folds(dev_dates, 3)
@@ -514,7 +603,7 @@ def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
     observed_holdout = panel["close"].notna() & holdout_rows
     for factor in s["factors"]:
         ics = _rank_ics(X.loc[holdout_rows, factor["id"]], y[valid & holdout_rows])
-        factor_results.append({"id": factor["id"], "ic": float(np.mean([row["ic"] for row in ics])) if ics else None, "coverage": float(X.loc[observed_holdout, factor["id"]].notna().mean()), "period": "terminal_holdout", "scoredDates": len(ics), "direction": factor["direction"], "definition": factor["expression"]})
+        factor_results.append({"id": factor["id"], "ic": float(np.mean([row["ic"] for row in ics])) if ics else None, "coverage": float(X.loc[observed_holdout, factor["id"]].notna().mean()), "period": "terminal_holdout", "scoredDates": len(ics), "direction": factor["direction"], "definition": factor["expression"], "requiredFields": validate_expression(factor["expression"])["fields"]})
     candidates = []
     for name in names:
         family = [trial for trial in trials if trial["id"] == name]
@@ -528,8 +617,10 @@ def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
         "strategy": s, "provenance": prov,
         "selection": {"winner": winner["id"], "winnerTrialId": winner["trialId"], "params": winner["params"], "metric": "rank_ic", "reason": "以开发期内扩展窗口验证的平均每日截面RankIC选择有限候选；终端留出结果从未参与排序。", "score": winner["score"], "candidates": candidates, "trials": trials, "trialCount": len(specs), "holdoutUsedForSelection": False, "qualified": qualified, "deploymentQualified": False, "evidenceStatus": "POSITIVE_WINDOW_MEANS_NOT_SIGNIFICANCE_TESTED" if qualified else "NO_VALIDATED_EDGE", "splits": {"unit": "unique_trade_date", "boundaryRule": "fixed_calendar_after_declared_factor_warmup", "development": {"start": development_dates[0], "end": development_dates[-1]}, "finalTraining": {"start": dev_dates[0], "end": dev_dates[-1], "labelEndMax": label_end[dev_valid].max(), "rows": int(dev_valid.sum())}, "holdout": {"start": holdout_start, "end": simulation_dates[-1], "fractionOfResearchDates": len(holdout_dates) / len(research_dates)}, "labelHorizonSessions": s["model"]["horizon"], "purgeRule": "training label end strictly before validation start", "outerFolds": outer_records}},
         "metrics": metrics, "equity": equity, "trades": trades, "factors": factor_results,
+        "predictions": _forecast_report(holdout_predictions, y, label_end, panel, dates, s, winner["id"]),
+        "trainingDiagnostics": _training_diagnostics(X, dev_valid),
         "warnings": warn,
-        "validation": {"metricPeriod": "terminal_holdout_only", "holdoutRankIC": holdout_score, "holdoutDailyIC": holdout_ics, "nestedWalkForwardRankIC": outer_score, "nestedWalkForwardFolds": len(outer_records), "randomSplitUsed": False, "preprocessingFitOnTrainOnly": True, "holdoutUsedForSelection": False, "finalFit": fitted_audit, "features": list(X.columns), "eligibleDates": len(eligible_dates), "labelDefinition": "adjusted_open[T+h+1] / adjusted_open[T+1] - 1; T signal generated after close", "calendar": "provided" if data_audit["calendarProvided"] else "observed_dates_only", "seed": 17, "candidateBudget": len(specs), "totalFitsUpperBound": len(specs) * 9 + 4, "predictiveSignificanceTested": False},
+        "validation": {"metricPeriod": "terminal_holdout_only", "holdoutRankIC": holdout_score, "holdoutDailyIC": holdout_ics, "nestedWalkForwardRankIC": outer_score, "nestedWalkForwardFolds": len(outer_records), "randomSplitUsed": False, "preprocessingFitOnTrainOnly": True, "holdoutUsedForSelection": False, "finalFit": fitted_audit, "features": list(X.columns), "eligibleDates": len(eligible_dates), "labelDefinition": TARGETS[s["model"]["target"]]["definition"] + "; T signal generated after close", "calendar": "provided" if data_audit["calendarProvided"] else "observed_dates_only", "seed": 17, "candidateBudget": len(specs), "totalFitsUpperBound": len(specs) * 9 + 4, "predictiveSignificanceTested": False},
         "execution": {"unit": "fractional_adjusted_research_unit", "fillRule": "T-close signal, T+1 open reference price plus explicit cash slippage cost", "positionCap": "target weight at rebalance, not a continuous hard exposure limit", "costUnit": "basis_points_of_reference_notional", "turnoverDefinition": "gross_traded_notional / mean_daily_equity", "benchmarkDefinition": "equal_weight_buy_and_hold_at_first_holdout_close_cost_free", "terminalLiquidation": False, "ledger": ledger, "skipped": skipped},
     }
     clean = _finite_json(result)

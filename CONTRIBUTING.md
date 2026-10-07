@@ -28,7 +28,13 @@ close/lag(ts_max(high,20),1)-1
 ts_mean(abs(returns(close,1))/max(amount,1),20)
 ```
 
-支持因果滞后、滚动与当日横截面函数；不执行任意 Python，不支持负滞后、未来窗口、导入、网络、文件、属性访问或下标。完整函数和字段见 [METHODOLOGY.md](docs/METHODOLOGY.md)。
+支持因果滞后、滚动与当日横截面函数；不执行任意 Python，不支持负滞后、未来窗口、导入、网络、文件、属性访问或下标。完整函数和字段见 [METHODOLOGY.md](docs/METHODOLOGY.md)。用户 Python 可在浏览器代码模式单独执行，但社区服务端因子仍使用此 DSL；保存代码或 AI 审查不等于注册可在服务器执行的插件。
+
+## 字段目录与配方
+
+397 个内置配方由 `engine/atlas_quant/research_registry.py` 登记，并保存在 `catalog.json`。修改时同时检查表达式、依赖字段、回看、单位、方向、可用时间与数据来源，运行数值和 edge 的目录一致性测试。一个字段的多个窗口是多个假设，不应宣传为独立验证的 alpha。
+
+PCD 的 17,073 个字段是结构目录，不能通过改 `availability` 标记伪装成有数据。贡献新连接器时说明实际证券/主体、期间与观测覆盖，提供保守可知时间和版本证据。非数值字段需要单独设计有文档的转换方法；不能用任意编码或补零绕过数值要求。外部和 MODEL 输出也应保留 source/path，MODEL 还需要独立审查历史训练数据与当时生成时间。
 
 ## 代码 PR
 

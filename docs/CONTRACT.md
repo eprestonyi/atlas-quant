@@ -1,51 +1,35 @@
-# Atlas Quant v0.1 contract
+# Atlas Quant v0.2 contract
 
-This document describes the v0.1 interface between the browser, edge API, data provider and research engine.
+The browser, edge, provider and numerical engine share the strategy format in [research-v02.json](../engine/examples/research-v02.json). `schemaVersion: 1` remains compatible with v0.1; v0.2 adds target selection, more registered model families, external field bindings and prediction output. The current public endpoint contract is [API.md](API.md).
 
-Public URL /quant/. Relative API root /quant/api. All UI Chinese (English technical names okay), premium monochrome Atlas branding (#050505, #F2F0E9, #8B8B84, #9B9482); chart series semantic colors allowed. No fake real market data/results. Explicit synthetic tutorial mode.
+## Research input
 
-## Strategy JSON
+`atlas_quant.engine.run_research(strategy: dict, data: pandas.DataFrame, provenance: dict) -> dict`
 
-```
-{
- "schemaVersion":1,"name":"我的因子策略",
- "universe":{"symbols":["000001.SZ","000002.SZ","600000.SH","600036.SH","600519.SH"],"start":"20230101","end":"20260930"},
- "factors":[{"id":"momentum_20","expression":"returns(close,20)","direction":1},{"id":"volatility_20","expression":"ts_std(returns(close,1),20)","direction":-1}],
- "preprocess":{"winsorize":true,"standardize":true},
- "model":{"mode":"auto","candidates":["factor_score","ridge","elastic_net","hist_gradient_boosting"],"horizon":5,"metric":"rank_ic"},
- "portfolio":{"topN":3,"maxWeight":0.4,"rebalanceDays":5,"initialCapital":1000000},
- "costs":{"commissionBps":3,"slippageBps":10,"sellTaxBps":5},
- "graph":{"nodes":[],"edges":[]}
-}
-```
+The strategy contains universe, factors, preprocess, model, portfolio, costs, optional graph and dataBindings. Bounds are 3–50 symbols, 1–32 factors, 110,000 rows, 2,200 official sessions and eight calendar years. Targets are `forward_return` or `forward_excess_return`; manual model mode selects one family, automatic mode compares the selected finite family list. Eight families contain fourteen fixed configurations in total. Exact validation occurs independently at the edge and engine.
 
-Six typed sequential stages: universe -> factors -> preprocess -> model -> portfolio -> backtest. Frontend canvas can drag/reposition modules, add factors, configure each stage, connect valid typed nodes, reject invalid graphs. UI serializes graph and strategy above. Engine validates actual config independently. factor expressions are restricted causal DSL; never execute arbitrary code. max 20 symbols, max 12 factors, daily A shares, long only, bounded data and candidate budget.
+Data is keyed by unique `(trade_date, ts_code)`; OHLC are consistently adjusted research prices, `raw_close` is the raw close, volume is in hands, amount in thousands of CNY. Provider supplies the official `provenance.tradingDates`. Uploads lacking that calendar use the observed date union with an explicit warning. Missing sessions and values remain missing, never synthetic replacements.
 
-## Engine contract
+External numeric fields require strict aliases, matching `__available_date` companions and `provenance.externalFields` mappings. Identity, unit, period, known time and source checks apply before time alignment. A field registry entry is not data coverage. Input details and PCD binding examples are in [DATA.md](DATA.md); four-store ownership is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-`run_research(strategy:dict, data:pandas.DataFrame, provenance:dict) -> dict` in atlas_quant.engine. Data rows columns ts_code, trade_date (YYYYMMDD string), open/high/low/close/raw_close/vol/amount/adj_factor; provider supplies adjusted OHLC in open/high/low/close, raw_close original. Optional daily_basic fields. Engine must retain causal shifts, use next-session open execution; panel folds split UNIQUE DATES, purge forward labels at fold boundary, final 20% holdout excluded from model selection, preprocessing fit on train only. Candidate baseline, Ridge, ElasticNet, HGB finite grid with early_stopping=False. Independent outer folds are implemented; the report labels evidence explicitly. No assumption of a profitable/best universal model. Execution in adjusted normalized research units (not brokerage shares), cost and trades reconcile, cash + positions marked daily. Explicit limitations: hypothetical fills, selected-today universe, corporate-action-adjusted units, not a full A-share exchange simulator. Missing sessions cannot fill.
+## Selection and output
 
-Return JSON `schemaVersion, status, engineVersion, strategy, provenance, selection:{winner,metric,reason,candidates:[{id,name,score,folds,params,status}],splits,holdoutUsedForSelection:false}, metrics:{totalReturn,annualReturn,volatility,sharpe,maxDrawdown,turnover,totalCosts,tradeCount,benchmarkReturn}, equity:[{date,equity,benchmark,drawdown}], trades:[{date,symbol,side,quantity,price,notional,commission,slippage,tax,cost,cashAfter}], factors:[{id,ic,coverage}], warnings:[], validation:{...}`. All nonfinite values -> null. Fail insufficient data loudly. Include enough state for an audit. Engine owns built-in factors in engine/atlas_quant/catalog.json as `{factors:[{id,name,category,description,expression,direction,lookback}],models:[...]}`.
+Features are causal; labels use next-session open through horizon-end open. Folds split unique dates, purge labels crossing every boundary, and fit preprocessing only on training data. Three outer folds evaluate a nested selection procedure. Final development folds select a frozen model; terminal approximately 20% holdout never selects its parameters. [METHODOLOGY.md](METHODOLOGY.md) defines the exact procedure, finite grids and evidence status.
 
-## Provider/runtime
+Result fields include `schemaVersion,status,engineVersion,strategy,provenance,selection,metrics,equity,trades,factors,warnings,validation,predictions`. Selection retains candidate results, split dates, scores, parameters, evidenceStatus and `holdoutUsedForSelection:false`. Validation includes cash/position audit, input fingerprints and limitations. Non-finite optional metrics serialize as JSON null.
 
-`load_tushare(strategy, token, cache_dir=None)` returns (DataFrame, provenance), HTTPS official API only, strict parameters and limits, trade_cal plus daily+adj_factor, daily_basic optional only when fields required; permissions/rate errors explicit and no synthetic fallback. Cache bounded per token fingerprint, no token logs/files in repo. Tushare token may be supplied locally via env TUSHARE_TOKEN. An optional fixed internal provider proxy URL and service authorization come only from private runtime configuration and are injected in the trusted runner, never returned by the queue. Public provider access remains disabled pending rights.
+`predictions` includes target definition, horizon, score interpretation, every holdout date/symbol score and rank, latest ranking, actual/predicted target when meaningful, earliest execution date and trailing historical risk. The unsupervised factor baseline has no estimated return; its `predictedTarget` is null. Incomplete future labels remain null. The final model is not refitted using holdout observations.
 
-`make_demo_data(strategy)` returns (DataFrame, provenance) with deterministic SYNTHETIC educational market, never called after provider failure. Explicit user selects demo. Demo should have enough observations + symbols for split validation, respects requested dates.
+Headline metrics cover holdout only. Fills use fractional adjusted research units, next-session open and explicit commission/slippage/sell tax; missing data cannot fill. Daily cash plus marked positions must reconcile to equity. This is a custom research simulator, not a broker or full A-share exchange. `NO_VALIDATED_EDGE` remains a valid completed research outcome; even positive validation does not grant deployment qualification.
 
-Runner reads private config outside repo with api_base + runner_secret, polls POST /runner/claim with bearer service auth. Returns `{job:null}` or `{job:{id,workspaceId,leaseToken,strategy,dataSource,dataset}}`; dataSource demo|upload|tushare. Demo generation, upload list of OHLC records, or Tushare via local env/internal proxy. Post `/runner/complete` `{id,leaseToken,result}` or `{id,leaseToken,error:{code,message}}`. POST `/runner/heartbeat` status optional; configurable idle polling, handle SIGTERM, one process job at time with timeout. Service lives under Application Support/YiCapital/atlas-quant, outward polling, no inbound tunnel.
+## Service and execution boundary
 
-## Browser API
+The Worker keeps workspace ownership, versions and leases in D1, with private upload/result objects in R2. Browser identity is an HttpOnly cookie, not an Atlas account assertion. Strategies, runs and code projects remain owner-isolated; community factor definitions are public and unreviewed.
 
-GET /catalog returns `{factors,models,templates,dataSources,limits}`. Catalog public, builtins and published community entries.
-GET /session creates/reads HttpOnly same-origin browser workspace cookie; returns `{workspace:{id,name},runner:{online,lastSeen},capabilities:{tushareHosted:false,upload:true,demo:true},sourceUrl}`. Personal data scoped server-side. Never spoof user identity from request body.
-GET /strategies -> `{items}`; POST /strategies `{strategy}` -> `{item:{id,strategy,version,createdAt,updatedAt}}`; PUT /strategies/:id `{strategy,version}` revision check; DELETE /strategies/:id. Local export/import available UI.
-GET /runs -> `{items:[{id,name,status,dataSource,createdAt,summary,error}]}`; POST /runs `{strategy,dataSource:'demo'|'upload'|'tushare',dataset?:{rows:[],provenance:{}}}` -> `{job:{id,status}}`; GET /runs/:id -> `{job,result?}`. POST /runs/:id/cancel; GET /runs/:id/export returns JSON. Max 1 active per workspace, bounded daily submissions. Raw datasets private, never public factor payloads.
-GET /factors -> `{items}` public builtin/community. POST /factors `{name,description,expression,direction,category,author,license,sourceUrl}` -> `{item}`. Validate DSL syntactically allowlist; public contributions labeled community unreviewed; owner can DELETE /factors/:id, new versions use POST with forkOf. Factor details callable GET /factors/:id. Community factor definitions share, strategy/job private. Engine fully validates expression before using.
-GET /health -> state only, no secrets. JSON errors `{error:{code,message}}`, status appropriate.
+The trusted Python runner polls outbound HTTPS, executes bounded DSL jobs in subprocesses, and returns results under the claimed lease. Private provider/PCD credentials come from external runtime configuration and never from public strategy JSON. Jobs default to 900 seconds, upload and result objects are each bounded at 24 MiB. Results are complete or explicitly rejected for size, not silently truncated. Local and hosted jobs use the same numerical implementation.
 
-All browser mutation endpoints require same-origin and JSON. Session cookie secret random ID hash in DB, HttpOnly Secure Path=/quant/ SameSite=Strict. No reliance on localStorage account assertions. There is no account recovery-key route in v0.1. API result consumers never HTML-interpolate untrusted strings. No arbitrary Python execution.
+User Python runs separately in a browser Pyodide worker; the server does not execute saved user Python. AI review is an optional real Cloudflare binding call with original-source patch validation and explicit user application. Neither rule checks nor AI review claim to have completed a backtest. Deployment configuration, lifecycle, capability readback and recovery are in [OPERATIONS.md](OPERATIONS.md).
 
-## Acceptance
+## Evidence
 
-Clean setup can rerun deterministic benchmark; engine cost ledger test and no-future-label leakage tests pass. Public app drag canvas + configure factors + auto model + demo run/report + save/reload + factor contribution/fork + dataset import + JSON export work end-to-end. Tushare real-data verification distinct from synthetic. Deployment and public readback evidence explicit. Existing Atlas/Chat preserved; fresh production before/after digest; isolated /quant route preferably. Data authorization unresolved public shared Tushare feed remains disabled, not silently assumed.
+Numerical invariants and leakage tests, deterministic synthetic experiments, real provider probes, hosted completion and live availability are separate evidence. See [engine-v0.2-validation.json](engine-v0.2-validation.json), [source-validation.json](../data/source-validation.json) and the historical v0.1 artifacts. No repository snapshot implies continuous uptime, original-filing verification for vendor fields or profitable future performance.

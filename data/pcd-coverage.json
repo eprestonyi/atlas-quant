@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "source": "PCD",
+  "retrievedAt": "2026-10-07T10:40:39.260358+00:00",
+  "metadataOnly": true,
+  "coverage": {
+    "companiesWithObservedFacts": 1,
+    "observations": 3,
+    "selectedFields": 3,
+    "aShareMappedCompanies": 0,
+    "registryFields": 17073,
+    "numericSchemaFields": 4870
+  },
+  "companies": [
+    {
+      "entityId": "sec-cik-0000320193",
+      "name": "Apple Inc.",
+      "market": "US",
+      "symbol": "AAPL",
+      "symbolMappingStatus": "source_identity_requires_historical_listing_mapping",
+      "fields": [
+        {
+          "fieldId": "A4.ASSETS.NONCURRENT.total_assets",
+          "alias": "pcd_a4_assets_noncurrent_total_assets_7adc335f",
+          "label": "总资产",
+          "dataType": "decimal",
+          "unitCode": "USD",
+          "recordId": "pcd:record:55cc4248dbbe0c0167eeaf6a1efdf1a572dbdbd76df52c7693e32b4357ec297e",
+          "availability": "system_known_time_only",
+          "publicAnnouncementPrecision": "UNKNOWN"
+        },
+        {
+          "fieldId": "A4.INCOME.NONOPERATING.net_income_parent",
+          "alias": "pcd_a4_income_nonoperating_net_income_parent_55197f9d",
+          "label": "归属母公司净利润",
+          "dataType": "decimal",
+          "unitCode": "USD",
+          "recordId": "pcd:record:794edd9838c0fb3a0ce80465df42a96914b9ebd7101ce129eb5177d4db5097d3",
+          "availability": "system_known_time_only",
+          "publicAnnouncementPrecision": "UNKNOWN"
+        },
+        {
+          "fieldId": "A4.INCOME.REVENUE.net_revenue",
+          "alias": "pcd_a4_income_revenue_net_revenue_4d71677e",
+          "label": "营业收入净额",
+          "dataType": "decimal",
+          "unitCode": "USD",
+          "recordId": "pcd:record:c2b848b84ddeb292d1acf984a7f52d0a9ea0b03cd1511e25a6e0b835644b6da0",
+          "availability": "system_known_time_only",
+          "publicAnnouncementPrecision": "UNKNOWN"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "No observed A-share company facts in current PCD production snapshot.",
+    "Schema eligibility is not data coverage.",
+    "Original publication time is UNKNOWN; this connector cannot backdate facts to report periods.",
+    "AAPL is outside the current A-share market adapter; rows are discoverable but not runnable in A-share pools."
+  ],
+  "numericConversion": "Original exact decimal retained upstream; explicit research matrix conversion uses float64.",
+  "runtimeReadback": {
+    "verifiedAt": "2026-10-07T10:48:33.224093+00:00",
+    "authenticatedReadOnly": true,
+    "apiCalls": 14,
+    "fieldsJoined": 3,
+    "selectionEvents": 3,
+    "firstConservativeAvailableSession": "20261005",
+    "scope": "Connector join verification only; this does not constitute an AAPL price backtest or historical coverage."
+  }
+}
