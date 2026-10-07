@@ -36,7 +36,7 @@ def _encode(value):
         _fail("SNAPSHOT_FORMAT", "冻结数据不是有效的有限数值 JSON。")
 
 
-def freeze_input(strategy, data, provenance):
+def freeze_input(strategy, data, provenance, *, max_bytes=None):
     """Preserve exact floating-point input; retain the provider's canonical hash."""
     if not isinstance(provenance, dict):
         _fail("SNAPSHOT_FORMAT", "冻结数据缺少来源记录。")
@@ -51,18 +51,18 @@ def freeze_input(strategy, data, provenance):
     snapshot = {"schemaVersion": 1, "rows": rows,
                 "provenance": copy.deepcopy(provenance), "sourceDataFingerprint": fingerprint,
                 "dataFingerprint": audit["dataSha256"], "fingerprintVersion": "research_input_v1"}
-    if len(_encode(snapshot)) > MAX_SNAPSHOT_BYTES:
+    if len(_encode(snapshot)) > (MAX_SNAPSHOT_BYTES if max_bytes is None else max_bytes):
         _fail("SNAPSHOT_SIZE", "冻结行情超过独立产物大小限制。")
     return snapshot
 
 
-def restore_input(strategy, snapshot, expected_fingerprint=None):
+def restore_input(strategy, snapshot, expected_fingerprint=None, *, max_bytes=None):
     """Validate the immutable input before executing already-issued forecasts."""
     if (not isinstance(snapshot, dict) or snapshot.get("schemaVersion") != 1
             or not isinstance(snapshot.get("provenance"), dict)
             or not isinstance(snapshot.get("rows"), list)):
         _fail("SNAPSHOT_FORMAT", "冻结行情格式无效。")
-    if len(_encode(snapshot)) > MAX_SNAPSHOT_BYTES:
+    if len(_encode(snapshot)) > (MAX_SNAPSHOT_BYTES if max_bytes is None else max_bytes):
         _fail("SNAPSHOT_SIZE", "冻结行情超过独立产物大小限制。")
     provenance = copy.deepcopy(snapshot["provenance"])
     fingerprint = snapshot.get("dataFingerprint")

@@ -28,6 +28,7 @@ from .connectors import PCDReadClient, join_pcd_asof
 MAX_JOB_BYTES = 26 * 1024 * 1024
 MAX_RESULT_BYTES = 24 * 1024 * 1024
 DEFAULT_TIMEOUT = 900
+BUNDLE_DELIVERY_SECONDS = 300
 STOP = False
 
 
@@ -131,14 +132,15 @@ def prepare_job(job, config):
     return prepared
 
 
-def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None, snapshot_sink=None):
+def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None, snapshot_sink=None,
+            forecast_plan_sink=None, result_limit=None):
     """Run a single trusted edge job; callable locally with no queue interaction."""
     if not isinstance(job, dict) or not isinstance(job.get("strategy"), dict):
         raise RunnerError("INVALID_JOB", "任务缺少策略。")
     try:
         # A replay contains two separately downloaded, independently bounded
         # artifacts. A normal claim still has the original single-job bound.
-        limit = 2 * MAX_JOB_BYTES if job.get("jobKind") == "execution" else MAX_JOB_BYTES
+        limit = (result_limit + MAX_JOB_BYTES if result_limit is not None else 2 * MAX_JOB_BYTES) if job.get("jobKind") == "execution" else MAX_JOB_BYTES
         if len(json.dumps(job, allow_nan=False).encode()) > limit:
             raise RunnerError("JOB_SIZE", "任务数据过大。")
     except (TypeError, ValueError) as exc:
@@ -153,14 +155,14 @@ def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None, snapsh
         if not isinstance(replay, dict) or not isinstance(replay.get("artifact"), dict):
             raise RunnerError("REPLAY_INPUT", "执行实验缺少原始预测产物。")
         artifact = replay["artifact"]
-        if len(json.dumps(artifact, ensure_ascii=False, separators=(",", ":")).encode()) > MAX_RESULT_BYTES:
+        if len(json.dumps(artifact, ensure_ascii=False, separators=(",", ":")).encode()) > (MAX_RESULT_BYTES if result_limit is None else result_limit):
             raise RunnerError("REPLAY_SIZE", "原始预测产物超过重放大小限制。")
         if (not isinstance(job.get("forecastArtifactId"), str) or not job["forecastArtifactId"]
                 or artifact.get("artifactId") != job["forecastArtifactId"]):
             raise RunnerError("REPLAY_IDENTITY", "执行实验与原始预测身份不一致。")
-        data, provenance = restore_input(strategy, replay.get("snapshot"), artifact.get("dataFingerprint"))
+        data, provenance = restore_input(strategy, replay.get("snapshot"), artifact.get("dataFingerprint"), max_bytes=result_limit)
         result = execute_forecasts(strategy, data, artifact, provenance=provenance)
-        return _validate_result(result)
+        return _validate_result(result, limit=result_limit)
     data_bindings = strategy.get("dataBindings") or {}
     if not isinstance(data_bindings, dict):
         raise RunnerError("INVALID_DATA_BINDINGS", "数据映射必须是对象。")
@@ -216,36 +218,69 @@ def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None, snapsh
     except ImportError:
         scope = contextlib.nullcontext()
     with scope:
-        result = run_research(strategy, data, provenance)
-    _validate_result(result)
+        result = run_research(strategy, data, provenance, forecast_plan_sink=forecast_plan_sink)
+    _validate_result(result, limit=result_limit)
     if snapshot_sink is not None and strategy.get("research", {}).get("mode") == "statistical_quant":
         from .runner_artifacts import freeze_input
-        snapshot_sink(freeze_input(strategy, data, provenance))
+        snapshot_sink(freeze_input(strategy, data, provenance, max_bytes=result_limit))
     return result
 
 
-def _validate_result(result):
+def _validate_result(result, *, limit=None):
     if not isinstance(result, dict):
         raise RunnerError("ENGINE_RESULT", "研究引擎返回格式无效。")
     try:
-        encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
-    except (TypeError, ValueError):
+        size = 0
+        encoder = json.JSONEncoder(ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        for piece in encoder.iterencode(result):
+            size += len(piece.encode())
+            if size > (MAX_RESULT_BYTES if limit is None else limit):
+                raise RunnerError("RESULT_SIZE", "研究结果超出大小限制。")
+    except RunnerError:
+        raise
+    except (TypeError, ValueError, UnicodeEncodeError):
         raise RunnerError("ENGINE_RESULT", "研究结果包含不可序列化数据。") from None
-    if len(encoded.encode()) > MAX_RESULT_BYTES:
-        raise RunnerError("RESULT_SIZE", "研究结果超出大小限制。")
     return result
 
 
-def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot=False):
+def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot=False, bundle_context=None):
     try:
-        snapshots = []
+        snapshots, plans = [], []
+        if bundle_context is not None:
+            from .bundle import BUNDLE_LIMIT
+            from .bundle_spool import BundleSpool
+            bundle_store = BundleSpool(bundle_context)
+            if job.get("replayBundle"):
+                reference = job["replayBundle"]
+                if reference.get("_bundleKey") != bundle_store.key:
+                    raise RunnerError("REPLAY_IDENTITY", "本地分片引用不属于本任务。")
+                source = bundle_store.reader(reference.get("bundleId"))
+                source.verify_integrity()
+                replay = {"artifact": dict(source.document("forecast"), artifactId=source.manifest["forecastArtifactId"]),
+                          "snapshot": source.document("snapshot"), "coverage": source.document("coverage")}
+                job = dict(job, replay=replay)
         # Third-party libraries may print. Never forward child stdout/stderr to service logs.
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             result = run_job(job, token=token, cache_dir=cache_dir, allowed_proxy_hosts=allowed_proxy_hosts,
-                             snapshot_sink=snapshots.append if capture_snapshot else None)
-        answer = {"result": result}
-        if snapshots:
-            answer["snapshot"] = snapshots[0]
+                             snapshot_sink=snapshots.append if capture_snapshot else None,
+                             forecast_plan_sink=plans.append if bundle_context is not None else None,
+                             result_limit=BUNDLE_LIMIT if bundle_context is not None else None)
+        if bundle_context is not None:
+            coverage = plans[0] if plans else job.get("replay", {}).get("coverage")
+            if coverage is None and job.get("jobKind") == "execution":
+                # Older artifacts never claimed an independent pre-fit origin plan.
+                artifact = result["forecasts"]
+                coverage = {"schemaVersion": 1, "source": "legacy_artifact_derived",
+                    "holdoutStart": artifact["diagnostics"]["holdoutStart"],
+                    "baselineRequired": "baselineRows" in artifact["diagnostics"].get("factorIncrement", {}),
+                    "origins": [{k: row[k] for k in ("date", "targetId", "entryDate", "targetDate")}
+                                | {"inputValid": row.get("invalidReason") not in ("incomplete_state_or_formation", "no_observed_event", "no_observed_fundamental_predictor")}
+                                for row in artifact["rows"]]}
+            answer = bundle_store.build(result, snapshots[0] if snapshots else None, coverage)
+        else:
+            answer = {"result": result}
+            if snapshots:
+                answer["snapshot"] = snapshots[0]
         connection.send(answer)
     except BaseException as exc:
         connection.send({"error": _safe_error(exc)})
@@ -253,11 +288,11 @@ def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture
         connection.close()
 
 
-def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None, allowed_proxy_hosts=None, heartbeat=None, stop_requested=None, capture_snapshot=False):
+def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None, allowed_proxy_hosts=None, heartbeat=None, stop_requested=None, capture_snapshot=False, bundle_context=None):
     """Hard wall-clock process bound, with optional lease/cancellation callback."""
     ctx = multiprocessing.get_context("spawn")
     parent, child = ctx.Pipe(duplex=False)
-    process = ctx.Process(target=_child_entry, args=(child, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot), daemon=True)
+    process = ctx.Process(target=_child_entry, args=(child, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot, bundle_context), daemon=True)
     deadline = time.monotonic() + timeout
     process.start()
     child.close()
@@ -299,7 +334,7 @@ class QueueClient:
         self.session = session or requests.Session()
 
     def post(self, route, payload, *, deadline=None):
-        if route not in ("claim", "heartbeat", "complete", "snapshot", "replay"):
+        if route not in ("claim", "heartbeat", "complete", "snapshot", "replay", "bundles/begin", "bundles/finalize"):
             raise RunnerError("QUEUE_ROUTE", "队列接口无效。")
         deadline = min(deadline, time.monotonic()+60) if deadline is not None else time.monotonic()+60
         try:
@@ -333,6 +368,47 @@ class QueueClient:
         except (requests.RequestException, ValueError, TypeError):
             raise RunnerError("QUEUE_NETWORK", "无法访问队列服务。") from None
 
+    def bundle_chunk(self, method, bundle_id, collection, ordinal, identity, *, raw=None, stage_id=None, deadline=None):
+        from .bundle import HASH, COLLECTIONS, CHUNK_LIMIT
+        if (method not in ("GET", "PUT") or not isinstance(bundle_id, str) or not HASH.fullmatch(bundle_id)
+                or collection not in COLLECTIONS or not isinstance(ordinal, int) or isinstance(ordinal, bool) or not 0 <= ordinal < 256):
+            raise RunnerError("QUEUE_ROUTE", "分片接口身份无效。")
+        if method == "PUT" and (not isinstance(raw, bytes) or len(raw) > CHUNK_LIMIT or not stage_id):
+            raise RunnerError("BUNDLE_SIZE", "分片上传内容或阶段无效。")
+        deadline = min(deadline, time.monotonic()+60) if deadline is not None else time.monotonic()+60
+        headers = {"Authorization": "Bearer " + self.secret, "Content-Type": "application/json",
+                   "X-Quant-Job": identity["id"], "X-Quant-Lease": identity["leaseToken"]}
+        if stage_id:
+            headers["X-Quant-Stage"] = stage_id
+        try:
+            remaining = deadline-time.monotonic()
+            if remaining <= 0:
+                raise RunnerError("QUEUE_DEADLINE", "分片读取超过本次时间预算。")
+            url = self.base + f"/runner/bundles/{bundle_id}/chunks/{collection}/{ordinal}"
+            with self.session.request(method, url, data=raw, headers=headers, allow_redirects=False,
+                    timeout=(min(10, remaining), min(35, remaining)), stream=True) as response:
+                if response.status_code != 200:
+                    raise RunnerError("QUEUE_HTTP", "分片服务未成功响应。", http_status=response.status_code)
+                parts, size = [], 0
+                for piece in response.iter_content(65536):
+                    size += len(piece)
+                    if size > (CHUNK_LIMIT if method == "GET" else 65536):
+                        raise RunnerError("QUEUE_SIZE", "分片响应超过大小限制。")
+                    if time.monotonic() >= deadline:
+                        raise RunnerError("QUEUE_DEADLINE", "分片读取超过本次时间预算。")
+                    parts.append(piece)
+                content = b"".join(parts)
+                if method == "GET":
+                    return content
+                value = json.loads(content)
+                if not isinstance(value, dict):
+                    raise RunnerError("BUNDLE_PROTOCOL", "分片回执格式无效。")
+                return value
+        except RunnerError:
+            raise
+        except (requests.RequestException, ValueError, TypeError):
+            raise RunnerError("QUEUE_NETWORK", "无法访问分片服务。") from None
+
 
 class CompletionSpool:
     """Encrypted durable delivery, authenticated to the configured queue and runner."""
@@ -344,7 +420,8 @@ class CompletionSpool:
         if stat.S_IMODE(self.root.stat().st_mode) & 0o077:
             raise RunnerError("DELIVERY_PERMISSIONS", "结果重试目录权限须为 0700。")
         self.aad = ("atlas-quant-completion-v1:" + config["api_base"]).encode()
-        self.cipher = AESGCM(hashlib.sha256(b"atlas-quant-delivery-key-v1\0" + config["runner_secret"].encode()).digest())
+        self.encryption_key = hashlib.sha256(b"atlas-quant-delivery-key-v1\0" + config["runner_secret"].encode()).digest()
+        self.cipher = AESGCM(self.encryption_key)
 
     def write(self, payload):
         payload = dict(payload)
@@ -388,7 +465,7 @@ class CompletionSpool:
                 if data[:4] != b"AQD1":
                     raise ValueError()
                 result = json.loads(self.cipher.decrypt(data[4:16], data[16:], self.aad))
-                if not isinstance(result, dict) or not result.get("id") or not result.get("leaseToken") or ("result" in result) == ("error" in result):
+                if not isinstance(result, dict) or not result.get("id") or not result.get("leaseToken") or sum(key in result for key in ("result", "error", "bundleId")) != 1:
                     raise ValueError()
                 yield path, result
             except Exception:
@@ -400,55 +477,73 @@ class CompletionSpool:
 
 def flush_completions(client, spool):
     from .runner_claims import ClaimIntent, claim_request, validate_receipt
+    from .bundle_spool import BundleSpool, deliver_bundle
+    private_keys = {"_snapshotKey", "_claimRequestId", "_bundleKey", "_terminalConfirmed"}
     for path, payload in spool.pending():
         request_id = payload.get("_claimRequestId")
         intent = {"requestId": request_id, "jobId": payload["id"], "leaseToken": payload["leaseToken"]}
         snapshot_key = payload.get("_snapshotKey")
-        snapshot_store = None
+        snapshot_store = bundle_store = None
         if snapshot_key is not None:
             from .runner_artifacts import SnapshotSpool
             snapshot_store = SnapshotSpool(spool)
             snapshot = snapshot_store.read(snapshot_key, payload)
-        public_payload = {key: value for key, value in payload.items() if key not in ("_snapshotKey", "_claimRequestId")}
+        if payload.get("_bundleKey") is not None:
+            bundle_store = BundleSpool.from_spool(spool, payload)
+            if bundle_store.key != payload["_bundleKey"]:
+                raise RunnerError("DELIVERY_INTEGRITY", "分片身份与待回传任务不一致。")
+        delivery_deadline = time.monotonic()+BUNDLE_DELIVERY_SECONDS if bundle_store is not None else None
         delivered = False
         for attempt in range(5):
             submitting_result = True
             try:
-                if snapshot_store is not None and "result" in public_payload:
-                    client.post("snapshot", {"id": payload["id"], "leaseToken": payload["leaseToken"],
-                                              "snapshot": snapshot})
-                client.post("complete", public_payload)
+                if delivery_deadline is not None and time.monotonic() >= delivery_deadline:
+                    raise RunnerError("DELIVERY_DEADLINE", "本次回传总时间预算耗尽；保留原件并只恢复投递。")
+                terminal_discard = False
+                if not payload.get("_terminalConfirmed"):
+                    if "bundleId" in payload:
+                        stage = deliver_bundle(client, spool, payload, deadline=delivery_deadline)
+                        terminal_discard = stage is None
+                        if stage is not None and payload.get("stageId") != stage:
+                            payload = dict(payload, stageId=stage)
+                            path = spool.write(payload)
+                    public_payload = {key: value for key, value in payload.items() if key not in private_keys}
+                    if snapshot_store is not None and "result" in public_payload:
+                        client.post("snapshot", {"id": payload["id"], "leaseToken": payload["leaseToken"],
+                                                  "snapshot": snapshot})
+                    if not terminal_discard:
+                        if delivery_deadline is None:
+                            client.post("complete", public_payload)
+                        else:
+                            client.post("complete", public_payload, deadline=delivery_deadline)
                 submitting_result = False
                 if request_id is not None:
-                    # HTTP success alone is insufficient: resolve this exact UUID
-                    # before clearing local recovery state or accepting more work.
-                    receipt = client.post("claim", claim_request(request_id))
+                    receipt = (client.post("claim", claim_request(request_id)) if delivery_deadline is None
+                               else client.post("claim", claim_request(request_id), deadline=delivery_deadline))
                     validate_receipt(receipt, intent, terminal_only=True)
                     ClaimIntent(spool).clear(intent)
-                spool.acknowledge(path)
+                if bundle_store is not None:
+                    # A crash halfway through deleting multiple chunk files must
+                    # resume cleanup, never re-upload a now-incomplete directory.
+                    if not payload.get("_terminalConfirmed"):
+                        payload = dict(payload, _terminalConfirmed=True)
+                        path = spool.write(payload)
+                    bundle_store.cleanup()
                 if snapshot_store is not None:
                     snapshot_store.acknowledge(snapshot_key)
+                spool.acknowledge(path)
                 delivered = True
                 break
             except RunnerError as exc:
-                if exc.code.startswith("CLAIM_"):
+                if exc.code.startswith(("CLAIM_", "DELIVERY_", "BUNDLE_PROTOCOL")):
                     raise
-                if submitting_result and exc.http_status in (400, 413) and "result" in payload:
-                    # The queue definitively rejected these bytes. Replace the durable
-                    # delivery with a small sanitized terminal failure, never silently
-                    # drop it or endlessly poison subsequent jobs with the same report.
+                if submitting_result and exc.http_status in (400, 413) and ("result" in payload or "bundleId" in payload):
                     payload = {"id": payload["id"], "leaseToken": payload["leaseToken"],
-                               "error": {"code": "RESULT_REJECTED", "message": "研究结果未通过服务端接收校验，此次实验已停止；请检查策略与数据后重新运行。"}}
-                    # Retain the encrypted snapshot reference until the terminal
-                    # failure is acknowledged, so cleanup survives a restart.
-                    if snapshot_key is not None:
-                        payload["_snapshotKey"] = snapshot_key
-                    if request_id is not None:
-                        payload["_claimRequestId"] = request_id
+                               "error": {"code": "RESULT_REJECTED", "message": "研究结果未通过服务端接收校验，此次实验已停止；请检查策略与数据后重新运行。"},
+                               **{key: payload[key] for key in private_keys if key in payload}}
                     path = spool.write(payload)
-                    public_payload = {key: value for key, value in payload.items() if key not in ("_snapshotKey", "_claimRequestId")}
                     continue
-                _wait(min(2**attempt, 10))
+                _wait(min(2**attempt, 10, max(0., delivery_deadline-time.monotonic())) if delivery_deadline is not None else min(2**attempt, 10))
         if not delivered:
             raise RunnerError("COMPLETION_UNCONFIRMED", "结果回传未确认；已私密保存，仅重试回传，不重放计算。")
 
@@ -490,6 +585,35 @@ def fetch_replay(client, identity, *, deadline=None):
     return parts
 
 
+def fetch_bundle_replay(client, spool, identity, source, *, deadline):
+    from .bundle import sha, BundleReader
+    from .bundle_spool import BundleSpool
+    response = client.post("replay", dict(identity, kind="bundle"), deadline=deadline)
+    raw = response.get("manifestText")
+    bundle_id = source.get("bundleId")
+    if not isinstance(raw, str) or response.get("bundleId") != bundle_id:
+        raise RunnerError("REPLAY_INPUT", "来源分片清单缺失或身份不匹配。")
+    store = BundleSpool.from_spool(spool, identity)
+    store.import_manifest(raw.encode(), bundle_id)
+    reader = store.reader(bundle_id)
+    for info in reader.manifest["collections"]:
+        for descriptor in info["chunks"]:
+            for attempt in range(3):
+                try:
+                    content = client.bundle_chunk("GET", bundle_id, info["id"], descriptor["ordinal"], identity, deadline=deadline)
+                    if sha(content) != descriptor["sha256"] or len(content) != descriptor["byteLength"]:
+                        raise RunnerError("REPLAY_INPUT", "来源分片已损坏；不会重取数据替代。")
+                    store.write_chunk(info["id"], descriptor["ordinal"], content)
+                    break
+                except RunnerError as exc:
+                    if exc.code == "REPLAY_INPUT" or exc.http_status in (400, 401, 403, 404, 409, 413) or attempt == 2:
+                        raise
+                    _wait(2**attempt)
+    # The isolated child verifies the complete stream and materializes Python
+    # objects from chunks. Only this small encrypted reference crosses IPC.
+    return {"bundleId": reader.bundle_id, "_bundleKey": store.key}
+
+
 def _serve(config, spool, *, once=False):
     from .runner_claims import ClaimIntent, claim_request, validate_receipt
     client = QueueClient(config)
@@ -514,18 +638,31 @@ def _serve(config, spool, *, once=False):
             if intent["phase"] == "executing":
                 # Input/provider acquisition may already have started before the
                 # process died. Do not replay paid reads or numerical computation.
-                spool.write(dict(identity, _claimRequestId=intent["requestId"], error={
-                    "code": "RUNNER_INTERRUPTED", "message": "运行服务在计算或取数期间中断；本次实验停止，未自动重放。"}))
+                from .bundle_spool import BundleSpool
+                interrupted_bundle = BundleSpool.from_spool(spool, identity)
+                spool.write(dict(identity, _claimRequestId=intent["requestId"], _bundleKey=interrupted_bundle.key,
+                    error={"code": "RUNNER_INTERRUPTED", "message": "运行服务在计算或取数期间中断；本次实验停止，未自动重放。"}))
                 flush_completions(client, spool)
                 if once:
                     return 0
                 continue
             claims.executing(intent, job)
             job_deadline = time.monotonic()+config.get("job_timeout", DEFAULT_TIMEOUT)
+            bundle_context = None
+            if (isinstance(job.get("strategy"), dict) and job["strategy"].get("schemaVersion") == 2
+                    and job.get("resultTransport") == {"format": "atlas.quant.bundle", "version": 1}):
+                from .bundle_spool import BundleSpool
+                bundle_context = BundleSpool.context_for(spool, identity)
             input_error = None
             if job.get("jobKind") == "execution":
                 try:
-                    job = dict(job, replay=fetch_replay(client, identity, deadline=min(job_deadline, time.monotonic()+60)))
+                    replay_deadline = min(job_deadline, time.monotonic()+60)
+                    if job.get("sourceTransport", {}).get("format") == "atlas.quant.bundle":
+                        reference = fetch_bundle_replay(client, spool, identity, job["sourceTransport"], deadline=replay_deadline)
+                        job = dict(job, replayBundle=reference)
+                    else:
+                        replay = fetch_replay(client, identity, deadline=replay_deadline)
+                        job = dict(job, replay=replay)
                 except RunnerError as exc:
                     # A lease was already claimed. Persist even an input failure
                     # under that lease before doing anything else. Network/auth
@@ -543,9 +680,11 @@ def _serve(config, spool, *, once=False):
             answer = input_error or execute_bounded(prepare_job(job, config), timeout=remaining,
                 token=None if job.get("jobKind") == "execution" else os.environ.get("TUSHARE_TOKEN"), cache_dir=config.get("cache_dir"),
                 allowed_proxy_hosts=config.get("allowed_proxy_hosts"), heartbeat=heartbeat,
-                stop_requested=lambda: STOP, capture_snapshot=job.get("jobKind") != "execution")
+                stop_requested=lambda: STOP, capture_snapshot=job.get("jobKind") != "execution", bundle_context=bundle_context)
             # Persist authenticated encrypted bytes before exact idempotent delivery.
             complete = dict(identity, _claimRequestId=intent["requestId"], **answer)
+            if bundle_context is not None:
+                complete["_bundleKey"] = BundleSpool(bundle_context).key
             spool.write(complete)
             flush_completions(client, spool)
             if once:

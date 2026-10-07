@@ -1,5 +1,6 @@
 // Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
 import { ESTIMATORS } from './defaults.js';
+import { createReportSource } from './report-source.js';
 export function createForecastReports(C, F, { onExecution }) {
   const { esc: e, fmt, pct, dateText: d, render, api, toast, openModal, closeModal } = C;
   const ui = {
@@ -11,13 +12,17 @@ export function createForecastReports(C, F, { onExecution }) {
     scope: 'latest',
     status: 'all',
     target: '',
+    targetLabel: '',
     tradePage: 1,
     riskPage: 1,
     riskFilter: 'events',
     busy: false,
     replay: null,
     result: null,
+    dateFrom: '',
+    dateTo: '',
   };
+  const remote = createReportSource(C);
   const reasonLabel = (value) => {
     if (!value) return '按预测入场';
     const [key, ...rest] = String(value).split(':');
@@ -76,11 +81,62 @@ export function createForecastReports(C, F, { onExecution }) {
             : '')
       : id;
   };
+  function pageTargetName(id, page, r) {
+    const label = page.related?.targetLabels?.[id];
+    if (label) return label;
+    const definition = page.related?.targets?.find((x) => x.id === id);
+    return definition
+      ? targetName(id, { forecasts: { targetDefinitions: [definition] } })
+      : targetName(id, r);
+  }
+  function remoteState(page, body, emptyMessage = '没有匹配记录') {
+    if (page.unavailable)
+      return F.note('本次产物未包含这类记录；不将缺席的证据视为已计算的空结果。');
+    if (page.loading || (!page.loaded && !page.error))
+      return '<div class="sq-loading" role="status" aria-live="polite">正在读取这一页…</div>';
+    if (page.error)
+      return (
+        F.note(page.error, 'error') +
+        F.button('forecast-remote-retry', '重试这一页', {
+          id: page.key,
+          small: true,
+        })
+      );
+    return (
+      body +
+      (!page.items.length
+        ? F.empty(emptyMessage, '当前筛选下没有记录；这不表示完整产物缺失。')
+        : '') +
+      remotePages(page)
+    );
+  }
+  function remotePages(page) {
+    return `<div class="sq-catalog-pagination"><span>匹配 ${page.total.toLocaleString()} 条 · 当前 ${page.items.length ? page.offset + 1 : 0}–${page.offset + page.items.length} 条 · 按需读取</span><div>${F.button('forecast-remote-page', '上一页', { id: page.queryKey, direction: 'previous', small: true, disabled: !page.previous })}${F.button('forecast-remote-page', '下一页', { id: page.queryKey, direction: 'next', small: true, disabled: !page.hasMore })}</div></div>`;
+  }
+  function remoteRawCollection(collection, title) {
+    const page = remote.page(collection);
+    return F.panel(
+      title,
+      remoteState(
+        page,
+        page.items
+          .map((item) => F.advanced(item.id || item.date || '证据记录', JSONView(item)))
+          .join('')
+      )
+    );
+  }
   const pages = (page, total, action) =>
     `<div class="sq-catalog-pagination"><span>匹配 ${total.toLocaleString()} 条 · 第 ${page} / ${Math.max(1, Math.ceil(total / 25))} 页 · 每页 25 条</span><div>${F.button(action, '上一页', { page: page - 1, small: true, disabled: page <= 1 })}${F.button(action, '下一页', { page: page + 1, small: true, disabled: page * 25 >= total })}</div></div>`;
   function renderReport(r) {
+    remote.bind(C.state.reportTransport, C.state.runId);
     const f = r.forecasts;
     if (!f) return F.note('此历史报告没有新协议的预测产物；不会补造 P、V 或预测误差。', 'warning');
+    if (C.state.reportTransport && !remote.enabled())
+      return F.note('此报告使用尚未支持的传输版本，请更新客户端后读取。', 'error');
+    if (remote.enabled() && remote.transport.logicalArtifactId !== f.artifactId)
+      return F.note('预测身份与报告传输身份不匹配，请重新读取报告。', 'error');
+    if (remote.enabled() && remote.transport.complete !== true)
+      return F.note('研究产物尚未完整提交，不能把分片预览当作完整研究或用于执行。', 'warning');
     const runIdentity =
       C.state.runId ||
       JSON.stringify([
@@ -97,12 +153,16 @@ export function createForecastReports(C, F, { onExecution }) {
         page: 1,
         query: '',
         target: '',
+        targetLabel: '',
         status: 'all',
         scope: 'latest',
         tradePage: 1,
         riskPage: 1,
         riskFilter: 'events',
         replay: null,
+        dateFrom: '',
+        dateTo: '',
+        baselineOpen: false,
       });
     }
     ui.result = r;
@@ -112,7 +172,13 @@ export function createForecastReports(C, F, { onExecution }) {
       r.selection?.evidenceStatus === 'NO_VALIDATED_FORECAST_EDGE'
         ? '当前没有验证出预测改善'
         : '有样本外误差改善；尚未做显著性检验';
-    return `${r.provenance?.synthetic || r.provenance?.dataSource === 'demo' ? F.note('这份报告来自合成教学数据，不构成真实市场证据。', 'warning') : ''}<div class="sq-forecast-identity"><div><span class="sq-kicker">IMMUTABLE FORECAST ARTIFACT</span><code>${e(f.artifactId)}</code><small>${f.totalRows.toLocaleString()} 条完整预测 · ${f.targetDefinitions?.length || 0} 个冻结目标定义 · ${r.research?.executionOnly ? '复用既有预测，未重新拟合' : '独立生成与保存预测'}</small></div><a class="sq-button small" href="/quant/api/statistical-quant/forecasts/${encodeURIComponent(f.artifactId)}/download" download>下载完整私有产物</a></div><div class="sq-report-stats">${stat('成熟预测观测', fmt(m.observations, 0), '未成熟、失效、未交易记录仍保留')}${stat('归一化联合 RMSE', fmt(m.rmse, 6), '预期入场与未来目标共同误差')}${stat('相对无变化 MSE 改善', pct(m.relativeMseImprovement), '负值表示比无变化基准更差')}${stat('剩余变化 RMSE', fmt(m.remainingChangeRmse, 6), '入场到未来目标的变化误差')}</div>${F.note(`${evidence}。${d(v.holdoutStart)} — ${d(v.holdoutEnd)} 为顺序样本外报告期。模型滚动重拟合可使用此前已成熟的报告期标签，重叠标签不视为独立样本。`)}<div class="sq-report-tabs" role="group" aria-label="预测报告章节">${Object.entries(
+    const targetCount = remote.enabled()
+      ? remote.transport.collections?.targets?.total
+      : f.targetDefinitions?.length;
+    const downloadUrl = remote.enabled()
+      ? remote.transport.downloadUrl
+      : `/quant/api/statistical-quant/forecasts/${encodeURIComponent(f.artifactId)}/download`;
+    return `${r.provenance?.synthetic || r.provenance?.dataSource === 'demo' ? F.note('这份报告来自合成教学数据，不构成真实市场证据。', 'warning') : ''}<div class="sq-forecast-identity"><div><span class="sq-kicker">IMMUTABLE FORECAST ARTIFACT</span><code>${e(f.artifactId)}</code><small>${fmt(f.totalRows, 0)} 条预测 · ${fmt(targetCount, 0)} 个冻结目标定义 · ${r.research?.executionOnly ? '复用既有预测，未重新拟合' : '独立生成与保存预测'}</small>${remote.enabled() ? `<small>${remote.transport.complete === true ? '完整产物已提交；当前只读取页面所需记录' : '产物完整度尚未确认'}</small>` : ''}</div><a class="sq-button small" href="${e(downloadUrl)}" download>${remote.enabled() ? '流式下载完整私有报告' : '下载完整私有产物'}</a></div><div class="sq-report-stats">${stat('成熟预测观测', fmt(m.observations, 0), '未成熟、失效、未交易记录仍保留')}${stat('归一化联合 RMSE', fmt(m.rmse, 6), '预期入场与未来目标共同误差')}${stat('相对无变化 MSE 改善', pct(m.relativeMseImprovement), '负值表示比无变化基准更差')}${stat('剩余变化 RMSE', fmt(m.remainingChangeRmse, 6), '入场到未来目标的变化误差')}</div>${F.note(`${evidence}。${d(v.holdoutStart)} — ${d(v.holdoutEnd)} 为顺序样本外报告期。模型滚动重拟合可使用此前已成熟的报告期标签，重叠标签不视为独立样本。`)}<div class="sq-report-tabs" role="group" aria-label="预测报告章节">${Object.entries(
       tags
     )
       .map(([id, label]) =>
@@ -154,6 +220,7 @@ export function createForecastReports(C, F, { onExecution }) {
     );
   }
   function forecastRows(r) {
+    if (remote.enabled()) return remoteForecastRows(r);
     const rows = selectedRows(r),
       page = Math.min(ui.page, Math.max(1, Math.ceil(rows.length / 25))),
       shown = rows.slice((page - 1) * 25, page * 25),
@@ -198,7 +265,67 @@ export function createForecastReports(C, F, { onExecution }) {
       }
     );
   }
+  function remoteForecastRows(r) {
+    const page = remote.page('forecasts', {
+      scope: ui.scope,
+      status: ui.status === 'all' ? '' : ui.status,
+      targetId: ui.target.trim(),
+      id: ui.query.trim(),
+      dateFrom: ui.dateFrom.replaceAll('-', ''),
+      dateTo: ui.dateTo.replaceAll('-', ''),
+    });
+    const lookup = F.advanced(
+      '按记录编号定位',
+      `<div class="sq-report-controls sq-report-filter-grid"><label class="sq-field"><span>精确 forecastId</span><input id="sq-forecast-search" aria-label="精确预测记录 ID" value="${e(ui.query)}" placeholder="完整 forecastId；不做全量模糊扫描"></label><label class="sq-field"><span>目标定义 ID</span><input id="sq-forecast-target" aria-label="精确目标定义 ID" value="${e(ui.target)}" placeholder="完整 targetId"></label></div>`
+    );
+    const controls = `<div class="sq-report-controls sq-report-filter-grid"><label class="sq-field"><span>观察日起</span><input type="date" id="sq-forecast-date-from" value="${e(ui.dateFrom)}"></label><label class="sq-field"><span>观察日止</span><input type="date" id="sq-forecast-date-to" value="${e(ui.dateTo)}"></label><label class="sq-field"><span>范围</span><select id="sq-forecast-scope"><option value="latest" ${ui.scope === 'latest' ? 'selected' : ''}>每组目标最新记录</option><option value="all" ${ui.scope === 'all' ? 'selected' : ''}>全部历史记录</option></select></label><label class="sq-field"><span>预测状态</span><select id="sq-forecast-status">${Object.entries(
+      {
+        all: '所有状态',
+        valid: '有效预测',
+        invalid: '失效预测',
+        mature: '标签已成熟',
+        unmatured: '标签未成熟',
+      }
+    )
+      .map(
+        ([id, label]) =>
+          `<option value="${id}" ${ui.status === id ? 'selected' : ''}>${label}</option>`
+      )
+      .join(
+        ''
+      )}</select></label></div>${lookup}${ui.target ? `<div class="sq-actions"><span class="sq-subtle">当前目标：${e(ui.targetLabel || '已定位的目标定义')}</span>${F.button('forecast-clear-target', '清除目标筛选', { small: true })}</div>` : ''}`;
+    return F.panel(
+      '每一条预测都可核对',
+      controls +
+        remoteState(
+          page,
+          table(
+            [
+              '观察日 / 目标',
+              '当前状态 P',
+              '预期入场',
+              '预期未来 V',
+              'e = P − V',
+              '剩余预期 bps',
+              '实现未来 / 误差',
+              '状态 / 记录',
+            ],
+            page.items.map(
+              (row) =>
+                `<tr><td>${e(d(row.date))}<small>${e(pageTargetName(row.targetId, page, r))}</small><small>h=${e(row.horizonSessions)} · 目标 ${e(d(row.targetDate))}</small></td>${cell(row.currentState)}${cell(row.expectedEntry)}${cell(row.expectedFuture)}${cell(row.edgeGap)}${cell(row.expectedGrossBps, 2)}<td class="numeric">${fmt(row.realizedFuture, 4)}<small>${fmt(row.forecastError, 4)}</small></td><td><span class="sq-status ${row.status === 'valid' ? 'ready' : 'warning'}">${row.status === 'valid' ? '有效' : '失效'}</span><small>${row.labelMaturedAt ? '标签成熟' : '标签未成熟'}</small>${F.button('forecast-row', '查看记录', { id: row.forecastId, small: true })}</td></tr>`
+            )
+          )
+        ) +
+        '<p class="sq-subtle">筛选与排序在已提交的分片索引中完成。当前页预览不是计算截断；失效与尾部未成熟记录保留。P／V／e 使用该目标的价格单位，误差 = 实现未来 − 预期未来。</p>',
+      {
+        kicker: 'FORECAST LEDGER',
+        description:
+          '最新记录按同一组成员、构造及 PCA 投影列归组；不会把每次重拟合误作新的一组目标。',
+      }
+    );
+  }
   function validation(r) {
+    if (remote.enabled()) return remoteValidation(r);
     const v = reportDiagnostics(r),
       m = v.metrics || {};
     return (
@@ -254,8 +381,74 @@ export function createForecastReports(C, F, { onExecution }) {
       F.panel(
         '按时间验证的证据',
         `<dl class="sq-key-values"><dt>最终区间选模型</dt><dd>${v.selectionUsesHoldout === false ? '否' : v.selectionUsesHoldout === true ? '是' : '未返回证据'}</dd><dt>标签清除规则</dt><dd>${e(v.purgeRule || '未返回')}</dd><dt>顺序滚动拟合</dt><dd>${v.rollingRefitsUseMaturedPastHoldoutLabels ? '可使用此前成熟的报告期标签' : '未返回该证据'}</dd><dt>显著性检验</dt><dd>${v.significanceTested ? '引擎已记录' : '未提供独立显著性结论；均值区间另列'}</dd></dl>${F.advanced('外层折与训练边界', JSONView(v.outerFolds || []))}`,
-        { description: '误差改善不等于可获利，不把均值回归作为已经成立的前提。' }
+        {
+          description: '误差改善不等于可获利，不把均值回归作为已经成立的前提。',
+        }
       )
+    );
+  }
+  function remoteValidation(r) {
+    const v = reportDiagnostics(r),
+      m = v.metrics || {};
+    const perTarget = remote.page('perTarget');
+    const trials = remote.page('finalTrials');
+    return (
+      uncertainty(r) +
+      factorIncrement(r) +
+      (ui.baselineOpen ? remoteBaseline(r) : '') +
+      F.panel(
+        '预测与无变化基准',
+        F.note(
+          m.weighting === 'equal_weight_daily_average'
+            ? `按观察日期等权聚合，共 ${m.observedDates ?? '—'} 个日期。偏差 = 预期 − 实际。`
+            : '此历史报告未声明日期权重口径，保留原统计值。偏差 = 预期 − 实际。'
+        ) +
+          table(
+            ['统计量', '数值'],
+            [
+              ['联合 MSE', m.mse],
+              ['无变化 MSE', m.noChangeMse],
+              ['MSE 改善', m.mseImprovement],
+              ['归一化 MAE', m.mae],
+              ['入场 RMSE', m.entryRmse],
+              ['目标 RMSE', m.exitRmse],
+              ['剩余变化 RMSE', m.remainingChangeRmse],
+              ['入场偏差', m.bias?.[0]],
+              ['目标偏差', m.bias?.[1]],
+            ].map(([label, value]) => `<tr><td>${label}</td>${cell(value, 7)}</tr>`)
+          )
+      ) +
+      F.panel(
+        '按目标分别计量',
+        remoteState(
+          perTarget,
+          table(
+            ['目标', '成熟观测', '价格单位偏差', '价格单位 RMSE'],
+            perTarget.items.map(
+              (x) =>
+                `<tr><td>${e(pageTargetName(x.targetId, perTarget, r))}<small class="mono">${e(x.targetId)}</small></td>${cell(x.observations, 0)}${cell(x.priceBias)}${cell(x.priceRmse)}</tr>`
+            )
+          )
+        )
+      ) +
+      F.panel(
+        '开发期模型比较',
+        remoteState(
+          trials,
+          table(
+            ['候选', '参数', '验证损失 / 状态'],
+            trials.items.map(
+              (x) =>
+                `<tr><td>${e(ESTIMATORS[x.estimator] || x.estimator || x.id)}<small>${e(x.id)}</small></td><td><code>${e(JSON.stringify(x.params || {}))}</code></td><td>${e(x.score !== undefined ? fmt(x.score, 7) : x.status || '未返回')}${F.button('forecast-trial', '折内证据', { id: x.id, small: true })}</td></tr>`
+            )
+          )
+        )
+      ) +
+      F.panel(
+        '按时间验证的边界',
+        `<dl class="sq-key-values"><dt>最终区间选模型</dt><dd>${v.selectionUsesHoldout === false ? '否' : v.selectionUsesHoldout === true ? '是' : '未返回证据'}</dd><dt>标签清除规则</dt><dd>${e(v.purgeRule || '未返回')}</dd><dt>顺序滚动拟合</dt><dd>${v.rollingRefitsUseMaturedPastHoldoutLabels ? '可使用此前成熟的报告期标签' : '未返回该证据'}</dd></dl>`
+      ) +
+      remoteRawCollection('outerFolds', '外层折与训练边界')
     );
   }
   function factorIncrement(r) {
@@ -275,6 +468,7 @@ export function createForecastReports(C, F, { onExecution }) {
           incrementCoverage(f) +
           `<div class="sq-actions">${F.button('forecast-baseline', '查看状态基准预测', { icon: 'book', small: true })}</div>`
       );
+    const daily = remote.enabled() ? remote.page('dailyLosses') : null;
     return F.panel(
       '这些因子是否改善了预测？',
       `${table(
@@ -286,15 +480,13 @@ export function createForecastReports(C, F, { onExecution }) {
         ].map(([name, value]) => `<tr><td>${name}</td>${cell(value, 8)}</tr>`)
       )}<div class="sq-report-stats">${stat('配对观察日期', fmt(f.pairedDates, 0), '相同目标、日期与双方有效成熟预测')}${stat('配对观测', fmt(f.pairedObservations, 0), '未把截面行数当作独立样本量')}${stat('相对 MSE 改善', pct(f.relativeMseImprovement), '负值表示加入因子后误差更高')}</div>${F.note(f.dateBalancedMseImprovement > 0 ? '这组因子在本次配对预测上降低了损失。该差异尚未进行因子增量显著性检验，不能解释为因果贡献或可获利。' : '这组因子没有降低本次配对预测损失。负向结果照常保留，不隐藏不利对照。', 'warning')}<p class="sq-subtle">实际移除的预测输入：${e((f.featuresRemoved || []).join('、'))}。基准在相同候选与验证预算内独立选模；冻结目标数量和事件/缺失输入掩码保持一致，但两个模型不一定生成相同范围的有效预测。对冲因子未被移除。</p>${incrementCoverage(f)}<div class="sq-actions">${F.button('forecast-baseline', '查看状态基准预测', { icon: 'book', small: true })}</div>${F.advanced(
         '配对日期、模型与对照规则',
-        `${table(
+        `${daily ? remoteState(daily, '') : ''}${table(
           ['日期', '成熟配对数', '加入因子 MSE', '状态基准 MSE'],
-          (f.dailyLosses || [])
-            .slice(0, 25)
-            .map(
-              (x) =>
-                `<tr><td>${e(d(x.date))}</td>${cell(x.observations, 0)}${cell(x.withFactorsMse, 8)}${cell(x.stateOnlyMse, 8)}</tr>`
-            )
-        )}<p class="sq-subtle">此处预览前 25 个日期；完整产物保留 ${f.dailyLosses?.length || 0} 个日期及全部基准预测。</p>${JSONView({ method: f.method, sameEventAndMissingInputMask: f.sameEventAndMissingInputMask, hedgeFactorsAblated: f.hedgeFactorsAblated, significanceTested: f.significanceTested, causalAttribution: f.causalAttribution, profitabilityEstablished: f.profitabilityEstablished, baselineSelectedModel: f.baselineValidation?.selectedModel })}`
+          (daily ? daily.items : (f.dailyLosses || []).slice(0, 25)).map(
+            (x) =>
+              `<tr><td>${e(d(x.date))}</td>${cell(x.observations, 0)}${cell(x.withFactorsMse, 8)}${cell(x.stateOnlyMse, 8)}</tr>`
+          )
+        )}<p class="sq-subtle">${daily ? '当前按需读取配对日期；完整产物保留 ' + fmt(remote.transport.collections?.dailyLosses?.total, 0) : '此处预览前 25 个日期；完整产物保留 ' + (f.dailyLosses?.length || 0)} 个日期及全部基准预测。</p>${JSONView({ method: f.method, sameEventAndMissingInputMask: f.sameEventAndMissingInputMask, hedgeFactorsAblated: f.hedgeFactorsAblated, significanceTested: f.significanceTested, causalAttribution: f.causalAttribution, profitabilityEstablished: f.profitabilityEstablished, baselineSelectedModel: f.baselineValidation?.selectedModel })}`
       )}`,
       { kicker: 'ACTUALLY COMPUTED FEATURE ABLATION' }
     );
@@ -321,7 +513,14 @@ export function createForecastReports(C, F, { onExecution }) {
     const x = r.execution || {},
       risk = x.riskAdapter;
     if (!risk) return '';
+    const page = remote.enabled() ? remote.page('riskLedger', { filter: ui.riskFilter }) : null;
     const events = new Map();
+    for (const [date, event] of Object.entries(page?.related?.riskEvents || {}))
+      events.set(date, {
+        exits: event.riskExitCount,
+        pending: [],
+        pendingCount: event.exitPendingCount,
+      });
     for (const t of r.trades || [])
       if (t.exitReason === 'risk_limit_exit') {
         const v = events.get(t.date) || { exits: 0, pending: [] };
@@ -334,17 +533,19 @@ export function createForecastReports(C, F, { onExecution }) {
         v.pending.push(decision);
         events.set(decision.date, v);
       }
-    const all = x.ledger || [],
-      rows = all.filter(
-        (row) =>
-          ui.riskFilter === 'all' ||
-          (ui.riskFilter === 'events' &&
-            ((row.riskBreaches || []).length || events.has(row.date))) ||
-          (ui.riskFilter === 'missing' &&
-            ((row.unavailableRiskInputs?.factors || []).length ||
-              (row.unavailableRiskInputs?.volatilitySymbols || []).length))
-      ),
-      shown = rows.slice((ui.riskPage - 1) * 25, ui.riskPage * 25);
+    const all = page ? page.items : x.ledger || [],
+      rows = page
+        ? all
+        : all.filter(
+            (row) =>
+              ui.riskFilter === 'all' ||
+              (ui.riskFilter === 'events' &&
+                ((row.riskBreaches || []).length || events.has(row.date))) ||
+              (ui.riskFilter === 'missing' &&
+                ((row.unavailableRiskInputs?.factors || []).length ||
+                  (row.unavailableRiskInputs?.volatilitySymbols || []).length))
+          ),
+      shown = page ? rows : rows.slice((ui.riskPage - 1) * 25, ui.riskPage * 25);
     return F.panel(
       '风险约束实际怎样生效',
       `<dl class="sq-key-values"><dt>仓位缩放</dt><dd>${risk.sizingMode === 'volatility_target' ? '历史协方差波动目标' : '固定名义敞口'}</dd><dt>总 / 净敞口上限</dt><dd>${pct(risk.grossExposure)} / ${pct(risk.netExposureLimit)}</dd><dt>单股目标上限</dt><dd>${pct(risk.maxWeight)}</dd><dt>波动目标 / 窗口</dt><dd>${risk.sizingMode === 'volatility_target' ? `${pct(risk.targetAnnualVolatility)} / ${risk.volatilityLookback} 日` : '本次未启用波动目标'}</dd><dt>因子暴露约束</dt><dd>${(risk.factorExposureLimits || []).map((z) => `${e(z.factorId)} ≤ ${fmt(z.maxAbsExposure, 2)}`).join('；') || '没有配置'}</dd></dl><div class="sq-report-controls"><label class="sq-field"><span>风险日期筛选</span><select id="sq-risk-filter">${Object.entries(
@@ -358,13 +559,13 @@ export function createForecastReports(C, F, { onExecution }) {
           ([key, label]) =>
             `<option value="${key}" ${ui.riskFilter === key ? 'selected' : ''}>${label}</option>`
         )
-        .join('')}</select></label></div>${table(
+        .join('')}</select></label></div>${page ? remoteState(page, '') : ''}${table(
         ['日期 / 风险截止', '实际总 / 净敞口', '估计年化波动', '超限 / 退出', '核对'],
         shown.map((row) => {
           const event = events.get(row.date);
-          return `<tr><td>${e(d(row.date))}<small>${e(row.riskInformationCutoff || '未返回')}</small></td><td>${pct(row.risk?.gross ?? row.grossExposure)}<small>${pct(row.risk?.net ?? row.netExposure)}</small></td><td>${pct(row.risk?.annualVolatility)}</td><td>${e(row.riskBreaches?.map(reasonLabel).join('；') || '收盘未记录超限')}<small>${event?.exits ? `风险退出 ${event.exits} 条交易腿` : '无风险退出成交'}</small><small>${event?.pending.length ? `等待退出 ${event.pending.length} 项：${[...new Set(event.pending.map((x) => reasonLabel(x.reason)))].join('；')}` : ''}</small></td><td>${F.button('forecast-risk-detail', '风险明细', { id: row.date, small: true })}</td></tr>`;
+          return `<tr><td>${e(d(row.date))}<small>${e(row.riskInformationCutoff || '未返回')}</small></td><td>${pct(row.risk?.gross ?? row.grossExposure)}<small>${pct(row.risk?.net ?? row.netExposure)}</small></td><td>${pct(row.risk?.annualVolatility)}</td><td>${e(row.riskBreaches?.map(reasonLabel).join('；') || '收盘未记录超限')}<small>${event?.exits ? `风险退出 ${event.exits} 条交易腿` : '无风险退出成交'}</small><small>${event?.pendingCount || event?.pending.length ? `等待退出 ${event.pendingCount || event.pending.length} 项${event.pending.length ? '：' + [...new Set(event.pending.map((x) => reasonLabel(x.reason)))].join('；') : ''}` : ''}</small></td><td>${F.button('forecast-risk-detail', '风险明细', { id: row.date, small: true })}</td></tr>`;
         })
-      )}${!shown.length ? F.empty('这个筛选下没有风险日期', '可切换“全部风险日期”检查逐日敞口；零事件不会被补造成风险触发。') : ''}${pages(ui.riskPage, rows.length, 'forecast-risk-page')}<p class="sq-subtle">风险信息来自前一收盘。目标限额与实际价格漂移分别记录；存在风险退出条件时，T+1 和篮子可成交性仍可能限制即时成交。</p>${F.advanced('查看风险实现与完整字段名', JSONView(risk))}`
+      )}${!page && !shown.length ? F.empty('这个筛选下没有风险日期', '可切换“全部风险日期”检查逐日敞口；零事件不会被补造成风险触发。') : ''}${page ? '' : pages(ui.riskPage, rows.length, 'forecast-risk-page')}<p class="sq-subtle">风险信息来自前一收盘。目标限额与实际价格漂移分别记录；存在风险退出条件时，T+1 和篮子可成交性仍可能限制即时成交。</p>${F.advanced('查看风险实现与完整字段名', JSONView(risk))}`
     );
   }
   function uncertainty(r) {
@@ -391,31 +592,40 @@ export function createForecastReports(C, F, { onExecution }) {
     );
   }
   function targets(r) {
-    const definitions = r.forecasts.targetDefinitions || [],
-      shown = definitions.slice((ui.page - 1) * 25, ui.page * 25);
+    const page = remote.enabled() ? remote.page('targets') : null;
+    const definitions = r.forecasts.targetDefinitions || [];
+    const shown = page ? page.items : definitions.slice((ui.page - 1) * 25, ui.page * 25);
+    const body = table(
+      ['定义 / 构造', '成员与数量', '形成区间', '单位 / 审计'],
+      shown.map(
+        (x) =>
+          `<tr><td><code>${e(x.id)}</code><small>${e(typeof x.construction === 'object' ? JSON.stringify(x.construction) : x.construction)}</small></td><td>${x.symbols.map((symbol, n) => `${e(symbol)} × ${fmt(Array.isArray(x.quantities) ? x.quantities[n] : x.quantities?.[symbol], 6)}`).join('<br>')}</td><td>${e(d(x.formationStart))}<small>${e(d(x.formationEnd))}</small></td><td>${e(x.unit)}${F.button('forecast-target-detail', '定义证据', { id: x.id, small: true })}${page ? F.button('forecast-filter-target', '查看这个目标的预测', { id: x.id, label: x.symbols.join(' / '), small: true }) : ''}</td></tr>`
+      )
+    );
     return F.panel(
       '同一次预测，使用同一组固定数量',
-      `${table(
-        ['定义 / 构造', '成员与数量', '形成区间', '单位 / 审计'],
-        shown.map(
-          (x) =>
-            `<tr><td><code>${e(x.id)}</code><small>${e(typeof x.construction === 'object' ? JSON.stringify(x.construction) : x.construction)}</small></td><td>${x.symbols.map((symbol, n) => `${e(symbol)} × ${fmt(Array.isArray(x.quantities) ? x.quantities[n] : x.quantities?.[symbol], 6)}`).join('<br>')}</td><td>${e(d(x.formationStart))}<small>${e(d(x.formationEnd))}</small></td><td>${e(x.unit)}${F.button('forecast-target-detail', '定义证据', { id: x.id, small: true })}</td></tr>`
+      (page
+        ? remoteState(page, body)
+        : body + pages(ui.page, definitions.length, 'forecast-page')) +
+        F.note(
+          '两腿 OLS、PCA 与固定数量定义计量目标。未来状态由独立 F 模型预测。OLS 截距不是交易腿；PCA 投影不自动构成市场 beta 中性、协整或价格收敛证据。'
         )
-      )}${pages(ui.page, definitions.length, 'forecast-page')}${F.note('两腿 OLS、PCA 与固定数量定义计量目标。未来状态由独立 F 模型预测。OLS 截距不是交易腿；PCA 投影不自动构成市场 beta 中性、协整或价格收敛证据。')}`
     );
   }
   function models(r) {
-    const rows = r.forecasts.modelFits || [],
-      shown = rows.slice((ui.page - 1) * 25, ui.page * 25);
+    const page = remote.enabled() ? remote.page('modelFits') : null;
+    const rows = r.forecasts.modelFits || [];
+    const shown = page ? page.items : rows.slice((ui.page - 1) * 25, ui.page * 25);
+    const body = table(
+      ['模型拟合', '训练观察日期', '最晚标签成熟', '估计器 / 检查'],
+      shown.map(
+        (x) =>
+          `<tr><td>${e(d(x.fitDate))}<small class="mono">${e(x.id)}</small></td><td>${e(d(x.trainStart))} → ${e(d(x.trainEnd))}<small>${fmt(x.trainDates, 0)} 个观察日期</small></td><td>${e(d(x.labelEndMax))}<small>截止 ${e(d(x.informationCutoff))}</small></td><td>${e(ESTIMATORS[x.estimator] || x.estimator || r.selection?.winner)}${x.status === 'invalid' ? `<small class="sq-status warning">${e(x.invalidReason === 'MISSING_MODEL_DATA' ? '模型数据不足，本次未拟合' : x.invalidReason || '本次拟合不可用')}</small>` : ''}${F.button('forecast-fit', '拟合审计', { id: x.id, small: true })}</td></tr>`
+      )
+    );
     return F.panel(
       '每次 F 拟合的可用信息',
-      `${table(
-        ['模型拟合', '训练观察日期', '最晚标签成熟', '估计器 / 检查'],
-        shown.map(
-          (x) =>
-            `<tr><td>${e(d(x.fitDate))}<small class="mono">${e(x.id)}</small></td><td>${e(d(x.trainStart))} → ${e(d(x.trainEnd))}<small>${fmt(x.trainDates, 0)} 个观察日期</small></td><td>${e(d(x.labelEndMax))}<small>截止 ${e(d(x.informationCutoff))}</small></td><td>${e(ESTIMATORS[x.estimator] || x.estimator || r.selection?.winner)}${x.status === 'invalid' ? `<small class="sq-status warning">${e(x.invalidReason === 'MISSING_MODEL_DATA' ? '模型数据不足，本次未拟合' : x.invalidReason || '本次拟合不可用')}</small>` : ''}${F.button('forecast-fit', '拟合审计', { id: x.id, small: true })}</td></tr>`
-        )
-      )}${pages(ui.page, rows.length, 'forecast-page')}`,
+      page ? remoteState(page, body) : body + pages(ui.page, rows.length, 'forecast-page'),
       {
         description:
           '预处理、去相关和状态效应来自实际训练拟合。不会把“模型族名含回归”当作已证明的均值回归。',
@@ -455,25 +665,42 @@ export function createForecastReports(C, F, { onExecution }) {
       '本次是完整的纯预测研究：未创建持仓、交易或净值。预测诊断已完成，可以继续研究独立执行方案。'
     );
     if (x.enabled && m) {
-      body = `<div class="sq-report-stats">${stat('执行净收益', pct(m.totalReturn), '实际模拟成交后，扣除全部声明成本')}${stat('最大回撤', pct(m.maxDrawdown), '现金加有符号持仓的净值')}${stat('交易腿数', fmt(m.tradeCount, 0), '每笔成交引用 forecastId')}${stat('累计费用', fmt(m.totalCosts), '佣金、滑点、税费、过户及借券')}</div>${F.panel('独立执行净值', C.equityChart(r.equity || []) + `<p class="sq-subtle">预测误差不是现金 PnL。净值来自实际模拟的成交、费用和持仓估值。</p>`)}${F.panel(
+      const tradesPage = remote.enabled() ? remote.page('trades') : null;
+      const chart = remote.enabled() ? remote.chart() : null;
+      const chartBody = chart
+        ? chart.error
+          ? F.note(chart.error, 'error') +
+            F.button('forecast-remote-retry', '重试曲线', {
+              id: chart.key,
+              small: true,
+            })
+          : !chart.loaded
+            ? '<div class="sq-loading" role="status">正在读取有界净值曲线…</div>'
+            : C.equityChart(chart.value.points) +
+              `<p class="sq-subtle">显示 ${chart.value.points.length} / ${chart.value.totalPoints} 个曲线点；采样方式 ${e(chart.value.samplingMethod)}。完整收益和回撤使用原始账本统计，未从预览曲线重算。</p>`
+        : C.equityChart(r.equity || []);
+      body = `<div class="sq-report-stats">${stat('执行净收益', pct(m.totalReturn), '实际模拟成交后，扣除全部声明成本')}${stat('最大回撤', pct(m.maxDrawdown), '现金加有符号持仓的净值')}${stat('交易腿数', fmt(m.tradeCount, 0), '每笔成交引用 forecastId')}${stat('累计费用', fmt(m.totalCosts), '佣金、滑点、税费、过户及借券')}</div>${F.panel('独立执行净值', chartBody + `<p class="sq-subtle">预测误差不是现金 PnL。净值来自实际模拟的成交、费用和持仓估值。</p>`)}${F.panel(
         '交易与预测引用',
-        table(
-          ['成交日 / 标的', '方向 / 数量', '成交价 / 名义额', '费用', '预测 / 退出原因'],
-          (r.trades || [])
-            .slice((ui.tradePage - 1) * 25, ui.tradePage * 25)
-            .map(
+        (tradesPage ? remoteState(tradesPage, '') : '') +
+          table(
+            ['成交日 / 标的', '方向 / 数量', '成交价 / 名义额', '费用', '预测 / 退出原因'],
+            (tradesPage
+              ? tradesPage.items
+              : (r.trades || []).slice((ui.tradePage - 1) * 25, ui.tradePage * 25)
+            ).map(
               (t) =>
                 `<tr><td>${e(d(t.date))}<small>${e(t.symbol)}</small></td><td>${e(t.side)}<small>${fmt(t.signedQuantity, 4)}</small></td><td>${fmt(t.price, 4)}<small>${fmt(t.notional, 2)}</small></td>${cell(t.cost, 2)}<td>${F.button('forecast-row', '对应预测', { id: t.forecastId, small: true })}<small>${e(reasonLabel(t.exitReason))}</small></td></tr>`
             )
-        ) + pages(ui.tradePage, r.trades?.length || 0, 'forecast-trade-page')
-      )}${F.advanced('执行决策、未成交原因与费用合计', JSONView({ costBreakdown: m.costBreakdown, decisions: (x.decisions || []).slice(0, 200), previewLimit: 200, totalDecisions: x.decisions?.length, completeRecord: '完整报告 JSON 保留全部决策' }))}`;
+          ) +
+          (tradesPage ? '' : pages(ui.tradePage, r.trades?.length || 0, 'forecast-trade-page'))
+      )}${remote.enabled() ? remoteRawCollection('decisions', '执行决策与未成交原因') : F.advanced('执行决策、未成交原因与费用合计', JSONView({ costBreakdown: m.costBreakdown, decisions: (x.decisions || []).slice(0, 200), previewLimit: 200, totalDecisions: x.decisions?.length, completeRecord: '完整报告 JSON 保留全部决策' }))}`;
     }
     return `${body}${riskEvidence(r)}${replayForm(r)}${F.panel('执行边界', `<dl class="sq-key-values"><dt>预测产物</dt><dd><code>${e(r.forecasts.artifactId)}</code></dd><dt>此次重新拟合</dt><dd>${r.research?.predictionRefitPerformed === false ? '否，复用已冻结预测' : r.research?.predictionRefitPerformed === true ? '本次生成了新的预测' : '未返回证据'}</dd><dt>借券库存</dt><dd>${x.shortInventoryVerified ? '已验证' : '理论假设，未核验实际券源'}</dd><dt>到期终止</dt><dd>不能任意顺延入场；到期不可成交退出按实际可成交时点处理。</dd><dt>成交单位</dt><dd>${e(x.unit === 'fractional_adjusted_research_units' ? '可分割的复权研究单位；未按交易所整手撮合' : x.unit || '预测研究尚未执行')}</dd></dl>`)}`;
   }
   function provenance(r) {
     return F.panel(
       '数据与研究身份',
-      `<dl class="sq-key-values"><dt>引擎版本</dt><dd>${e(r.engineVersion)}</dd><dt>数据指纹</dt><dd><code>${e(r.forecasts.dataFingerprint)}</code></dd><dt>预测配置指纹</dt><dd><code>${e(r.forecasts.predictionConfigHash)}</code></dd><dt>完整预测记录</dt><dd>${r.forecasts.totalRows} · 截断 ${r.forecasts.truncated ? '是' : '否'}</dd></dl>${F.advanced('完整配置', JSONView(r.strategy))}${F.advanced('供应商、日历与字段证据', JSONView(r.provenance), true)}`
+      `<dl class="sq-key-values"><dt>引擎版本</dt><dd>${e(r.engineVersion)}</dd><dt>数据指纹</dt><dd><code>${e(r.forecasts.dataFingerprint)}</code></dd><dt>预测配置指纹</dt><dd><code>${e(r.forecasts.predictionConfigHash)}</code></dd><dt>完整预测记录</dt><dd>${r.forecasts.totalRows} · ${remote.enabled() ? '分页读取，计算完整度单独列明' : '截断 ' + (r.forecasts.truncated ? '是' : '否')}</dd>${remote.enabled() ? `<dt>传输 bundleId</dt><dd><code>${e(remote.transport.bundleId)}</code></dd><dt>已提交完整产物</dt><dd>${remote.transport.complete === true ? '是；页面仅按需读取，不改变原预测身份' : '尚未确认'}</dd>` : ''}</dl>${F.advanced('完整配置', JSONView(r.strategy))}${F.advanced('供应商、日历与字段证据', JSONView(r.provenance), true)}`
     );
   }
   function targetDetail(def) {
@@ -487,7 +714,7 @@ export function createForecastReports(C, F, { onExecution }) {
     )}<dl class="sq-key-values"><dt>构造方式</dt><dd>${e({ pair_ols: '两腿价格 OLS', pca_residual: '历史 PCA 投影', fixed: '明确的固定数量', single_asset: '单资产 · 数量 1' }[def.construction] || def.construction)}</dd><dt>形成区间</dt><dd>${e(d(def.formationStart))} — ${e(d(def.formationEnd))}</dd><dt>计量单位</dt><dd>${def.kind === 'asset_price' ? '复权研究价格 / 元' : '复权研究篮子价值 / 元'}</dd></dl>${F.advanced('对冲构造与身份审计', JSONView({ id: def.id, unit: def.unit, hedgeAudit: def.hedgeAudit }))}</div>`;
   }
   function rowDetail(row, r) {
-    const definition = r.forecasts.targetDefinitions.find((x) => x.id === row.targetId);
+    const definition = r.forecasts.targetDefinitions?.find((x) => x.id === row.targetId);
     const reason =
       {
         target_outside_available_calendar: '目标时间超出已返回的交易日历，因此不允许交易。',
@@ -523,11 +750,140 @@ export function createForecastReports(C, F, { onExecution }) {
         : ''
     }${F.advanced('去相关与输入剔除', JSONView(fit.decorrelation))}${F.advanced('查看原始拟合记录', JSONView(fit))}</div>`;
   }
+  function remoteBaseline(r) {
+    const page = remote.page('baselineRows');
+    return F.panel(
+      '模型自带状态 · 实际基准预测',
+      F.note(
+        '这是移除额外预测/事件因子后实际重跑的基准；目标数量和标签保持一致。按需逐页读取完整基准，不隐藏失效记录。'
+      ) +
+        remoteState(
+          page,
+          table(
+            ['日期 / 目标', '当前状态', '预期入场', '预期未来', '误差'],
+            page.items.map(
+              (x) =>
+                `<tr><td>${e(d(x.date))}<small>${e(pageTargetName(x.targetId, page, r))}</small></td>${cell(x.currentState)}${cell(x.expectedEntry)}${cell(x.expectedFuture)}${cell(x.forecastError)}</tr>`
+            )
+          )
+        )
+    );
+  }
+  let detailRequest = 0;
+  async function remoteDetail(action, id, r) {
+    const collection = {
+      'forecast-row': 'forecasts',
+      'forecast-target-detail': 'targets',
+      'forecast-fit': 'modelFits',
+      'forecast-risk-detail': 'riskLedger',
+      'forecast-trial': 'finalTrials',
+    }[action];
+    const title = {
+      forecasts: '预测记录 · P / V / e',
+      targets: '冻结目标定义',
+      modelFits: '模型拟合审计',
+      riskLedger: '逐日风险证据',
+      finalTrials: '候选模型验证证据',
+    }[collection];
+    const request = ++detailRequest;
+    const marker = `<div data-report-detail="${request}">`;
+    openModal(
+      title,
+      marker + '<div class="sq-loading" role="status">正在读取这条记录的证据…</div></div>',
+      true
+    );
+    const stillOpen = () => document.querySelector(`[data-report-detail="${request}"]`);
+    try {
+      const response = await remote.detail(collection, id);
+      if (!response || !stillOpen()) return;
+      let body;
+      if (collection === 'forecasts') {
+        let definitions = response.related?.targets || [];
+        if (
+          !definitions.some((x) => x.id === response.item?.targetId) &&
+          response.item?.targetId &&
+          response.item.targetId !== 'unavailable'
+        ) {
+          const target = await remote.detail('targets', response.item.targetId);
+          if (!target || !stillOpen()) return;
+          definitions = [target.item];
+        }
+        body = rowDetail(response.item, {
+          ...r,
+          forecasts: { ...r.forecasts, targetDefinitions: definitions },
+        });
+      } else if (collection === 'targets') body = targetDetail(response.item);
+      else if (collection === 'modelFits') body = fitDetail(response.item);
+      else if (collection === 'riskLedger') body = riskDetail(response.item, r);
+      else body = JSONView(response.item);
+      if (stillOpen()) openModal(title, marker + body + '</div>', true);
+    } catch (error) {
+      if (stillOpen())
+        openModal(
+          title,
+          marker +
+            F.note(error.message, 'error') +
+            F.button(action, '重试这条记录', { id, small: true }) +
+            '</div>',
+          true
+        );
+    }
+  }
+  function riskDetail(row, r) {
+    return `${table(
+      ['因子', '实际 z-score 暴露', '声明上限'],
+      Object.entries(row.risk?.factorExposures || {}).map(
+        ([id, value]) =>
+          `<tr><td>${e(id)}</td>${cell(value)}${cell(r.execution?.riskAdapter?.factorExposureLimits?.find((x) => x.factorId === id)?.maxAbsExposure)}</tr>`
+      )
+    )}<p class="sq-subtle">${e(row.riskBreaches?.map(reasonLabel).join('；') || '收盘未记录超限')}</p>${F.advanced('查看原始日账本', JSONView(row))}`;
+  }
   async function handle(el) {
     const action = el.dataset.sq;
     if (!action?.startsWith('forecast-')) return false;
     const r = ui.result;
     if (!r) return true;
+    if (action === 'forecast-remote-page') {
+      remote.move(el.dataset.id, el.dataset.direction);
+      return true;
+    }
+    if (action === 'forecast-remote-retry') {
+      remote.retry(el.dataset.id);
+      return true;
+    }
+    if (
+      remote.enabled() &&
+      [
+        'forecast-row',
+        'forecast-target-detail',
+        'forecast-fit',
+        'forecast-risk-detail',
+        'forecast-trial',
+      ].includes(action)
+    ) {
+      await remoteDetail(action, el.dataset.id, r);
+      return true;
+    }
+    if (action === 'forecast-baseline' && remote.enabled()) {
+      ui.baselineOpen = !ui.baselineOpen;
+      render();
+      return true;
+    }
+    if (action === 'forecast-clear-target') {
+      ui.target = '';
+      ui.targetLabel = '';
+      render();
+      return true;
+    }
+    if (action === 'forecast-filter-target') {
+      ui.target = el.dataset.id;
+      ui.targetLabel = el.dataset.label || '';
+      ui.query = '';
+      ui.scope = 'all';
+      ui.tab = 'forecasts';
+      render();
+      return true;
+    }
     if (action === 'forecast-tab') {
       ui.tab = el.dataset.id;
       ui.page = 1;
@@ -624,6 +980,12 @@ export function createForecastReports(C, F, { onExecution }) {
   }
   let searchTimer;
   function onInput(el) {
+    const remoteFilters = {
+      'sq-forecast-target': 'target',
+      'sq-forecast-date-from': 'dateFrom',
+      'sq-forecast-date-to': 'dateTo',
+    };
+    if (remoteFilters[el.id]) ui[remoteFilters[el.id]] = el.value;
     if (el.dataset.sqReplayRiskMax) {
       const limit = ui.replay?.portfolio.factorExposureLimits?.find(
         (x) => x.factorId === el.dataset.sqReplayRiskMax
@@ -650,7 +1012,10 @@ export function createForecastReports(C, F, { onExecution }) {
         ui.replay.portfolio.factorExposureLimits || []
       ).filter((x) => x.factorId !== id);
       if (el.checked)
-        ui.replay.portfolio.factorExposureLimits.push({ factorId: id, maxAbsExposure: 0.5 });
+        ui.replay.portfolio.factorExposureLimits.push({
+          factorId: id,
+          maxAbsExposure: 0.5,
+        });
       render();
     }
     if (el.id === 'sq-risk-filter') {
@@ -662,6 +1027,8 @@ export function createForecastReports(C, F, { onExecution }) {
       'sq-forecast-scope': 'scope',
       'sq-forecast-status': 'status',
       'sq-forecast-target': 'target',
+      'sq-forecast-date-from': 'dateFrom',
+      'sq-forecast-date-to': 'dateTo',
     };
     if (mapping[el.id]) {
       ui[mapping[el.id]] = el.value;
@@ -670,5 +1037,5 @@ export function createForecastReports(C, F, { onExecution }) {
     }
     onInput(el);
   }
-  return { render: renderReport, handle, onInput, onChange, ui };
+  return { render: renderReport, handle, onInput, onChange, ui, remote };
 }

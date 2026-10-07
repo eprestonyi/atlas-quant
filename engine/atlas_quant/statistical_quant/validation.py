@@ -106,8 +106,8 @@ def _records(samples, idx, prediction, fit_id, strategy):
     return records
 
 
-def forecast(samples, strategy):
-    from ..engine import ResearchError
+def forecast_origins(samples, strategy):
+    """Pre-fit terminal origin plan, independent of predictions or model success."""
     dates = samples.dates
     eligible_calendar = dates[samples.start_index:]
     boundary = int(len(eligible_calendar)*(1-strategy["validation"]["holdoutFraction"]))
@@ -117,6 +117,13 @@ def forecast(samples, strategy):
     indices = samples.meta.index[samples.meta.date >= holdout]
     if len(indices) > MAX_FORECASTS:
         fail("FORECAST_BUDGET", "完整预测超过25000条；请降低观察频率或减少标的")
+    return holdout, indices
+
+
+def forecast(samples, strategy):
+    from ..engine import ResearchError
+    dates = samples.dates
+    holdout, indices = forecast_origins(samples, strategy)
     development = sorted(samples.meta.loc[mature_mask(samples, holdout), "date"].unique())
     specs = models.candidates(strategy["model"]["estimator"])
     gap = strategy["target"]["horizonSessions"]+1

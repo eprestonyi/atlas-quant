@@ -274,3 +274,26 @@ test('stored candidate compatibility removes only validated known resolver metad
  }
  assert.equal(candidate.universe.catalogSnapshot.securityCount,5911,'read projection does not mutate the saved source');
 });
+
+
+test('experiment listing includes the latest forecast or execution without cross-owner leakage',async()=>{
+ const cookie=await session(), outsider=await session();
+ const owner=(await (await request('/session','GET',undefined,cookie)).json()).workspace.id;
+ const foreign=(await (await request('/session','GET',undefined,outsider)).json()).workspace.id;
+ const exp=(await (await api('/experiments','POST',{strategy:base},cookie)).json()).experiment;
+ let listing=await (await api('/experiments','GET',undefined,cookie)).json();
+ assert.equal(listing.items.find(x=>x.id===exp.id).latestRun,null);
+ const add=async(id,jobOwner,linkOwner,kind,time)=>{
+  await db.batch([
+   db.prepare("INSERT INTO jobs(id,owner,name,status,data_source,spec,created_at,updated_at) VALUES(?,?,?,'completed','demo',?,?,?)").bind(id,jobOwner,'List fixture',JSON.stringify(base),time,time),
+   db.prepare('INSERT INTO quant_runs(job_id,owner,experiment_id,experiment_version,kind,created_at) VALUES(?,?,?,2,?,?)').bind(id,linkOwner,exp.id,kind,time)
+  ]);
+ };
+ await add('latest-fixture-a',owner,owner,'forecast','2026-01-01T00:00:00Z');
+ await add('latest-fixture-b',owner,owner,'execution','2026-01-01T00:00:00Z');
+ await add('latest-fixture-foreign-job',foreign,owner,'execution','2099-01-01T00:00:00Z');
+ await add('latest-fixture-foreign-link',owner,foreign,'forecast','2099-01-01T00:00:00Z');
+ listing=await (await api('/experiments','GET',undefined,cookie)).json();
+ assert.deepEqual(listing.items.find(x=>x.id===exp.id).latestRun,{id:'latest-fixture-b',status:'completed',jobKind:'execution',experimentVersion:2,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-01T00:00:00Z'});
+ assert.ok(!(await (await api('/experiments','GET',undefined,outsider)).json()).items.some(x=>x.id===exp.id));
+});

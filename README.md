@@ -6,6 +6,8 @@ Atlas Quant 是嵌入 Atlas 的开源统计量化研究工作区。先建立条�
 
 **v0.4 已于 2026-10-08 部署并完成真实数据预测和独立执行验收**，部署构建为 `0.4.0-5e57805bd6cd`。发布证据见 [v0.4 验收记录](docs/RELEASE_V04.md)，当前服务状态以 [health](https://atlas-aletheia.com/quant/api/health) 为准。大规模整池研究与四库历史覆盖仍在继续建设；实施进度与未完成项见 [REBUILD_PLAN.md](docs/REBUILD_PLAN.md)。
 
+当前 v0.5 候选加入完整分片产物、按需报告和独立分片审计，尚未宣称正式上线。[传输协议](docs/BUNDLE_TRANSPORT_V1.md) · [本地验收与剩余门槛](docs/BUNDLE_ACCEPTANCE_A.md)
+
 ## 研究协议
 
 ```text
@@ -72,6 +74,17 @@ npm ci
 
 样例为固定 seed 的 **SYNTHETIC 教学数据**，不能证明市场规律。相同依赖和配置的预测报告可逐字复现。`audit-report.py` 只使用 Python 标准库，独立核对产物哈希、预测恒等式、交易引用、费用、T+1 数量、现金、持仓与净值，不调用引擎辅助函数或数据供应商。
 
+v0.5 的分片目录保存完整预测、去因子对照、拟合前观察计划、报告及冻结输入。目标目录必须不存在，私有输入不会提交到仓库：
+
+```sh
+.venv/bin/python scripts/local-run.py engine/examples/statistical-quant.json --source demo --bundle-output private/forecast-bundle
+.venv/bin/python scripts/audit-bundle.py private/forecast-bundle
+.venv/bin/python scripts/replay-execution.py --source-bundle private/forecast-bundle --bundle-output private/execution-bundle
+.venv/bin/python scripts/audit-bundle.py private/execution-bundle --source-bundle private/forecast-bundle
+```
+
+`audit-bundle.py` 使用标准库逐片复核原始字节、完整覆盖、引用和现金账本，不导入研究引擎。浏览器按已提交索引筛选与翻页，下载为完整报告 JSON；CLI 的 manifest/chunks 目录与浏览器 JSON 导出是不同格式。
+
 执行覆盖文件只能包含 `execution`、`portfolio`、`costs`。例如保存为 `private/execution-overrides.json`：
 
 ```json
@@ -113,18 +126,20 @@ CI 运行 Python/Node 回归、真实 DOM 操作及两次确定性预测，再�
 
 ## 边界与历史兼容
 
-| 项目 | v0.4 范围 |
+| 项目 | v0.5 候选范围 |
 |---|---|
 | 研究范围 | 单次 1–50 只沪深 A 股；日频；北交所目录可发现，托管引擎暂不支持 |
 | 冻结目标 | Pair 恰好两腿；PCA 3–20 腿；显式固定数量 |
 | 输入 / 输出 | 最多 32 因子、110,000 输入行、25,000 完整终端预测；不截断完整产物 |
 | 历史 / 期限 | 最多 8 年、2,200 交易日；预测期限 1–60 日 |
-| 资源 | 单计算槽；默认单任务 900 秒，开发 600 秒；报告、冻结输入各最多 24 MiB |
+| 资源 | 单计算槽；计算 900 秒；分片传输总预算 300 秒，每请求最多 60 秒；单片硬上限 8 MiB，总计最多 256 MiB / 256 片 / 100 万条记录 |
 | 工作区 | 同时 1 个实验、每天 20 次提交；具体限制以 API 校验为准 |
 | 用户代码 | 浏览器隔离 Pyodide；受信服务端只执行受限 DSL 配置 |
 | AI | 显式选择的真实 Workers AI 审阅，和规则检查分开；建议须用户应用 |
 
 执行采用小数复权研究单位、理论借券、声明的固定费用。券源、实际融资、手数、涨跌停排队和容量没有完成实盘验证。一次预测改善或正收益不能证明套利成立；`qualified/deploymentQualified` 保持 false。没有实盘下单。
+
+分片上限是传输边界，不是扩大计算范围的承诺。50 股 / 32 因子等上限仍生效；大报告通过完整分片保存，未截掉失效、未成熟或对照记录。旧单包研究继续按原协议读取。
 
 模型拟合产物保存版本、输入列、样本边界、参数、变换与线性系数等审计记录；它不是通用序列化的 HGB 模型包。执行回放使用冻结预测，不重建模型。
 

@@ -2,7 +2,7 @@
 
 开始：2026-10-08（Asia/Hong_Kong）。用户明确授权完整重构、长时间运行、多轮计划/修改/构建/检查/测试与上线。状态：**进行中，尚未完成**。
 
-工作分支：`feat/statistical-quant-rebuild`。仓库：`/Users/prestondesamsung/Documents/Codex/2026-10-06/wo-x/work/atlas-quant`。
+当前扩容分支：`feat/quant-artifact-shards`（`work/atlas-quant-shards`）；财报状态分支：`feat/quant-financial-states`（`work/atlas-quant-financial`）。已发布 v0.4 源码保留在 `work/atlas-quant`，不得从旧目录重复部署。
 
 本计划与 [FORECAST_RESEARCH_CONTRACT.md](FORECAST_RESEARCH_CONTRACT.md) 是续接入口。每轮先读最新进度，不重复已完成的部署或付费数据请求。自动续接：本聊天 heartbeat `atlas-quant`，每小时检查并继续；完成全部验收后停用。额度不足不绕过限制，重置卡工具每次调用须满足独立确认要求。
 
@@ -185,3 +185,12 @@ Worker 实际模块和验收字节一致，正式构建 `0.4.0-5e57805bd6cd`；�
 ### Cycle 7 — 完整分片与按需报告（进行中）
 
 在独立 `feat/quant-artifact-shards` worktree 开发，生产候选不混入未验收改动。先不提高 50 股/32 因子/25,000 预测/900 秒上限。保留 v1 forecastId，新增独立 bundle transport：有界 JSON 分片、独立 pre-fit origin 计划、原字节流哈希、分片领取与恢复、D1 索引分页、完整流式导出及标准库独立审计。任何漏片、未成熟或失效记录遗漏均不能发布可执行产物。随后才进入整池数据采集与全局训练扩容。
+
+
+Cycle 7 本地验收：Python 374 / Node 114 通过。完整 59.9 MB bundle、33 MB 报告、19,700 主预测与同量去因子基准均保留；实际 Python runner 到 HTTP/D1/R2、独立重放与浏览器筛选/翻页/详情/原始字节下载已通过。详细数值和边界见 [BUNDLE_ACCEPTANCE_A.md](BUNDLE_ACCEPTANCE_A.md)。发布复核修复孤立上传分片终态清理，实际事务失败反例通过。新鲜依赖安装首次磁盘不足，仅清理旧验收生成的依赖副本，保留源码、日志和实验；新建环境25项复现全通过（374 Python / 115 Node）。正式服务仍为已验收 v0.4。
+
+### Cycle 8 — 财报状态与完整票池研究（并行进行中）
+
+Plan / Revise：财报先建立原生报表字段、季度/YTD/TTM、公告日、修订与单位合同，16 个具体公式逐项手算。完整票池先设计同一横截面的联合训练与全局特征 DAG，不把 50 股分组的多个独立模型拼成“整池模型”。
+
+Build / Check：财报独立 worktree 首轮 48 项通过，但独立复核发现极端 Decimal 精度碰撞/溢出和稀疏字段投影边界，正在修订。尚未接入真实报表 provider、因子目录或 UI，不计作已上线因子。完整票池设计见 [PHASE_B_RESEARCH_CAPACITY.md](PHASE_B_RESEARCH_CAPACITY.md)，实现与 300 股资源/等价性验收仍待推进。

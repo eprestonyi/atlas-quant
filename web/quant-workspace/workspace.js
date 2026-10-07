@@ -100,16 +100,18 @@ window.AtlasQuantV4 = {
       s.strategy.target?.kind === 'frozen_basket' ? '冻结数量篮子' : '单资产价格';
     const legacy = () => !isStatistical(s.strategy);
     const sourceLabel = () =>
-      ({ tushare: 'Tushare 实际数据', upload: '当前导入数据', demo: '合成教学数据' })[
-        s.dataSource
-      ] || '待选择';
+      ({
+        tushare: 'Tushare 实际数据',
+        upload: '当前导入数据',
+        demo: '合成教学数据',
+      })[s.dataSource] || '待选择';
 
     function sidebar() {
       const current = step();
       return `<aside class="sq-sidebar"><a href="#dashboard" class="sq-brand"><span class="atlas-mark">A</span><span>atlas <b>quant</b><small>OPEN QUANTITATIVE RESEARCH</small></span></a><div class="sq-workspace-label">统计量化交易<span>STATISTICAL QUANT</span></div><nav aria-label="工作区"><a href="#dashboard" class="sq-nav ${s.view === 'dashboard' ? 'active' : ''}">${i('grid')}研究概览</a><a href="#quant/researches" class="sq-nav ${s.quantStep === 'researches' ? 'active' : ''}">${i('save')}我的研究<span>${ui.experimentsLoaded ? ui.experimentTotal || '' : ''}</span></a></nav><div class="sq-nav-caption">研究流程 <span>01 — 08</span></div><nav aria-label="统计量化研究步骤">${STEPS.map((x, n) => `<a class="sq-step ${s.view === 'quant' && s.quantStep === x.id ? 'active' : ''}" href="#${route(x.id)}" ${s.view === 'quant' && s.quantStep === x.id ? 'aria-current="step"' : ''}><b>${String(n + 1).padStart(2, '0')}</b><span>${x.name}</span>${i(x.icon)}</a>`).join('')}</nav><div class="sq-nav-caption">研究工具</div><nav><a href="#quant/studio/code" class="sq-nav ${s.quantStep === 'code' ? 'active' : ''}">${i('code')}代码与 AI 审阅</a><a href="#quant/community" class="sq-nav ${s.quantStep === 'community' ? 'active' : ''}">${i('users')}因子社区</a><a href="#quant/recipes" class="sq-nav">${i('layers')}模块配方目录</a><a href="#quant/compare" class="sq-nav">${i('chart')}研究比较</a><a href="#quant/history" class="sq-nav ${s.quantStep === 'history' ? 'active' : ''}">${i('clock')}历史版本研究</a></nav><div class="sq-sidebar-bottom"><span><i class="dot ${s.session?.runner?.online ? 'online' : ''}"></i>${s.session?.runner?.online ? '计算节点在线' : '计算节点状态待确认'}</span><a href="/cn/terminal">${i('external')} Atlas Terminal</a></div></aside>`;
     }
     function topbar() {
-      return `<header class="sq-topbar"><a href="#dashboard" class="sq-mobile-brand">atlas <b>quant</b></a><div class="sq-breadcrumb">STATISTICAL QUANT <span>/</span> <strong>${e(s.view === 'dashboard' ? '研究概览' : STEPS.find((x) => x.id === s.quantStep)?.name || { researches: '我的研究', code: '代码与 AI', history: '历史版本', community: '因子社区', compare: '研究比较' }[s.quantStep] || '报告')}</strong></div><div class="sq-topbar-actions"><span class="sq-version">0.4 / FORECAST FIRST</span><a class="sq-window-link" href="#quant/universe" target="_blank" rel="noopener" title="在独立窗口中打开统计量化工作区" aria-label="独立打开统计量化工作区">${i('external')}</a><a class="sq-mode-switch" href="#${route(step(), !isStudio())}">${i(isStudio() ? 'workflow' : 'code')}${isStudio() ? '引导模式' : 'Quant Studio'}</a></div></header>`;
+      return `<header class="sq-topbar"><a href="#dashboard" class="sq-mobile-brand">atlas <b>quant</b></a><div class="sq-breadcrumb">STATISTICAL QUANT <span>/</span> <strong>${e(s.view === 'dashboard' ? '研究概览' : STEPS.find((x) => x.id === s.quantStep)?.name || { researches: '我的研究', code: '代码与 AI', history: '历史版本', community: '因子社区', compare: '研究比较' }[s.quantStep] || '报告')}</strong></div><div class="sq-topbar-actions"><span class="sq-version">0.5 / FORECAST FIRST</span><a class="sq-window-link" href="#quant/universe" target="_blank" rel="noopener" title="在独立窗口中打开统计量化工作区" aria-label="独立打开统计量化工作区">${i('external')}</a><a class="sq-mode-switch" href="#${route(step(), !isStudio())}">${i(isStudio() ? 'workflow' : 'code')}${isStudio() ? '引导模式' : 'Quant Studio'}</a></div></header>`;
     }
     function heading(kicker, title, description, actions = '') {
       return `<div class="sq-page-heading"><div><span class="sq-kicker">${e(kicker)}</span><h1>${e(title)}</h1><p>${e(description)}</p></div>${actions ? `<div class="sq-actions">${actions}</div>` : ''}</div>`;
@@ -253,6 +255,20 @@ window.AtlasQuantV4 = {
       });
       return `${panel('冻结本次研究协议', `${errors.length ? errors.map((x) => note(x, 'warning')).join('') : note('静态配置通过检查。真实字段覆盖、成熟标签与拟合条件会在运行时验证。')}<div class="sq-review-grid"><div><span>目标与期限</span><strong>${targetLabel()} · ${s.strategy.target.horizonSessions} 日</strong><p>参考、入场和未来目标使用同一计量定义。</p></div><div><span>模型协议</span><strong>${e(FAMILIES[s.strategy.model.family]?.name)} / ${e(ESTIMATORS[s.strategy.model.estimator])}</strong><p>训练窗口 ${s.strategy.model.trainWindow} 日期 · 每 ${s.strategy.model.refitDays} 日允许重拟合</p></div><div><span>研究范围</span><strong>${s.strategy.universe.symbols.length} 个明确成员</strong><p>${e(C.dateText(s.strategy.universe.start))} — ${e(C.dateText(s.strategy.universe.end))}</p></div><div><span>运行内容</span><strong>${s.strategy.execution.enabled ? '预测产物 + 独立执行账本' : '完整预测产物与诊断'}</strong><p>${e(sourceLabel())}</p></div></div><div class="sq-actions">${button('save', '保存版本', { icon: 'save' })}${button('export', '导出配置', { icon: 'download' })}</div>`, { kicker: 'IMMUTABLE RESEARCH RUN' })}${panel('研究的核心输出', `<div class="sq-contract-values"><div><span>当前状态</span><strong>P</strong></div><div><span>预期未来</span><strong>V̂</strong></div><div><span>预测价差</span><strong>e</strong></div><div><span>成熟后</span><strong>实现值 / 误差</strong></div></div><p>包括未交易、失效、尾部未成熟的预测。预览与完整私有产物分别展示，运行结果不以是否盈利决定保留。</p>`)}${ui.activeId ? button('experiment-detail', '查看这个研究的历史运行', { id: ui.activeId, icon: 'clock' }) : ''}`;
     }
+    function latestRunStatus(item) {
+      if (!Object.hasOwn(item, 'latestRun')) return '<span>运行状态尚未返回</span>';
+      if (!item.latestRun) return '<span>尚未运行</span>';
+      const run = item.latestRun;
+      const label =
+        {
+          queued: '排队中',
+          running: '计算中',
+          completed: '已完成',
+          failed: '失败',
+          cancelled: '已取消',
+        }[run.status] || '状态待确认';
+      return `<a class="sq-inline-link" href="#runs/${encodeURIComponent(run.id)}">${e(label)}</a><small>${run.jobKind === 'execution' ? '独立执行' : '预测研究'} · 研究 v${e(run.experimentVersion ?? '—')}</small>`;
+    }
     function experimentList() {
       return `${heading('MY RESEARCH', '我的统计研究', '版本化配置、预测产物与独立执行记录。', button('new', '新建研究', { primary: true, icon: 'plus' }))}${panel(
         '已保存的研究',
@@ -265,7 +281,7 @@ window.AtlasQuantV4 = {
               ? `<div class="sq-table-scroll"><table class="sq-table"><thead><tr><th>研究名称</th><th>目标 / 模型</th><th>版本</th><th>最近状态</th><th>操作</th></tr></thead><tbody>${ui.experiments
                   .map((item) => {
                     const spec = item.strategy || item.spec || {};
-                    return `<tr><td><button class="sq-inline-link" data-sq="experiment-detail" data-id="${e(item.id)}">${e(item.name || spec.name || '未命名研究')}</button><small>${e(C.dateText(item.updatedAt || item.createdAt))}</small></td><td>${e(spec.target?.kind || item.targetKind || '—')}<small>${e(spec.model?.family || item.modelFamily || '')}</small></td><td>v${e(item.version)}</td><td>${e(item.latestRun?.status || item.status || '配置已保存')}</td><td><div class="sq-actions">${button('experiment-load', '编辑', { small: true, id: item.id })}${button('experiment-copy', '复制', { small: true, id: item.id, icon: 'fork' })}</div></td></tr>`;
+                    return `<tr><td><button class="sq-inline-link" data-sq="experiment-detail" data-id="${e(item.id)}">${e(item.name || spec.name || '未命名研究')}</button><small>${e(C.dateText(item.updatedAt || item.createdAt))}</small></td><td>${e(spec.target?.kind || item.targetKind || '—')}<small>${e(spec.model?.family || item.modelFamily || '')}</small></td><td>v${e(item.version)}</td><td>${latestRunStatus(item)}</td><td><div class="sq-actions">${button('experiment-load', '编辑', { small: true, id: item.id })}${button('experiment-copy', '复制', { small: true, id: item.id, icon: 'fork' })}</div></td></tr>`;
                   })
                   .join('')}</tbody></table></div>`
               : empty(
@@ -273,7 +289,12 @@ window.AtlasQuantV4 = {
                   '从一个明确目标开始；保存后保留版本与运行关系。',
                   button('new', '新建研究', { primary: true })
                 ),
-        { actions: button('refresh-experiments', '刷新', { small: true, icon: 'refresh' }) }
+        {
+          actions: button('refresh-experiments', '刷新', {
+            small: true,
+            icon: 'refresh',
+          }),
+        }
       )}<div class="sq-catalog-pagination"><span>${ui.loading || !ui.experimentsLoaded ? '研究数量读取中' : `共 ${ui.experimentTotal} 项 · 第 ${ui.experimentPage} 页`}</span><div>${button('experiment-page', '上一页', { small: true, page: ui.experimentPage - 1, disabled: ui.loading || !ui.experimentsLoaded || ui.experimentPage <= 1 })}${button('experiment-page', '下一页', { small: true, page: ui.experimentPage + 1, disabled: ui.loading || !ui.experimentsLoaded || ui.experimentPage * 100 >= ui.experimentTotal })}</div></div>`;
     }
     function experimentDetail() {
@@ -324,7 +345,11 @@ window.AtlasQuantV4 = {
       try {
         const response = await api(
           '/statistical-quant/recipes?' +
-            new URLSearchParams({ q: ui.recipeQuery, page: ui.recipePage, pageSize: 12 })
+            new URLSearchParams({
+              q: ui.recipeQuery,
+              page: ui.recipePage,
+              pageSize: 12,
+            })
         );
         if (request !== ui.recipeRequest) return;
         ui.recipes = response.items || [];
@@ -388,7 +413,10 @@ window.AtlasQuantV4 = {
       try {
         const response = await api(
           '/statistical-quant/comparisons?' +
-            new URLSearchParams({ page: ui.comparisonHistoryPage, pageSize: 20 })
+            new URLSearchParams({
+              page: ui.comparisonHistoryPage,
+              pageSize: 20,
+            })
         );
         if (request !== ui.comparisonHistoryRequest) return;
         ui.comparisons = response.items || [];
@@ -405,6 +433,8 @@ window.AtlasQuantV4 = {
     }
     async function loadComparisonDetail(id) {
       const request = ++ui.comparisonDetailRequest;
+      const routeAtStart = location.hash;
+      const kindAtStart = ui.compareKind;
       ui.comparisonDetailId = id;
       ui.comparisonDetailLoading = true;
       ui.comparisonDetailError = '';
@@ -413,6 +443,18 @@ window.AtlasQuantV4 = {
         const response = await api('/statistical-quant/comparisons/' + encodeURIComponent(id));
         if (request !== ui.comparisonDetailRequest) return;
         ui.compare = response.comparison;
+        if (
+          location.hash === routeAtStart &&
+          ui.compareKind === kindAtStart &&
+          ['forecast', 'execution'].includes(ui.compare?.kind) &&
+          ui.compareKind !== ui.compare.kind
+        ) {
+          ui.compareKind = ui.compare.kind;
+          ui.compareIds = [];
+          ui.comparePage = 1;
+          ui.compareLoaded = false;
+          await loadCompareChoices();
+        }
       } catch (err) {
         if (request === ui.comparisonDetailRequest) ui.comparisonDetailError = err.message;
       } finally {
@@ -427,7 +469,9 @@ window.AtlasQuantV4 = {
         '已保存的比较',
         ui.comparisonHistoryError
           ? note(ui.comparisonHistoryError, 'error') +
-              button('comparison-history-retry', '重试读取已保存比较', { small: true })
+              button('comparison-history-retry', '重试读取已保存比较', {
+                small: true,
+              })
           : ui.comparisonHistoryLoading || !ui.comparisonHistoryLoaded
             ? '<div class="sq-loading" role="status">正在读取已保存比较…</div>'
             : ui.comparisons.length
@@ -573,7 +617,10 @@ window.AtlasQuantV4 = {
             : '/statistical-quant/experiments',
           {
             method: id ? 'PUT' : 'POST',
-            body: JSON.stringify({ strategy: submitted, ...(id ? { version } : {}) }),
+            body: JSON.stringify({
+              strategy: submitted,
+              ...(id ? { version } : {}),
+            }),
           }
         );
         const item = response.experiment || response.item || response;
@@ -616,7 +663,11 @@ window.AtlasQuantV4 = {
       s.submitting = true;
       render();
       try {
-        let item = { id: ui.activeId, version: ui.activeVersion, strategy: submitted };
+        let item = {
+          id: ui.activeId,
+          version: ui.activeVersion,
+          strategy: submitted,
+        };
         if (!item.id || s.dirty) {
           item = await save();
           if (!item) return;
@@ -648,7 +699,10 @@ window.AtlasQuantV4 = {
     async function runExecution(artifactId, configuration) {
       const response = await api('/statistical-quant/executions', {
         method: 'POST',
-        body: JSON.stringify({ forecastArtifactId: artifactId, ...configuration }),
+        body: JSON.stringify({
+          forecastArtifactId: artifactId,
+          ...configuration,
+        }),
       });
       const job = response.job;
       s.runs = [job, ...s.runs.filter((x) => x.id !== job.id)];
@@ -823,7 +877,11 @@ window.AtlasQuantV4 = {
       if (action === 'target-kind') {
         s.strategy.target.kind = id;
         if (id === 'frozen_basket' && !s.strategy.target.basket)
-          s.strategy.target.basket = { method: 'pair_ols', symbols: [], formationDays: 126 };
+          s.strategy.target.basket = {
+            method: 'pair_ols',
+            symbols: [],
+            formationDays: 126,
+          };
         if (id === 'asset_price') delete s.strategy.target.basket;
         persistDraft();
         render();
@@ -861,7 +919,10 @@ window.AtlasQuantV4 = {
           persistDraft();
           goto('target');
         } else if (recipe.configPatch) {
-          s.strategy.target = { horizonSessions: 5, ...clone(recipe.configPatch.target) };
+          s.strategy.target = {
+            horizonSessions: 5,
+            ...clone(recipe.configPatch.target),
+          };
           if (s.strategy.target.kind === 'frozen_basket')
             s.strategy.target.basket = {
               symbols: [],
@@ -927,7 +988,10 @@ window.AtlasQuantV4 = {
           s.strategy.portfolio.factorExposureLimits || []
         ).filter((x) => x.factorId !== id);
         if (element.checked)
-          s.strategy.portfolio.factorExposureLimits.push({ factorId: id, maxAbsExposure: 0.5 });
+          s.strategy.portfolio.factorExposureLimits.push({
+            factorId: id,
+            maxAbsExposure: 0.5,
+          });
         persistDraft();
         render();
       }
@@ -990,10 +1054,10 @@ window.AtlasQuantV4 = {
         await refreshExperiments();
         return;
       }
-      if (s.quantStep === 'compare' && !ui.compareLoaded && !ui.compareLoading)
-        await loadCompareChoices();
       if (s.quantStep === 'compare' && s.quantEntityId && ui.compare?.id !== s.quantEntityId)
         await loadComparisonDetail(s.quantEntityId);
+      if (s.quantStep === 'compare' && !ui.compareLoaded && !ui.compareLoading)
+        await loadCompareChoices();
       const stageMap = {
         state: 'state',
         target: 'target',

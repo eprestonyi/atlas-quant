@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from pathlib import Path
+from atlas_quant import __version__
 
 from atlas_quant.engine import ResearchError, _prepare_data, run_research
 from atlas_quant.fixtures import make_demo_data
@@ -53,7 +54,7 @@ def forecast_result(source):
 
 def test_forecast_only_is_complete_and_immutable_with_two_price_targets(forecast_result):
     r = forecast_result
-    assert r["schemaVersion"] == 2 and r["engineVersion"] == "0.4.0" and r["status"] == "completed"
+    assert r["schemaVersion"] == 2 and r["engineVersion"] == __version__ and r["status"] == "completed"
     assert r["metrics"] is None and r["trades"] == r["equity"] == []
     a = r["forecasts"]; rows = a["rows"]
     assert len(rows) == a["totalRows"] and not a["truncated"]

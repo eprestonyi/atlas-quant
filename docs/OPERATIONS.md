@@ -74,6 +74,16 @@ Complete artifacts and frozen inputs reside in private R2 under owner scope. D1 
 
 For a safe operator restart, inspect `delivery/*.enc`, `delivery/*.tmp`, `delivery/snapshots/*` and `delivery/claims/*` as well as active queue work and claim receipts. Do not print their decrypted contents. The runner's `runner.lock` and empty snapshots/claims directories alone do not block a clean restart. A `.tmp` intent is not an acknowledged claim; inspect it together with `current.enc` and server receipts rather than deleting it during upgrade.
 
+## v0.5 bundle upgrade
+
+Apply additive `0005_artifact_bundles.sql` before deploying the v0.5 Worker: even the compatible legacy claim path queries the bundle tables. Preserve the existing database and all R2 objects. Pause new claims through `runner_maintenance`, drain running jobs and pending deliveries, deploy and read back the Worker, then upgrade the Quant runner while the gate remains paused. Resume only after checking source hashes, unchanged private configuration and actual process state.
+
+The new runner writes authenticated encrypted per-file spool objects. A child returns a small spool handle; delivery uses the saved original manifest and chunk bytes. The 300-second total delivery budget is separate from the 900-second computation budget. Interrupted or uncertain acknowledgements retain recoverable bytes; do not delete a pending spool during upgrade. Inspect all delivery children, including bundle directories, not only the older completion/snapshot files.
+
+Once any bundle is committed, draining jobs alone does **not** make a v0.4 Worker rollback compatible: that Worker cannot read bundle-backed reports or serve frozen bundle replay. Retain the v0.5 bundle read/replay layer when rolling back UI or computation, or restore a separately verified compatible Worker. Never remove committed data or overwrite it with a legacy report to make a rollback appear successful.
+
+The scheduled cleanup removes only abandoned staging/verified/aborted uploads whose jobs are failed/cancelled and older than 30 days. It verifies the manifest and deletes every deterministic chunk key, including an R2 write whose D1 receipt transaction failed. Committed references block cleanup. User report and forecast JSON downloads stream the full logical document; local CLI bundle directories remain the available manifest/chunk export format.
+
 ## Local full stack
 
 After building, run `node scripts/dev.mjs`; in another terminal run `.venv/bin/python scripts/dev-runner.py`. Preview at `http://127.0.0.1:8895/quant/`. Both use a fixed public development secret and loopback HTTP. Never expose the preview server to the Internet. Browser development state is ephemeral for the lifetime of Miniflare.

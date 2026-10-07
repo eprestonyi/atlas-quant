@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 2,
+  "name": "Predeclared maximum synthetic resource test",
+  "universe": {
+    "symbols": [
+      "000001.SZ",
+      "000002.SZ",
+      "000003.SZ",
+      "000004.SZ",
+      "000005.SZ",
+      "000006.SZ",
+      "000007.SZ",
+      "000008.SZ",
+      "000009.SZ",
+      "000010.SZ",
+      "000011.SZ",
+      "000012.SZ",
+      "000013.SZ",
+      "000014.SZ",
+      "000015.SZ",
+      "000016.SZ",
+      "000017.SZ",
+      "000018.SZ",
+      "000019.SZ",
+      "000020.SZ",
+      "000021.SZ",
+      "000022.SZ",
+      "000023.SZ",
+      "000024.SZ",
+      "000025.SZ",
+      "000026.SZ",
+      "000027.SZ",
+      "000028.SZ",
+      "000029.SZ",
+      "000030.SZ",
+      "000031.SZ",
+      "000032.SZ",
+      "000033.SZ",
+      "000034.SZ",
+      "000035.SZ",
+      "000036.SZ",
+      "000037.SZ",
+      "000038.SZ",
+      "000039.SZ",
+      "000040.SZ",
+      "000041.SZ",
+      "000042.SZ",
+      "000043.SZ",
+      "000044.SZ",
+      "000045.SZ",
+      "000046.SZ",
+      "000047.SZ",
+      "000048.SZ",
+      "000049.SZ",
+      "000050.SZ"
+    ],
+    "start": "20171001",
+    "end": "20250930"
+  },
+  "research": {
+    "mode": "statistical_quant",
+    "observationDays": 1
+  },
+  "target": {
+    "kind": "asset_price",
+    "horizonSessions": 5
+  },
+  "model": {
+    "family": "mean_reversion",
+    "estimator": "auto"
+  },
+  "factors": [
+    {
+      "id": "max_factor_1",
+      "expression": "returns(close,1)"
+    },
+    {
+      "id": "max_factor_2",
+      "expression": "returns(close,2)"
+    },
+    {
+      "id": "max_factor_3",
+      "expression": "returns(close,3)"
+    },
+    {
+      "id": "max_factor_4",
+      "expression": "returns(close,5)"
+    },
+    {
+      "id": "max_factor_5",
+      "expression": "returns(close,10)"
+    },
+    {
+      "id": "max_factor_6",
+      "expression": "returns(close,20)"
+    },
+    {
+      "id": "max_factor_7",
+      "expression": "returns(close,60)"
+    },
+    {
+      "id": "max_factor_8",
+      "expression": "returns(close,120)"
+    },
+    {
+      "id": "max_factor_9",
+      "expression": "ts_std(returns(close,1),5)"
+    },
+    {
+      "id": "max_factor_10",
+      "expression": "ts_std(returns(close,1),10)"
+    },
+    {
+      "id": "max_factor_11",
+      "expression": "ts_std(returns(close,1),20)"
+    },
+    {
+      "id": "max_factor_12",
+      "expression": "ts_std(returns(close,1),60)"
+    },
+    {
+      "id": "max_factor_13",
+      "expression": "ts_std(returns(close,1),120)"
+    },
+    {
+      "id": "max_factor_14",
+      "expression": "close/ts_mean(close,5)-1"
+    },
+    {
+      "id": "max_factor_15",
+      "expression": "close/ts_mean(close,10)-1"
+    },
+    {
+      "id": "max_factor_16",
+      "expression": "close/ts_mean(close,20)-1"
+    },
+    {
+      "id": "max_factor_17",
+      "expression": "close/ts_mean(close,60)-1"
+    },
+    {
+      "id": "max_factor_18",
+      "expression": "close/ts_mean(close,120)-1"
+    },
+    {
+      "id": "max_factor_19",
+      "expression": "vol/ts_mean(vol,5)"
+    },
+    {
+      "id": "max_factor_20",
+      "expression": "vol/ts_mean(vol,20)"
+    },
+    {
+      "id": "max_factor_21",
+      "expression": "vol/ts_mean(vol,60)"
+    },
+    {
+      "id": "max_factor_22",
+      "expression": "vol/ts_mean(vol,120)"
+    },
+    {
+      "id": "max_factor_23",
+      "expression": "ts_std(vol,20)/ts_mean(vol,20)"
+    },
+    {
+      "id": "max_factor_24",
+      "expression": "amount/ts_mean(amount,20)"
+    },
+    {
+      "id": "max_factor_25",
+      "expression": "(high-low)/close"
+    },
+    {
+      "id": "max_factor_26",
+      "expression": "(close-open)/open"
+    },
+    {
+      "id": "max_factor_27",
+      "expression": "open/lag(close,1)-1"
+    },
+    {
+      "id": "max_factor_28",
+      "expression": "ts_mean((close-low)/(high-low),20)"
+    },
+    {
+      "id": "max_factor_29",
+      "expression": "ts_rank(close,60)"
+    },
+    {
+      "id": "max_factor_30",
+      "expression": "ts_rank(vol,20)"
+    },
+    {
+      "id": "max_factor_31",
+      "expression": "returns(amount,5)"
+    },
+    {
+      "id": "max_factor_32",
+      "expression": "ts_mean(sign(returns(close,1))*vol,20)/ts_mean(vol,20)"
+    }
+  ],
+  "execution": {
+    "enabled": true
+  }
+}
