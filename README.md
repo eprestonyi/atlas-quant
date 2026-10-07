@@ -4,7 +4,7 @@ Atlas Quant 是嵌入 Atlas 的开源统计量化研究工作区。先建立条�
 
 [Atlas Quant](https://atlas-aletheia.com/quant/) · [源码](https://github.com/eprestonyi/atlas-quant) · [Discussions](https://github.com/eprestonyi/atlas-quant/discussions) · [Issues](https://github.com/eprestonyi/atlas-quant/issues)
 
-本文描述 **v0.4 候选源码**。2026-10-08 重构仍在验收，尚不能据此认为生产已升级；实际部署版本和服务能力以 [health](https://atlas-aletheia.com/quant/api/health) 为准。实施进度与未完成项见 [REBUILD_PLAN.md](docs/REBUILD_PLAN.md)。
+**v0.4 已于 2026-10-08 部署并完成真实数据预测和独立执行验收**，部署构建为 `0.4.0-5e57805bd6cd`。发布证据见 [v0.4 验收记录](docs/RELEASE_V04.md)，当前服务状态以 [health](https://atlas-aletheia.com/quant/api/health) 为准。大规模整池研究与四库历史覆盖仍在继续建设；实施进度与未完成项见 [REBUILD_PLAN.md](docs/REBUILD_PLAN.md)。
 
 ## 研究协议
 
