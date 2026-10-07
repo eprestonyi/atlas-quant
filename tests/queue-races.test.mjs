@@ -1,3 +1,4 @@
+import {buildWorkerSource} from '../scripts/worker-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -6,11 +7,7 @@ import os from 'node:os';
 import {spawn} from 'node:child_process';
 import {Miniflare} from 'miniflare';
 
-const validation=(await fs.readFile(new URL('../edge/validation.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/universe\.mjs';\n/,'');
-const universe=await fs.readFile(new URL('../edge/universe.mjs',import.meta.url),'utf8');
-const worker=(await fs.readFile(new URL('../edge/worker.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/validation\.mjs';\n/,'');
-const studio=await fs.readFile(new URL('../edge/studio.mjs',import.meta.url),'utf8');
-const script='const RESEARCH_PRESETS={};const WEB_ASSETS={"index.html":{body:"Atlas Quant",type:"text/html"}};const CATALOG={factors:[],models:[],templates:[]};const BUILD_ID="queue-race-test";\n'+validation+'\n'+universe+'\n'+studio+'\n'+worker;
+const script=await buildWorkerSource({buildId:'queue-races-test'});
 const secret='queue-test-only-secret-not-production';
 const mf=new Miniflare({modules:true,script,compatibilityDate:'2026-08-01',d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{RUNNER_SECRET:secret}});
 const db=await mf.getD1Database('DB');
@@ -29,6 +26,22 @@ async function session(){const response=await request('/session',{method:'GET'})
 async function claim(cookie){const created=await request('/runs',{cookie,data:{strategy,dataSource:'demo'}});assert.equal(created.status,202);const response=await request('/runner/claim',{runner:true});assert.equal(response.status,200);const {job}=await response.json();assert.ok(job);return job;}
 async function completion(job,result=report()){return request('/runner/complete',{runner:true,data:{id:job.id,leaseToken:job.leaseToken,result}});}
 test.after(async()=>{await mf.dispose();});
+
+test('operator maintenance drains existing leases without claiming queued work',async()=>{
+ const running=await claim(await session()),queuedOwner=await session();
+ const created=await (await request('/runs',{cookie:queuedOwner,data:{strategy,dataSource:'demo'}})).json();
+ await db.prepare("INSERT INTO meta(key,value,updated_at) VALUES('runner_maintenance','paused',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind(new Date().toISOString()).run();
+ try{
+  const paused=await (await request('/runner/claim',{runner:true})).json();assert.equal(paused.job,null);
+  const untouched=await db.prepare('SELECT status,lease_token FROM jobs WHERE id=?').bind(created.job.id).first();
+  assert.equal(untouched.status,'queued');assert.equal(untouched.lease_token,null);
+  const heartbeat=await (await request('/runner/heartbeat',{runner:true,data:{id:running.id,leaseToken:running.leaseToken}})).json();
+  assert.equal(heartbeat.leaseValid,true);
+  assert.equal((await completion(running)).status,200);
+ }finally{await db.prepare("DELETE FROM meta WHERE key='runner_maintenance'").run();}
+ const resumed=await (await request('/runner/claim',{runner:true})).json();assert.equal(resumed.job.id,created.job.id);
+ assert.equal((await completion(resumed.job)).status,200);
+});
 
 test('concurrent exact completion retries preserve committed R2 bytes',async()=>{
  const cookie=await session(),job=await claim(cookie),result=report();

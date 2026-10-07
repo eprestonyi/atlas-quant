@@ -1,0 +1,87 @@
+/** Durable claim identity: request retries recover the same job and lease. */
+import { random, parse } from './runtime.mjs';
+import { ApiError } from './validation.mjs';
+import { validateStoredStatisticalQuant } from './statistical-quant/validation.mjs';
+import { claimMetadata } from './statistical-quant/persistence.mjs';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const INTERRUPTED = {
+  code: 'RUNNER_INTERRUPTED',
+  message: '计算服务中断，此次实验未完成。请确认后重新运行。'
+};
+const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
+
+function acceptsForecasts(engineVersion) {
+  const version = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(String(engineVersion ?? ''));
+  return !!version && (+version[1] > 0 || +version[2] >= 4);
+}
+
+async function jobPayload(env, row) {
+  const dataset = row.dataset_key ? await env.ARTIFACTS.get(row.dataset_key) : null;
+  const strategy = parse(row.spec);
+  return {
+    id: row.id,
+    workspaceId: row.owner,
+    leaseToken: row.lease_token,
+    ...(await claimMetadata(env, row)),
+    strategy: strategy?.schemaVersion === 2 ? validateStoredStatisticalQuant(strategy) : strategy,
+    dataSource: row.data_source,
+    dataset: dataset ? await dataset.json() : null
+  };
+}
+
+export async function claimRunnerJob(env, input, now) {
+  const requestId = input.requestId;
+  if (requestId !== undefined && (typeof requestId !== 'string' || !UUID.test(requestId))) {
+    throw new ApiError('INVALID_CLAIM_REQUEST', '领取请求标识必须是小写 UUID');
+  }
+  // Expiration is terminal even for a retried request. Never revive an old lease.
+  await env.DB.prepare(
+    "UPDATE jobs SET status='failed',error=?,updated_at=? WHERE status='running' AND lease_until<?"
+  )
+    .bind(JSON.stringify(INTERRUPTED), now, now)
+    .run();
+  const lease = random(),
+    leaseUntil = new Date(Date.now() + 20 * 60000).toISOString();
+  const supportsForecast = Number(acceptsForecasts(input.engineVersion));
+  if (requestId === undefined) {
+    // Compatibility for pre-0.4 runtimes; no durable request identity was sent.
+    const row = await env.DB.prepare(
+      "UPDATE jobs SET status='running',lease_token=?,lease_until=?,updated_at=? WHERE id=(SELECT id FROM jobs WHERE status='queued' AND NOT EXISTS(SELECT 1 FROM meta WHERE key='runner_maintenance' AND value='paused') AND (?=1 OR COALESCE(json_extract(spec,'$.schemaVersion'),1)<2) ORDER BY created_at,id LIMIT 1) AND status='queued' RETURNING *"
+    )
+      .bind(lease, leaseUntil, now, supportsForecast)
+      .first();
+    return { job: row ? await jobPayload(env, row) : null };
+  }
+
+  // D1 batch is a transaction. Reserve a queued job and change its state together.
+  // changes() belongs to the INSERT immediately before UPDATE: an existing ID
+  // never rotates its lease, including concurrent retries after a lost response.
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO runner_claims(request_id,job_id,created_at)
+      SELECT ?,id,? FROM jobs
+      WHERE status='queued'
+        AND NOT EXISTS(SELECT 1 FROM runner_claims WHERE request_id=?)
+        AND NOT EXISTS(SELECT 1 FROM meta WHERE key='runner_maintenance' AND value='paused')
+        AND (?=1 OR COALESCE(json_extract(spec,'$.schemaVersion'),1)<2)
+      ORDER BY created_at,id LIMIT 1`
+    ).bind(requestId, now, requestId, supportsForecast),
+    env.DB.prepare(
+      `UPDATE jobs SET status='running',lease_token=?,lease_until=?,updated_at=?
+      WHERE id=(SELECT job_id FROM runner_claims WHERE request_id=?)
+        AND status='queued' AND changes()=1`
+    ).bind(lease, leaseUntil, now, requestId),
+    env.DB.prepare(
+      'SELECT jobs.* FROM runner_claims JOIN jobs ON jobs.id=runner_claims.job_id WHERE request_id=?'
+    ).bind(requestId)
+  ]);
+  const row = results[2].results[0];
+  if (!row) return { job: null, claim: { requestId, status: 'empty' } };
+  const claim = { requestId, status: row.status, jobId: row.id };
+  if (TERMINAL.has(row.status)) return { job: null, claim };
+  if (row.status !== 'running' || !row.lease_token) {
+    throw new ApiError('CLAIM_STATE_CONFLICT', '领取记录状态不一致，停止领取并检查记录', 409);
+  }
+  return { job: await jobPayload(env, row), claim };
+}

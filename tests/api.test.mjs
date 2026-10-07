@@ -1,13 +1,10 @@
+import {buildWorkerSource} from '../scripts/worker-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {Miniflare} from 'miniflare';
 import {strategy} from './validation.test.mjs';
-const validation=(await fs.readFile(new URL('../edge/validation.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/universe\.mjs';\n/,'');
-const universe=await fs.readFile(new URL('../edge/universe.mjs',import.meta.url),'utf8');
-const worker=(await fs.readFile(new URL('../edge/worker.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/validation\.mjs';\n/,'');
-const studio=await fs.readFile(new URL('../edge/studio.mjs',import.meta.url),'utf8');
-const script='const RESEARCH_PRESETS={};const WEB_ASSETS={"index.html":{body:"Atlas Quant",type:"text/html"}};const CATALOG={factors:[],models:[],templates:[]};const BUILD_ID="test";\n'+validation+'\n'+universe+'\n'+studio+'\n'+worker;
+const script=await buildWorkerSource({buildId:'api-test'});
 const mf=new Miniflare({modules:true,script,compatibilityDate:'2026-08-01',d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{RUNNER_SECRET:'test-runner-only'},log:undefined});
 const db=await mf.getD1Database('DB');await db.exec((await fs.readFile(new URL('../edge/schema.sql',import.meta.url),'utf8')).replaceAll('\n',' '));
 const origin='https://atlas.test';

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 2,
+  "name": "配对条件值研究 · 可重现范例",
+  "universe": {"symbols": ["000001.SZ", "600000.SH"], "start": "20230101", "end": "20250930"},
+  "research": {"mode": "statistical_quant", "observationDays": 1},
+  "factors": [],
+  "preprocess": {"winsorize": true, "standardize": true, "decorrelation": "drop_correlated", "correlationThreshold": 0.9},
+  "target": {"kind": "frozen_basket", "horizonSessions": 5, "basket": {"method": "pair_ols", "symbols": ["000001.SZ", "600000.SH"], "formationDays": 126}},
+  "model": {"family": "pair_reversion", "estimator": "ridge", "trainWindow": 504, "refitDays": 20},
+  "validation": {"holdoutFraction": 0.2, "minTrainDates": 80, "innerFolds": 2, "outerFolds": 2},
+  "execution": {"enabled": false, "side": "long_short", "shorting": "theoretical", "minEdgeBps": 10, "maxPositions": 5},
+  "portfolio": {"initialCapital": 1000000, "grossExposure": 1, "maxWeight": 0.3, "rebalanceDays": 1, "rebalanceThresholdBps": 25},
+  "costs": {"commissionBps": 2.5, "slippageBps": 3, "sellTaxBps": 5, "transferBps": 0.1, "minCommission": 5, "borrowAnnualBps": 300},
+  "dataBindings": {}
+}

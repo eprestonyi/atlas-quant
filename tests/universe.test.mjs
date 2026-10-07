@@ -1,3 +1,4 @@
+import {buildWorkerSource} from '../scripts/worker-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -69,12 +70,8 @@ test('registry chunks preserve source identities and finalize a reproducible con
  assert.equal(r.registry.hash,universeRegistryStatements({...large,securities:[...large.securities].reverse(),items:[...large.items].reverse()}).registry.hash);
 });
 
-const validation=(await fs.readFile(new URL('../edge/validation.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/universe\.mjs';\n/,'');
-const universe=await fs.readFile(new URL('../edge/universe.mjs',import.meta.url),'utf8');
-const studio=await fs.readFile(new URL('../edge/studio.mjs',import.meta.url),'utf8');
-const worker=(await fs.readFile(new URL('../edge/worker.mjs',import.meta.url),'utf8')).replace(/^import .* from '\.\/validation\.mjs';\n/,'');
 const schema=await fs.readFile(new URL('../edge/schema.sql',import.meta.url),'utf8');
-const script=`const RESEARCH_PRESETS={};const WEB_ASSETS={};const CATALOG={factors:[],models:[],templates:[]};const BUILD_ID='universe-test';\n`+validation+'\n'+universe+'\n'+studio+'\n'+worker;
+const script=await buildWorkerSource({buildId:'universe-test'});
 async function apiFixture({alter,missing=false,sourceData=source}={}){
  const mf=new Miniflare({modules:true,script,compatibilityDate:'2026-08-01',d1Databases:['DB'],r2Buckets:['ARTIFACTS'],bindings:{RUNNER_SECRET:'universe-test-only'}}),db=await mf.getD1Database('DB');
  await db.exec(schema.replaceAll('\n',' '));

@@ -116,6 +116,12 @@ def _safe_error(exc):
 def prepare_job(job, config):
     """Keep fixed private provider access in process memory, never in queue artifacts."""
     prepared = dict(job)
+    if job.get("jobKind") == "execution":
+        # Replay is strictly an immutable-input operation. No provider or PCD
+        # credentials should be present even when the original source was real.
+        prepared.pop("providerAccess", None)
+        prepared.pop("pcdAccess", None)
+        return prepared
     if job.get("dataSource") == "tushare" and config.get("provider_access"):
         prepared["providerAccess"] = dict(config["provider_access"])
     strategy = job.get("strategy")
@@ -125,18 +131,36 @@ def prepare_job(job, config):
     return prepared
 
 
-def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None):
+def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None, snapshot_sink=None):
     """Run a single trusted edge job; callable locally with no queue interaction."""
     if not isinstance(job, dict) or not isinstance(job.get("strategy"), dict):
         raise RunnerError("INVALID_JOB", "任务缺少策略。")
     try:
-        if len(json.dumps(job, allow_nan=False).encode()) > MAX_JOB_BYTES:
+        # A replay contains two separately downloaded, independently bounded
+        # artifacts. A normal claim still has the original single-job bound.
+        limit = 2 * MAX_JOB_BYTES if job.get("jobKind") == "execution" else MAX_JOB_BYTES
+        if len(json.dumps(job, allow_nan=False).encode()) > limit:
             raise RunnerError("JOB_SIZE", "任务数据过大。")
     except (TypeError, ValueError) as exc:
         if isinstance(exc, RunnerError):
             raise
         raise RunnerError("INVALID_JOB", "任务不是有效 JSON。") from None
     strategy = job["strategy"]
+    if job.get("jobKind") == "execution":
+        from .runner_artifacts import restore_input
+        from .statistical_quant import execute_forecasts
+        replay = job.get("replay")
+        if not isinstance(replay, dict) or not isinstance(replay.get("artifact"), dict):
+            raise RunnerError("REPLAY_INPUT", "执行实验缺少原始预测产物。")
+        artifact = replay["artifact"]
+        if len(json.dumps(artifact, ensure_ascii=False, separators=(",", ":")).encode()) > MAX_RESULT_BYTES:
+            raise RunnerError("REPLAY_SIZE", "原始预测产物超过重放大小限制。")
+        if (not isinstance(job.get("forecastArtifactId"), str) or not job["forecastArtifactId"]
+                or artifact.get("artifactId") != job["forecastArtifactId"]):
+            raise RunnerError("REPLAY_IDENTITY", "执行实验与原始预测身份不一致。")
+        data, provenance = restore_input(strategy, replay.get("snapshot"), artifact.get("dataFingerprint"))
+        result = execute_forecasts(strategy, data, artifact, provenance=provenance)
+        return _validate_result(result)
     data_bindings = strategy.get("dataBindings") or {}
     if not isinstance(data_bindings, dict):
         raise RunnerError("INVALID_DATA_BINDINGS", "数据映射必须是对象。")
@@ -193,10 +217,18 @@ def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None):
         scope = contextlib.nullcontext()
     with scope:
         result = run_research(strategy, data, provenance)
+    _validate_result(result)
+    if snapshot_sink is not None and strategy.get("research", {}).get("mode") == "statistical_quant":
+        from .runner_artifacts import freeze_input
+        snapshot_sink(freeze_input(strategy, data, provenance))
+    return result
+
+
+def _validate_result(result):
     if not isinstance(result, dict):
         raise RunnerError("ENGINE_RESULT", "研究引擎返回格式无效。")
     try:
-        encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
+        encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError):
         raise RunnerError("ENGINE_RESULT", "研究结果包含不可序列化数据。") from None
     if len(encoded.encode()) > MAX_RESULT_BYTES:
@@ -204,23 +236,28 @@ def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None):
     return result
 
 
-def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts):
+def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot=False):
     try:
+        snapshots = []
         # Third-party libraries may print. Never forward child stdout/stderr to service logs.
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            result = run_job(job, token=token, cache_dir=cache_dir, allowed_proxy_hosts=allowed_proxy_hosts)
-        connection.send({"result": result})
+            result = run_job(job, token=token, cache_dir=cache_dir, allowed_proxy_hosts=allowed_proxy_hosts,
+                             snapshot_sink=snapshots.append if capture_snapshot else None)
+        answer = {"result": result}
+        if snapshots:
+            answer["snapshot"] = snapshots[0]
+        connection.send(answer)
     except BaseException as exc:
         connection.send({"error": _safe_error(exc)})
     finally:
         connection.close()
 
 
-def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None, allowed_proxy_hosts=None, heartbeat=None, stop_requested=None):
+def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None, allowed_proxy_hosts=None, heartbeat=None, stop_requested=None, capture_snapshot=False):
     """Hard wall-clock process bound, with optional lease/cancellation callback."""
     ctx = multiprocessing.get_context("spawn")
     parent, child = ctx.Pipe(duplex=False)
-    process = ctx.Process(target=_child_entry, args=(child, job, token, cache_dir, allowed_proxy_hosts), daemon=True)
+    process = ctx.Process(target=_child_entry, args=(child, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot), daemon=True)
     deadline = time.monotonic() + timeout
     process.start()
     child.close()
@@ -261,18 +298,28 @@ class QueueClient:
         self.secret = config["runner_secret"]
         self.session = session or requests.Session()
 
-    def post(self, route, payload):
-        if route not in ("claim", "heartbeat", "complete"):
+    def post(self, route, payload, *, deadline=None):
+        if route not in ("claim", "heartbeat", "complete", "snapshot", "replay"):
             raise RunnerError("QUEUE_ROUTE", "队列接口无效。")
+        deadline = min(deadline, time.monotonic()+60) if deadline is not None else time.monotonic()+60
         try:
-            response = self.session.post(self.base + "/runner/" + route, json=payload,
-                headers={"Authorization": "Bearer " + self.secret, "Accept": "application/json"},
-                timeout=(10, 35), allow_redirects=False, stream=True)
+            # Use exactly the compact UTF-8 representation used by size budgets.
+            # requests' json= defaults to ASCII escapes/spaces and can expand a
+            # permitted 24 MiB snapshot beyond the queue's envelope limit.
+            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode()
+            remaining = deadline-time.monotonic()
+            if remaining <= 0:
+                raise RunnerError("QUEUE_DEADLINE", "队列读取超过本次时间预算。")
+            response = self.session.post(self.base + "/runner/" + route, data=encoded,
+                headers={"Authorization": "Bearer " + self.secret, "Accept": "application/json", "Content-Type": "application/json"},
+                timeout=(min(10, remaining), min(35, remaining)), allow_redirects=False, stream=True)
             with response:
                 if response.status_code != 200:
                     raise RunnerError("QUEUE_HTTP", "队列服务未成功响应。", http_status=response.status_code)
                 parts, size = [], 0
                 for block in response.iter_content(65536):
+                    if time.monotonic() > deadline:
+                        raise RunnerError("QUEUE_DEADLINE", "队列读取超过本次时间预算。")
                     size += len(block)
                     if size > MAX_JOB_BYTES:
                         raise RunnerError("QUEUE_SIZE", "队列响应过大。")
@@ -300,6 +347,11 @@ class CompletionSpool:
         self.cipher = AESGCM(hashlib.sha256(b"atlas-quant-delivery-key-v1\0" + config["runner_secret"].encode()).digest())
 
     def write(self, payload):
+        payload = dict(payload)
+        if "snapshot" in payload:
+            from .runner_artifacts import SnapshotSpool
+            snapshot = payload.pop("snapshot")
+            payload["_snapshotKey"] = SnapshotSpool(self).write(payload, snapshot)
         content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode()
         if len(content) > MAX_RESULT_BYTES + 4096:
             raise RunnerError("DELIVERY_SIZE", "结果回传内容过大。")
@@ -347,22 +399,54 @@ class CompletionSpool:
 
 
 def flush_completions(client, spool):
+    from .runner_claims import ClaimIntent, claim_request, validate_receipt
     for path, payload in spool.pending():
+        request_id = payload.get("_claimRequestId")
+        intent = {"requestId": request_id, "jobId": payload["id"], "leaseToken": payload["leaseToken"]}
+        snapshot_key = payload.get("_snapshotKey")
+        snapshot_store = None
+        if snapshot_key is not None:
+            from .runner_artifacts import SnapshotSpool
+            snapshot_store = SnapshotSpool(spool)
+            snapshot = snapshot_store.read(snapshot_key, payload)
+        public_payload = {key: value for key, value in payload.items() if key not in ("_snapshotKey", "_claimRequestId")}
         delivered = False
         for attempt in range(5):
+            submitting_result = True
             try:
-                client.post("complete", payload)
+                if snapshot_store is not None and "result" in public_payload:
+                    client.post("snapshot", {"id": payload["id"], "leaseToken": payload["leaseToken"],
+                                              "snapshot": snapshot})
+                client.post("complete", public_payload)
+                submitting_result = False
+                if request_id is not None:
+                    # HTTP success alone is insufficient: resolve this exact UUID
+                    # before clearing local recovery state or accepting more work.
+                    receipt = client.post("claim", claim_request(request_id))
+                    validate_receipt(receipt, intent, terminal_only=True)
+                    ClaimIntent(spool).clear(intent)
                 spool.acknowledge(path)
+                if snapshot_store is not None:
+                    snapshot_store.acknowledge(snapshot_key)
                 delivered = True
                 break
             except RunnerError as exc:
-                if exc.http_status in (400, 413) and "result" in payload:
+                if exc.code.startswith("CLAIM_"):
+                    raise
+                if submitting_result and exc.http_status in (400, 413) and "result" in payload:
                     # The queue definitively rejected these bytes. Replace the durable
                     # delivery with a small sanitized terminal failure, never silently
                     # drop it or endlessly poison subsequent jobs with the same report.
                     payload = {"id": payload["id"], "leaseToken": payload["leaseToken"],
                                "error": {"code": "RESULT_REJECTED", "message": "研究结果未通过服务端接收校验，此次实验已停止；请检查策略与数据后重新运行。"}}
+                    # Retain the encrypted snapshot reference until the terminal
+                    # failure is acknowledged, so cleanup survives a restart.
+                    if snapshot_key is not None:
+                        payload["_snapshotKey"] = snapshot_key
+                    if request_id is not None:
+                        payload["_claimRequestId"] = request_id
                     path = spool.write(payload)
+                    public_payload = {key: value for key, value in payload.items() if key not in ("_snapshotKey", "_claimRequestId")}
                     continue
                 _wait(min(2**attempt, 10))
         if not delivered:
@@ -380,15 +464,46 @@ def _wait(seconds):
         time.sleep(min(0.5, max(0, end-time.monotonic())))
 
 
+def fetch_replay(client, identity, *, deadline=None):
+    """Read each immutable object separately; retry transport, never rebuild it."""
+    deadline = deadline if deadline is not None else time.monotonic()+60
+    parts = {}
+    for kind, key in (("forecast", "artifact"), ("dataset", "snapshot")):
+        for attempt in range(3):
+            try:
+                if time.monotonic() >= deadline:
+                    raise RunnerError("REPLAY_UNAVAILABLE", "读取冻结输入超过时间预算；没有重新拟合或重新取数。")
+                response = client.post("replay", dict(identity, kind=kind), deadline=deadline)
+                value = response.get(key)
+                if not isinstance(value, dict):
+                    raise RunnerError("REPLAY_INPUT", "执行实验的冻结输入缺失或格式无效。")
+                parts[key] = value
+                break
+            except RunnerError as exc:
+                if exc.code == "REPLAY_INPUT" or exc.http_status in (400, 404, 413):
+                    raise RunnerError("REPLAY_INPUT", "原预测或冻结行情无法读取；不会重新获取数据替代。") from None
+                if exc.http_status in (401, 403, 409) or exc.code == "REPLAY_UNAVAILABLE":
+                    raise
+                if attempt == 2:
+                    raise RunnerError("REPLAY_UNAVAILABLE", "读取冻结输入多次失败；本次执行未重新拟合或重新取数。") from None
+                _wait(2 ** attempt)
+    return parts
+
+
 def _serve(config, spool, *, once=False):
+    from .runner_claims import ClaimIntent, claim_request, validate_receipt
     client = QueueClient(config)
+    claims = ClaimIntent(spool)
     # Resume delivery first after restart. Never rerun a completed calculation.
     flush_completions(client, spool)
     while not STOP:
         try:
-            claimed = client.post("claim", {"runnerVersion": "atlas-quant-runner/" + __version__, "engineVersion": __version__, "leaseSeconds": config.get("job_timeout", DEFAULT_TIMEOUT) + 90})
+            intent = claims.current_or_create()
+            claimed = client.post("claim", claim_request(intent["requestId"]))
+            status = validate_receipt(claimed, intent)
             job = claimed.get("job")
             if job is None:
+                claims.clear(dict(intent, jobId=claimed["claim"].get("jobId")))
                 if once:
                     return 0
                 _wait(config.get("poll_seconds", 10))
@@ -396,24 +511,48 @@ def _serve(config, spool, *, once=False):
             if not isinstance(job, dict) or not all(isinstance(job.get(k), str) and job[k] for k in ("id", "leaseToken")):
                 raise RunnerError("QUEUE_JOB", "队列任务格式无效。")
             identity = {"id": job["id"], "leaseToken": job["leaseToken"]}
+            if intent["phase"] == "executing":
+                # Input/provider acquisition may already have started before the
+                # process died. Do not replay paid reads or numerical computation.
+                spool.write(dict(identity, _claimRequestId=intent["requestId"], error={
+                    "code": "RUNNER_INTERRUPTED", "message": "运行服务在计算或取数期间中断；本次实验停止，未自动重放。"}))
+                flush_completions(client, spool)
+                if once:
+                    return 0
+                continue
+            claims.executing(intent, job)
+            job_deadline = time.monotonic()+config.get("job_timeout", DEFAULT_TIMEOUT)
+            input_error = None
+            if job.get("jobKind") == "execution":
+                try:
+                    job = dict(job, replay=fetch_replay(client, identity, deadline=min(job_deadline, time.monotonic()+60)))
+                except RunnerError as exc:
+                    # A lease was already claimed. Persist even an input failure
+                    # under that lease before doing anything else. Network/auth
+                    # problems during completion then use the normal encrypted
+                    # retry spool instead of abandoning a running queue record.
+                    input_error = {"error": _safe_error(exc)}
             def heartbeat():
                 try:
                     return client.post("heartbeat", dict(identity, status="running", engineVersion=__version__))
                 except RunnerError:
                     return None  # A transient network error is not a cancellation.
-            answer = execute_bounded(prepare_job(job, config), timeout=config.get("job_timeout", DEFAULT_TIMEOUT),
-                token=os.environ.get("TUSHARE_TOKEN"), cache_dir=config.get("cache_dir"),
+            remaining = job_deadline-time.monotonic()
+            if remaining <= 0 and input_error is None:
+                input_error = {"error": {"code": "JOB_TIMEOUT", "message": "读取冻结输入后研究时间预算已耗尽。"}}
+            answer = input_error or execute_bounded(prepare_job(job, config), timeout=remaining,
+                token=None if job.get("jobKind") == "execution" else os.environ.get("TUSHARE_TOKEN"), cache_dir=config.get("cache_dir"),
                 allowed_proxy_hosts=config.get("allowed_proxy_hosts"), heartbeat=heartbeat,
-                stop_requested=lambda: STOP)
+                stop_requested=lambda: STOP, capture_snapshot=job.get("jobKind") != "execution")
             # Persist authenticated encrypted bytes before exact idempotent delivery.
-            complete = dict(identity, **answer)
+            complete = dict(identity, _claimRequestId=intent["requestId"], **answer)
             spool.write(complete)
             flush_completions(client, spool)
             if once:
                 return 0
         except RunnerError as exc:
             print(json.dumps({"event": "runner_error", "code": exc.code}, ensure_ascii=False), flush=True)
-            if once or exc.code.startswith("DELIVERY_") or exc.code == "COMPLETION_UNCONFIRMED":
+            if once or exc.code.startswith(("DELIVERY_", "CLAIM_")) or exc.code == "COMPLETION_UNCONFIRMED":
                 return 1
             _wait(config.get("poll_seconds", 10))
     return 0

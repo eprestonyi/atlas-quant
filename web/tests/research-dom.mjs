@@ -1,5 +1,7 @@
 /* Real DOM-event regression in jsdom; browser acceptance remains separate. */
 import fs from 'node:fs/promises';
+import {build} from 'esbuild';
+import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 const dom=new JSDOM('<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>',{url:'http://localhost/quant/#research/signals',runScripts:'outside-only',pretendToBeVisual:true});
@@ -7,7 +9,7 @@ const w=dom.window;w.scrollTo=()=>{};w.matchMedia=()=>({matches:false});
 let savedPayload=null;
 w.fetch=async(url,options={})=>{const data=options.body?JSON.parse(options.body):null;if(String(url).endsWith('/strategies')&&data){savedPayload=data;return {ok:true,status:201,text:async()=>JSON.stringify({item:{id:'local-dom-test',version:1,strategy:data.strategy}})};}return {ok:true,status:200,text:async()=>JSON.stringify({items:[]})};};
 for(const name of ['research-workflow.js','studio.js'])w.eval(await fs.readFile(new URL('../'+name,import.meta.url),'utf8'));
-const source=(await fs.readFile(new URL('../app.js',import.meta.url),'utf8')).replace('  init();','  window.qa={state,studio,parseRoute,render};');w.eval(source);
+const source=(await fs.readFile(new URL('../app.js',import.meta.url),'utf8')).replace('  init();','  window.qa={state,studio,parseRoute,render};');const bundled=await build({stdin:{contents:source,resolveDir:fileURLToPath(new URL('..',import.meta.url)),sourcefile:'app.js'},bundle:true,format:'iife',write:false});w.eval(bundled.outputFiles[0].text);
 const q=w.qa;q.state.loading=false;q.state.session={capabilities:{tushareHosted:true},runner:{online:true}};q.state.strategy.universe.symbols=['000001.SZ','000002.SZ','600000.SH','600036.SH','600519.SH','000333.SZ','000651.SZ','601318.SH'];q.parseRoute();q.render();
 const tick=()=>new Promise(r=>setTimeout(r,25));
 function input(path,value){const el=w.document.querySelector(`[data-config="${path}"]`);assert(el,`${path} control exists`);el.focus();el.value=value;el.dispatchEvent(new w.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));return el;}

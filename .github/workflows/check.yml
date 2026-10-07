@@ -27,6 +27,7 @@ jobs:
       - run: npm run build
       - run: node web/tests/research-flow.mjs
       - run: node web/tests/research-dom.mjs
+      - run: node web/tests/statistical-dom.mjs
       - name: Reproduce the complete synthetic report
         run: |
           .venv/bin/python scripts/local-run.py engine/examples/basic.json --source demo --output private/first.json
@@ -37,3 +38,11 @@ jobs:
           .venv/bin/python scripts/local-run.py engine/examples/stat-arb.json --source demo --output private/residual-first.json
           .venv/bin/python scripts/local-run.py engine/examples/stat-arb.json --source demo --output private/residual-second.json
           cmp private/residual-first.json private/residual-second.json
+      - name: Reproduce immutable forecasts and independently audit execution
+        run: |
+          .venv/bin/python scripts/local-run.py engine/examples/statistical-quant.json --source demo --output private/forecast-first.json --snapshot-output private/forecast-input.json
+          .venv/bin/python scripts/local-run.py engine/examples/statistical-quant.json --source demo --output private/forecast-second.json
+          cmp private/forecast-first.json private/forecast-second.json
+          .venv/bin/python scripts/audit-report.py private/forecast-first.json
+          .venv/bin/python scripts/replay-execution.py private/forecast-first.json private/forecast-input.json --output private/execution.json
+          .venv/bin/python scripts/audit-report.py private/execution.json --source-report private/forecast-first.json

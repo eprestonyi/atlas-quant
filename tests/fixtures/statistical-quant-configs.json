@@ -1,0 +1,2282 @@
+{
+  "schemaVersion": 1,
+  "valid": [
+    {
+      "name": "base",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "saved_universe_state",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "selection": {
+            "version": 1,
+            "includeGroups": [
+              {
+                "id": "g",
+                "name": "group",
+                "filters": [
+                  {
+                    "field": "area",
+                    "value": [
+                      "北京",
+                      "上海"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "excludeGroups": [],
+            "includeSymbols": [],
+            "excludeSymbols": []
+          },
+          "resolutionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": "explicit",
+          "catalogSnapshot": {
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "asOf": "2026-10-08",
+            "historicalMembershipVerified": false
+          }
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "pcd_binding",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {
+          "pcd": {
+            "pcd_revenue": {
+              "fieldId": "revenue",
+              "unitCode": "CNY",
+              "records": [
+                {
+                  "ts_code": "000001.SZ",
+                  "entityId": "explicit-entity",
+                  "recordId": "explicit-record"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "portfolio_risk_constraints",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [
+          {
+            "id": "risk_mom",
+            "expression": "returns(close,20)",
+            "role": "predictor"
+          }
+        ],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25,
+          "netExposureLimit": 0.2,
+          "sizingMode": "volatility_target",
+          "targetAnnualVolatility": 0.15,
+          "volatilityLookback": 60,
+          "factorExposureLimits": [
+            {
+              "factorId": "risk_mom",
+              "maxAbsExposure": 0.5
+            }
+          ]
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "snapshot_null_asof",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "selection": {
+            "version": 1,
+            "includeGroups": [
+              {
+                "id": "g",
+                "name": "group",
+                "filters": [
+                  {
+                    "field": "area",
+                    "value": [
+                      "北京",
+                      "上海"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "excludeGroups": [],
+            "includeSymbols": [],
+            "excludeSymbols": []
+          },
+          "resolutionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": "explicit",
+          "catalogSnapshot": {
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "asOf": null,
+            "historicalMembershipVerified": false
+          }
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "unsupported_graph",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {},
+        "graph": {
+          "nodes": [],
+          "edges": []
+        }
+      }
+    },
+    {
+      "name": "factor_display_name",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [
+          {
+            "id": "x",
+            "name": "display-only",
+            "expression": "close"
+          }
+        ],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "factor_version_bool",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [
+          {
+            "id": "x",
+            "expression": "close",
+            "version": true
+          }
+        ],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "universe_unknown_key",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "token": "not-a-real-secret"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "bad_universe_hash",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "selection": {
+            "version": 1,
+            "includeGroups": [
+              {
+                "id": "g",
+                "name": "group",
+                "filters": [
+                  {
+                    "field": "area",
+                    "value": [
+                      "北京",
+                      "上海"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "excludeGroups": [],
+            "includeSymbols": [],
+            "excludeSymbols": []
+          },
+          "resolutionHash": "bad",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": "explicit",
+          "catalogSnapshot": {
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "asOf": "2026-10-08",
+            "historicalMembershipVerified": false
+          }
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "duplicate_rule_group",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "selection": {
+            "version": 1,
+            "includeGroups": [
+              {
+                "id": "g",
+                "filters": [
+                  {
+                    "field": "area",
+                    "value": "北京"
+                  }
+                ]
+              },
+              {
+                "id": "g",
+                "filters": [
+                  {
+                    "field": "area",
+                    "value": "上海"
+                  }
+                ]
+              }
+            ]
+          },
+          "resolutionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": "explicit",
+          "catalogSnapshot": {
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "asOf": "2026-10-08",
+            "historicalMembershipVerified": false
+          }
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "bad_pcd_row",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {
+          "pcd": {
+            "pcd_revenue": {
+              "fieldId": "r",
+              "unitCode": "CNY",
+              "records": [
+                {
+                  "ts_code": "not-a-symbol",
+                  "entityId": "e",
+                  "recordId": "r"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "fundamental_event_not_predictor",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [
+          {
+            "id": "f",
+            "expression": "fd_roe",
+            "role": "event"
+          }
+        ],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "fundamental",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "undeclared_risk_factor",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [
+          {
+            "id": "risk_mom",
+            "expression": "returns(close,20)",
+            "role": "predictor"
+          }
+        ],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25,
+          "netExposureLimit": 0.2,
+          "sizingMode": "volatility_target",
+          "targetAnnualVolatility": 0.15,
+          "volatilityLookback": 60,
+          "factorExposureLimits": [
+            {
+              "factorId": "missing",
+              "maxAbsExposure": 0.5
+            }
+          ]
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "duplicated_risk_factor",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [
+          {
+            "id": "risk_mom",
+            "expression": "returns(close,20)",
+            "role": "predictor"
+          }
+        ],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25,
+          "netExposureLimit": 0.2,
+          "sizingMode": "volatility_target",
+          "targetAnnualVolatility": 0.15,
+          "volatilityLookback": 60,
+          "factorExposureLimits": [
+            {
+              "factorId": "risk_mom",
+              "maxAbsExposure": 0.5
+            },
+            {
+              "factorId": "risk_mom",
+              "maxAbsExposure": 0.5
+            }
+          ]
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "unimplemented_sizing",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [
+          {
+            "id": "risk_mom",
+            "expression": "returns(close,20)",
+            "role": "predictor"
+          }
+        ],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25,
+          "netExposureLimit": 0.2,
+          "sizingMode": "unimplemented",
+          "targetAnnualVolatility": 0.15,
+          "volatilityLookback": 60,
+          "factorExposureLimits": [
+            {
+              "factorId": "risk_mom",
+              "maxAbsExposure": 0.5
+            }
+          ]
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "invalid_net_limit",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [
+          {
+            "id": "risk_mom",
+            "expression": "returns(close,20)",
+            "role": "predictor"
+          }
+        ],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25,
+          "netExposureLimit": -1,
+          "sizingMode": "volatility_target",
+          "targetAnnualVolatility": 0.15,
+          "volatilityLookback": 60,
+          "factorExposureLimits": [
+            {
+              "factorId": "risk_mom",
+              "maxAbsExposure": 0.5
+            }
+          ]
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "risk_boolean_number",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930"
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [
+          {
+            "id": "risk_mom",
+            "expression": "returns(close,20)",
+            "role": "predictor"
+          }
+        ],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25,
+          "netExposureLimit": 0.2,
+          "sizingMode": "volatility_target",
+          "targetAnnualVolatility": 0.15,
+          "volatilityLookback": true,
+          "factorExposureLimits": [
+            {
+              "factorId": "risk_mom",
+              "maxAbsExposure": 0.5
+            }
+          ]
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "snapshot_unknown_field",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "selection": {
+            "version": 1,
+            "includeGroups": [
+              {
+                "id": "g",
+                "name": "group",
+                "filters": [
+                  {
+                    "field": "area",
+                    "value": [
+                      "北京",
+                      "上海"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "excludeGroups": [],
+            "includeSymbols": [],
+            "excludeSymbols": []
+          },
+          "resolutionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": "explicit",
+          "catalogSnapshot": {
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "asOf": "2026-10-08",
+            "historicalMembershipVerified": false,
+            "secret": "forbidden"
+          }
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "snapshot_wrong_type",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "selection": {
+            "version": 1,
+            "includeGroups": [
+              {
+                "id": "g",
+                "name": "group",
+                "filters": [
+                  {
+                    "field": "area",
+                    "value": [
+                      "北京",
+                      "上海"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "excludeGroups": [],
+            "includeSymbols": [],
+            "excludeSymbols": []
+          },
+          "resolutionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": "explicit",
+          "catalogSnapshot": []
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "snapshot_bad_asof",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "selection": {
+            "version": 1,
+            "includeGroups": [
+              {
+                "id": "g",
+                "name": "group",
+                "filters": [
+                  {
+                    "field": "area",
+                    "value": [
+                      "北京",
+                      "上海"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "excludeGroups": [],
+            "includeSymbols": [],
+            "excludeSymbols": []
+          },
+          "resolutionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": "explicit",
+          "catalogSnapshot": {
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "asOf": 3,
+            "historicalMembershipVerified": false
+          }
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "snapshot_false_historical_claim",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "selection": {
+            "version": 1,
+            "includeGroups": [
+              {
+                "id": "g",
+                "name": "group",
+                "filters": [
+                  {
+                    "field": "area",
+                    "value": [
+                      "北京",
+                      "上海"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "excludeGroups": [],
+            "includeSymbols": [],
+            "excludeSymbols": []
+          },
+          "resolutionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": "explicit",
+          "catalogSnapshot": {
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "asOf": "2026-10-08",
+            "historicalMembershipVerified": true
+          }
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "snapshot_without_selection",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "resolutionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": "explicit",
+          "catalogSnapshot": {
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "asOf": "2026-10-08",
+            "historicalMembershipVerified": false
+          }
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "subset_wrong_type",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "selection": {
+            "version": 1,
+            "includeGroups": [
+              {
+                "id": "g",
+                "name": "group",
+                "filters": [
+                  {
+                    "field": "area",
+                    "value": [
+                      "北京",
+                      "上海"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "excludeGroups": [],
+            "includeSymbols": [],
+            "excludeSymbols": []
+          },
+          "resolutionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": [],
+          "catalogSnapshot": {
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "asOf": "2026-10-08",
+            "historicalMembershipVerified": false
+          }
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    },
+    {
+      "name": "filter_field_wrong_type",
+      "strategy": {
+        "schemaVersion": 2,
+        "name": "配对条件值研究 · 可重现范例",
+        "universe": {
+          "symbols": [
+            "000001.SZ",
+            "600000.SH"
+          ],
+          "start": "20230101",
+          "end": "20250930",
+          "selection": {
+            "version": 1,
+            "includeGroups": [
+              {
+                "id": "g",
+                "name": "group",
+                "filters": [
+                  {
+                    "field": [
+                      "area"
+                    ],
+                    "value": [
+                      "北京",
+                      "上海"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "excludeGroups": [],
+            "includeSymbols": [],
+            "excludeSymbols": []
+          },
+          "resolutionHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "snapshotHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "subsetPolicy": "explicit",
+          "catalogSnapshot": {
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "asOf": "2026-10-08",
+            "historicalMembershipVerified": false
+          }
+        },
+        "research": {
+          "mode": "statistical_quant",
+          "observationDays": 1
+        },
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "target": {
+          "kind": "frozen_basket",
+          "horizonSessions": 5,
+          "basket": {
+            "method": "pair_ols",
+            "symbols": [
+              "000001.SZ",
+              "600000.SH"
+            ],
+            "formationDays": 126
+          }
+        },
+        "model": {
+          "family": "pair_reversion",
+          "estimator": "ridge",
+          "trainWindow": 504,
+          "refitDays": 20
+        },
+        "validation": {
+          "holdoutFraction": 0.2,
+          "minTrainDates": 80,
+          "innerFolds": 2,
+          "outerFolds": 2
+        },
+        "execution": {
+          "enabled": true,
+          "side": "long_short",
+          "shorting": "theoretical",
+          "minEdgeBps": 10,
+          "maxPositions": 5
+        },
+        "portfolio": {
+          "initialCapital": 1000000,
+          "grossExposure": 1,
+          "maxWeight": 0.3,
+          "rebalanceDays": 1,
+          "rebalanceThresholdBps": 25
+        },
+        "costs": {
+          "commissionBps": 2.5,
+          "slippageBps": 3,
+          "sellTaxBps": 5,
+          "transferBps": 0.1,
+          "minCommission": 5,
+          "borrowAnnualBps": 300
+        },
+        "dataBindings": {}
+      }
+    }
+  ]
+}

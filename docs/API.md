@@ -100,4 +100,4 @@ review 的 `mode:'manual'` 只做规则检查，`providerExecuted:false`。`mode
 
 `POST /factors` 发布名称、描述、DSL、方向、分类、作者、许可、sourceUrl 及可选 forkOf。贡献立即标记 `community_unreviewed`；语法审核不替代数据授权或研究验证。`DELETE /factors/:id` 仅作者原工作区可用。每天最多 10 次发布。[贡献说明](../CONTRIBUTING.md)
 
-runner 的 `POST /runner/claim`、`/runner/heartbeat`、`/runner/complete` 使用独立 bearer 服务凭据，不能用浏览器工作区冒充。领取返回租约与有限任务；完成 `{id,leaseToken,result}` 或 `{id,leaseToken,error}`。完成/取消竞争、过期租约和相同结果的重试由状态与哈希校验处理。部署者配置与投递恢复见 [OPERATIONS.md](OPERATIONS.md)。
+runner 的 `POST /runner/claim`、`/runner/heartbeat`、`/runner/complete` 使用独立 bearer 服务凭据，不能用浏览器工作区冒充。领取返回租约与有限任务。新版 runner 先持久保存小写 UUID `requestId`；相同 ID 重试返回同一任务与租约，服务端回显 `claim:{requestId,status,jobId?}`。空队列或终态返回 `job:null`，终态不会改领另一任务；省略 ID 保留旧版行为。完成 `{id,leaseToken,result}` 或 `{id,leaseToken,error}`。完成/取消竞争、过期租约和相同结果的重试由状态与哈希校验处理。部署者配置与投递恢复见 [OPERATIONS.md](OPERATIONS.md)。
