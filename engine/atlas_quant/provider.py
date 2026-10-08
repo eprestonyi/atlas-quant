@@ -168,6 +168,25 @@ def validate_upload(strategy, dataset, *, deferred_fields=None):
         raise ProviderError("INVALID_PROVENANCE", "provenance 必须为对象。")
     # Never manufacture a claim of independent provider verification.
     rows = dataset.get("rows")
+    external = meta.get("externalFields")
+    financial_roots = {
+        "financialInputs", "financialDatasetRoot",
+        "financialCompositionVersion", "preparedRoot",
+    }
+    has_financial_rows = isinstance(rows, list) and any(
+        isinstance(row, dict)
+        and any(str(field).startswith("model_fin_") for field in row)
+        for row in rows
+    )
+    has_financial_registry = isinstance(external, dict) and any(
+        str(field).startswith("model_fin_") for field in external
+    )
+    if (set(meta) & financial_roots or has_financial_rows or has_financial_registry
+            or any(field.startswith("model_fin_") for field in _factor_fields(strategy))):
+        raise ProviderError(
+            "FINANCIAL_RECOMPOSITION_REQUIRED",
+            "model_fin_* 是保留财务状态；裸 JSON 上传不能继承来源检查，请从冻结财务包重新 compose。",
+        )
     derived_count = 0
     if isinstance(rows, list) and any(isinstance(r, dict) and r.get("amount") is None for r in rows):
         if meta.get("amountDerivation") != "vol*close*100/1000":

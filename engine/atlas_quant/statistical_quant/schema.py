@@ -50,6 +50,9 @@ def section(parent, name, allowed, defaults=None):
 
 def validate(strategy, *, capacity_profile=None):
     from ..factors import validate_expression
+    from ..financial_statements.admission import (
+        is_fundamental_field, is_registered_statement_state,
+    )
     from .metadata import text, normalize_universe, normalize_bindings
     profile = None
     if capacity_profile is not None:
@@ -101,6 +104,11 @@ def validate(strategy, *, capacity_profile=None):
         if isinstance(f["direction"], bool) or f["direction"] not in (-1, 1) or f["role"] not in ("predictor", "hedge", "event"):
             fail("INVALID_STATISTICAL_QUANT", "因子方向或角色无效")
         fields[f["id"]] = validate_expression(f.get("expression"))["fields"]
+        if any(
+            x.startswith("model_fin_") and not is_registered_statement_state(x)
+            for x in fields[f["id"]]
+        ):
+            fail("UNREGISTERED_FINANCIAL_STATE", "财务状态须使用已注册的公式 ID")
         roles[f["id"]] = f["role"]
     pre = section(s, "preprocess", {"winsorize", "standardize", "decorrelation", "correlationThreshold"}, {"winsorize": True, "standardize": True, "decorrelation": "drop_correlated", "correlationThreshold": .9})
     if any(not isinstance(pre[k], bool) for k in ("winsorize", "standardize")) or pre["decorrelation"] not in ("none", "drop_correlated"):
@@ -146,8 +154,10 @@ def validate(strategy, *, capacity_profile=None):
         model[key] = number(model[key], key, lo, hi, True)
     if model["family"] == "pair_reversion" and target.get("basket", {}).get("method") != "pair_ols":
         fail("INCOMPATIBLE_TARGET", "pair_reversion需要pair_ols冻结篮子")
-    fundamental = {"pb", "pe", "pe_ttm", "ps", "ps_ttm", "dv_ratio", "dv_ttm", "total_mv", "circ_mv"}
-    if model["family"] == "fundamental" and not any(roles[k] == "predictor" and any(x.startswith(("fd_", "pcd_")) or x in fundamental for x in v) for k, v in fields.items()):
+    if model["family"] == "fundamental" and not any(
+        roles[key] == "predictor" and any(is_fundamental_field(field) for field in selected)
+        for key, selected in fields.items()
+    ):
         fail("MISSING_MODEL_DATA", "财务条件模型需要已选实际基本面字段")
     if model["family"] == "event" and not any(roles[k] == "event" and any(x.startswith(("ext_", "pcd_", "fd_")) for x in v) for k, v in fields.items()):
         fail("MISSING_MODEL_DATA", "事件模型需要role:event的点时外部数值")
@@ -159,6 +169,11 @@ def validate(strategy, *, capacity_profile=None):
     ex = section(s, "execution", {"enabled", "side", "shorting", "minEdgeBps", "maxPositions"}, {"enabled": True, "side": "long_short", "shorting": "theoretical", "minEdgeBps": 10, "maxPositions": 5})
     if not isinstance(ex["enabled"], bool) or ex["side"] not in ("long_only", "long_short") or ex["shorting"] != "theoretical":
         fail("INVALID_STATISTICAL_QUANT", "执行模式无效；空头仅限明确理论情景")
+    if ex["enabled"] and any(
+        field.startswith("model_fin_")
+        for selected in fields.values() for field in selected
+    ):
+        fail("FINANCIAL_FORECAST_ONLY_REQUIRED", "财务状态当前仅支持明确 execution.enabled=false 的预测研究。")
     ex["minEdgeBps"] = number(ex["minEdgeBps"], "minEdgeBps", 0, 10000)
     ex["maxPositions"] = number(ex["maxPositions"], "maxPositions", 1, 50, True)
     p = section(s, "portfolio", {"initialCapital", "grossExposure", "maxWeight", "rebalanceDays", "rebalanceThresholdBps", "netExposureLimit", "sizingMode", "targetAnnualVolatility", "volatilityLookback", "factorExposureLimits"}, {"initialCapital": 1e6, "grossExposure": 1, "maxWeight": .3, "rebalanceDays": 1, "rebalanceThresholdBps": 25, "netExposureLimit": 2., "sizingMode": "fixed", "targetAnnualVolatility": .1, "volatilityLookback": 60, "factorExposureLimits": []})

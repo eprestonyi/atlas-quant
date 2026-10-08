@@ -2,7 +2,7 @@
 
 开始：2026-10-08（Asia/Hong_Kong）。用户明确授权完整重构、长时间运行、多轮计划/修改/构建/检查/测试与上线。状态：**进行中，尚未完成**。
 
-当前扩容分支：`feat/quant-artifact-shards`（`work/atlas-quant-shards`）；财报状态分支：`feat/quant-financial-states`（`work/atlas-quant-financial`）。已发布 v0.4 源码保留在 `work/atlas-quant`，不得从旧目录重复部署。
+当前正式版为 v0.6：Worker `0.6.0-61277facb0a4`、Python 0.6.0，发布与私有验收保存在 `work/atlas-quant-studio`；v0.5 分片证据在 `work/atlas-quant-shards`。`work/atlas-quant-financial` 是财报状态和纯数据桥，`work/atlas-quant-capacity` 是容量核心，`work/atlas-quant-financial-ui` 是尚未上线的财务工作区与独立 consumer。保留的 v0.4 在 `work/atlas-quant`，不得从旧目录重新覆盖正式版。最新主干包含未发布功能，部署必须固定已验收的源码与构建。
 
 本计划与 [FORECAST_RESEARCH_CONTRACT.md](FORECAST_RESEARCH_CONTRACT.md) 是续接入口。每轮先读最新进度，不重复已完成的部署或付费数据请求。自动续接：本聊天 heartbeat `atlas-quant`，每小时检查并继续；完成全部验收后停用。额度不足不绕过限制，重置卡工具每次调用须满足独立确认要求。
 
@@ -209,3 +209,12 @@ Build / Check：财报独立 worktree 的 Decimal/稀疏字段边界已修复；
 `work/atlas-quant-export` 已完成私有已提交 bundle 的确定性 TAR 下载与严格离线导入。流传输反例发现通用 ReadableStream 的半包可在客户端不报错，已改用实际 workerd 的 FixedLengthStream。122 项 Node 全套、2 项独立取消/文案回归、58 项 Python 导入/审计通过。真实 HTTP 和实际浏览器均下载 60,082,176 字节，严格导入 424,135 项审计通过、37 个原始文件逐字相同；窄屏入口可见。执行包不含来源行情时明确标识，不承诺它单独足够重放。PR #4 等 CI 和集成后发布；当前正式站仍为 v0.5。
 
 下一轮继续财务状态进入数据/预测/UI的纵向接入、300 股显式 profile 的服务准入及有序快照索引优化。容量独立审查的缓存命中忽略预算、样本写失败残留 staging 两项已修复并交复验；原冻结 300 股基准证据保留，不将后续源码冒称为当时测量版本。最终模板社区与四库可用数据覆盖仍未达到整个工程的完成条件。
+
+
+### Cycle 10 — v0.6 正式验收与财务工作区纵向接入（进行中）
+
+v0.6.0 已发布并读回：完整 TAR 下载/严格导入、Studio 确定语义和真实 AI 意见已上线。最终 Worker `0.6.0-61277facb0a4`（SHA-256 `6d0f99830c08314e6fc88e7585da55a886f063164d74604d26b32f917413a149`），Python 0.6.0，队列恢复；无数据库迁移。正式旧 50 股八年产物下载通过 424,135 项标准库核对，没有再次拟合或调用数据供应商。详见 RELEASE_V06.md。
+
+财务数据桥完成一次预先固定的两公司六状态 F 研究。官方交易日历与四次行情读取已完成并冻结；后续全部离线。产物保留 74 条预测、62 条成熟和 12 条尾部记录，结果 NO_VALIDATED_FORECAST_EDGE：相对状态基准 MSE 改善约 −3.28%，相对无变化约 −10.85%，没有执行、利润或显著性结论。完整报告通过 372 项独立审计。仅追加准入防护后离线重组验证承诺一致，没有重复实际模型拟合。与完整票池核心和 v0.6 主干合并后，739 项 Python、147 项 Node 以及构建通过；这些尚未部署。
+
+独立财务工作区正在接上传/验证、单位版本、16 个状态定义、准备覆盖与逐项来源。真实核心在独立 consumer 中运行，领取、总时限、租约、加密恢复和分片发布均独立于研究任务。页面必须保持 researchBinding=false，直到服务器授权的证明/日历、完整归档和统一 datasetRef 准入全部闭合。下一轮实际 HTTP 与 Python 联调、取消/断线/损坏反例、页面视觉检查通过后才考虑开启入口。当前仍未完成社区贡献、四库可用数据覆盖与公开大池准入。
