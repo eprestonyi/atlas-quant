@@ -13,7 +13,9 @@
     "estimator": "auto",
     "targetKind": "asset_price",
     "executionEnabled": false,
-    "factorRoles": ["predictor"],
+    "factorRoles": [
+      "predictor"
+    ],
     "temporaryBindingsAllowed": false
   },
   "limits": {
@@ -27,21 +29,69 @@
     "unchangedSourceTransportLimits": "hosted-datasets-v1.json"
   },
   "runnerRequires": {
-    "datasetFormats": ["atlas.quant.research_dataset/2"],
-    "snapshotFormats": ["financial_json_v1"],
-    "transportFormats": ["atlas.quant.financial_bundle/1"],
-    "financialResearchProfiles": ["financial_fundamental_auto_50_v1"]
+    "datasetFormats": [
+      "atlas.quant.research_dataset/2"
+    ],
+    "snapshotFormats": [
+      "financial_json_v1"
+    ],
+    "transportFormats": [
+      "atlas.quant.financial_bundle/1"
+    ],
+    "financialResearchProfiles": [
+      "financial_fundamental_auto_50_v1"
+    ]
   },
   "selection": {
     "declaredCandidates": [
-      {"estimator":"no_change","params":{}},
-      {"estimator":"historical_drift","params":{}},
-      {"estimator":"ridge","params":{"alpha":1}},
-      {"estimator":"ridge","params":{"alpha":10}},
-      {"estimator":"elastic_net","params":{"alpha":0.0001,"l1_ratio":0.2}},
-      {"estimator":"elastic_net","params":{"alpha":0.001,"l1_ratio":0.5}},
-      {"estimator":"hist_gradient_boosting","params":{"max_leaf_nodes":7,"l2_regularization":1}},
-      {"estimator":"hist_gradient_boosting","params":{"max_leaf_nodes":15,"l2_regularization":5}}
+      {
+        "estimator": "no_change",
+        "params": {}
+      },
+      {
+        "estimator": "historical_drift",
+        "params": {}
+      },
+      {
+        "estimator": "ridge",
+        "params": {
+          "alpha": 1
+        }
+      },
+      {
+        "estimator": "ridge",
+        "params": {
+          "alpha": 10
+        }
+      },
+      {
+        "estimator": "elastic_net",
+        "params": {
+          "alpha": 0.0001,
+          "l1_ratio": 0.2
+        }
+      },
+      {
+        "estimator": "elastic_net",
+        "params": {
+          "alpha": 0.001,
+          "l1_ratio": 0.5
+        }
+      },
+      {
+        "estimator": "hist_gradient_boosting",
+        "params": {
+          "max_leaf_nodes": 7,
+          "l2_regularization": 1
+        }
+      },
+      {
+        "estimator": "hist_gradient_boosting",
+        "params": {
+          "max_leaf_nodes": 15,
+          "l2_regularization": 5
+        }
+      }
     ],
     "mechanismFixedBeforeSelection": true,
     "purgedNestedTimeValidation": true,
@@ -60,9 +110,30 @@
   },
   "evidence": {
     "localAcceptanceOnly": true,
-    "validatedFrozenScope": {"symbols":1,"marketRows":262,"selectedFinancialStates":16},
+    "validatedFrozenScope": {
+      "symbols": 1,
+      "marketRows": 262,
+      "selectedFinancialStates": 16
+    },
     "capacityAtAllUpperBoundsEstablished": false,
     "deploymentQualified": false,
-    "predictiveEdgeEstablished": false
+    "predictiveEdgeEstablished": false,
+    "maximumScopeAttempt": {
+      "status": "FAILED_BEFORE_FIT",
+      "code": "PREPARED_BYTE_BUDGET",
+      "synthetic": true,
+      "symbols": 50,
+      "calendarDaysInclusive": 366,
+      "tradingSessions": 262,
+      "financialStates": 16,
+      "sourcePackages": 2,
+      "actualPreparedBytes": 67765427,
+      "entireClosureBudgetBytes": 67108864,
+      "joinedRowsOnlyBytes": 24802815,
+      "joinedDocumentBudgetBytes": 25165824,
+      "modelsFitted": 0,
+      "providerCalls": 0
+    },
+    "productionAuto50Enabled": false
   }
 }

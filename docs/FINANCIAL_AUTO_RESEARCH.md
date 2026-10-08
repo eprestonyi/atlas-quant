@@ -32,3 +32,33 @@ A new explicit job reused the existing synthetic frozen dataset `8df17a2f-7f94-4
 ## Remaining release gates
 
 A separate, explicitly synthetic 50-security × 366-day × 16-state source-complete run must test the maximum admitted resource combination before production auto enablement. Queue capability isolation, actual Worker binding → new runner → complete upload, browser selection/readback and current release CI remain integration gates. Production flags remain off; no alpha claim follows from these engineering checks.
+
+## Maximum-scope counterexample and next design
+
+A separate deterministic artificial source was predeclared at 50 securities, all 366 inclusive calendar days in 2024 (262 weekday sessions), 16 financial states. It contains 2021–2024 Q3 artificial quarterly statements, two disjoint 25-security packages, 75 normalized snapshots per package and one separately authorized synthetic calendar. Each package independently prepares successfully under the unchanged limits. The full dataset/2 composition fails `PREPARED_BYTE_BUDGET` before any F is fitted. Evidence: `private/financial-auto-50-source-20261008-01`; no provider calls, no model fit, no subset substitution.
+
+The exact retained-byte measurements are:
+
+| Item | Bytes |
+| --- | ---: |
+| Prepared package 0 | 33,888,059 |
+| Prepared package 1 | 33,877,368 |
+| Prepared sum, before market/input/joined rows | 67,765,427 |
+| Existing entire closure limit | 67,108,864 |
+| Expanded event objects, 4,000 events | 44,921,606 |
+| Repeated dependency objects within events | 39,318,044 |
+| Unique 5,350 dependency objects with dictionary keys | 9,173,629 |
+| Repeated calendar objects | 1,284,000 |
+| One unique calendar dictionary | 390 |
+| Proposed referenced event graph lower bound | 15,338,281 |
+| Prepared daily panels repeated across the two packages | 22,376,299 |
+| 13,100 combined numeric research-row array, excluding provenance | 24,802,815 |
+| Existing joined document limit | 25,165,824 |
+
+This is an actual serialized-size failure, not solely a conservative allocation estimate. Removing 29.58 MB of event duplication alone would still leave little room for the original market/source components, repeated prepared panels and final joined rows. The daily prepared panels can be reconstructed from the existing 250 interval assignments and their exact referenced state events. Those panels should not be stored again in a compact source representation. The final joined-row document is also close to its current limit: only 363,009 bytes remain before provenance and the outer document. No upper limit was raised and no state, date or security was removed.
+
+The next source format needs an explicit new version, not a changed interpretation of dataset/2. A compact prepared component should store content-addressed dependency/calendar dictionaries, state events referencing them, and interval assignments referencing events. It should stream reconstruction of the original logical prepared payload to verify its exact prepared root, including decimal strings, nulls, numeric types, event order and availability dates. Reconstructed daily panels should be derived as needed, retaining the same research-input values and fingerprints. This is a design proposal; no compact decoder or admission is implemented yet.
+
+Admission for the new version must bound graph nodes, reference counts, total referenced expansion, part bytes, rows and process RSS independently; reject dangling/cyclic/duplicate or rehashed mismatched references; and preserve independently authorized registry pins. Golden exact reconstruction against dataset/2, adversarial reference/availability cases, full 50-security source composition, same-child F, and independent two-archive audit must all pass before enabling the larger combination. Old datasets/results remain readable and keep their original hashes.
+
+Reproduction tools: `financial-auto-fixture.py` creates a new explicit artificial source and preserves failure/prepared evidence; `analyze-financial-source-size.py` reads those retained bytes and measures a possible lossless graph. The analysis does not publish a dataset, bypass admission, fit a model, or count a projected saving as successful capacity.

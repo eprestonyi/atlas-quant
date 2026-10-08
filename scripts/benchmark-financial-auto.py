@@ -84,7 +84,7 @@ def execute(args, output):
         'schemaVersion': 2, 'name': 'Predeclared frozen synthetic fundamental auto acceptance',
         'universe': scope, 'research': {'mode': 'statistical_quant'},
         'target': {'kind': 'asset_price', 'horizonSessions': 5},
-        'model': {'family': 'fundamental', 'estimator': 'auto', 'trainWindow': 120, 'refitDays': 60},
+        'model': {'family': 'fundamental', 'estimator': 'auto', 'trainWindow': 120, 'refitDays': args.refit_days},
         'validation': {'minTrainDates': 40, 'innerFolds': 2, 'outerFolds': 2},
         'execution': {'enabled': False},
         'factors': [{'id': key, 'expression': key, 'role': 'predictor'} for key in RECIPES],
@@ -187,6 +187,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for option in ('dataset','expected-root','dataset-id','registry-pins','registry-dir','output'):
         parser.add_argument('--'+option, required=True)
+    parser.add_argument('--refit-days',type=int,default=60)
     args = parser.parse_args()
     output = Path(args.output).resolve()
     output.mkdir(mode=0o700)
