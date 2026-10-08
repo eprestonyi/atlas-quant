@@ -15,6 +15,7 @@ import sklearn
 from ..statistical_quant.schema import validate, digest, fail, prediction_config
 from ..statistical_quant.core import _research_from_samples
 from ..statistical_quant.validation import forecast_origins
+from ..statistical_quant.models import candidates
 from .profiles import get_profile
 from .panel_store import PanelStore, private_dir, write_json, file_hash
 from .features import FeatureGraph
@@ -146,6 +147,10 @@ def run_capacity_research(
             last = index
     baseline = any(name.startswith("factor:") for name in samples.X)
     engine_root = Path(__file__).resolve().parents[1]
+    candidate_set = candidates(s["model"]["estimator"])
+    candidate_count = len(candidate_set)
+    inner, outer = s["validation"]["innerFolds"], s["validation"]["outerFolds"]
+    nested_fits = (outer+1)*inner*candidate_count+outer
     plan = {
         "profile": profile.to_dict(),
         "modelScope": "pooled_all_symbols",
@@ -169,12 +174,14 @@ def run_capacity_research(
         "forecastRows": len(indices),
         "baselineRequired": baseline,
         "holdoutStart": holdout,
-        "candidateConfigurations": 2,
-        "innerFolds": 2,
-        "outerFolds": 2,
+        "candidateConfigurations": candidate_count,
+        "candidateSet": candidate_set,
+        "candidateSetHash": digest(candidate_set),
+        "innerFolds": inner,
+        "outerFolds": outer,
         "scheduledTerminalFits": refits,
-        "scheduledFits": (2 if baseline else 1) * (12 + 2 + refits),
-        "fitAttemptsUpperBound": (2 if baseline else 1) * (12 + 2 + len(origin_dates)),
+        "scheduledFits": (2 if baseline else 1) * (nested_fits + refits),
+        "fitAttemptsUpperBound": (2 if baseline else 1) * (nested_fits + len(origin_dates)),
         "terminalFailureRetryPolicy": "existing_model_unavailable_retries_each_observation",
         "featureNodes": len(graph.nodes),
         "estimatedCacheBytes": estimate,

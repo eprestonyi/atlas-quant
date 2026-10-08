@@ -296,6 +296,9 @@ async function upgraded(t, enabled = false, currentWorker = false) {
     for (const filename of [
       "0007_financial_acquisition.sql",
       "0008_hosted_datasets.sql",
+      "0009_filter_universe.sql",
+      "0010_model_functions.sql",
+      "0011_market_acquisition.sql",
     ]) {
       const sql = (
         await fs.readFile(

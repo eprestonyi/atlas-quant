@@ -30,6 +30,10 @@ def benchmark_strategy():
         trainWindow=120,
         refitDays=20,
     )
+    from atlas_quant.capacity.profiles import AUTO_FILTER_CANDIDATE_ID
+    if os.environ.get("ATLAS_CAPACITY_PROFILE") == AUTO_FILTER_CANDIDATE_ID:
+        strategy["name"] = "Predeclared 1000 synthetic whole-filter pooled auto candidate capacity"
+        strategy["model"]["estimator"] = "auto"
     strategy["validation"]["minTrainDates"] = 40
     return strategy
 
@@ -48,7 +52,8 @@ def save(path, value):
 
 def child(output):
     from atlas_quant.capacity import run_capacity_research
-    from atlas_quant.capacity.profiles import FULL_FILTER_PROFILE_ID as PROFILE_ID
+    from atlas_quant.capacity.profiles import FULL_FILTER_PROFILE_ID
+    PROFILE_ID = os.environ.get("ATLAS_CAPACITY_PROFILE", FULL_FILTER_PROFILE_ID)
     from atlas_quant.capacity.benchmark import make_benchmark_data
     from atlas_quant.capacity.core import disk_bytes, peak_rss_bytes
     from atlas_quant.bundle import build_bundle, BundleReader, sha
@@ -137,13 +142,18 @@ def child(output):
             }
         },
         "selectedModel": diag["selectedModel"],
+        "selectionAudit": diag["selectionAudit"],
+        "factorDiagnosticFeatures": len(result["forecasts"]["factorResearch"]["diagnostics"]["features"]),
+        "factorJointDistributions": len(result["forecasts"]["factorResearch"]["diagnostics"]["dependence"]["jointDistributions"]),
+        "portableFunctionCount": len(result["forecasts"]["factorResearch"]["modelFunctions"]),
+        "invalidTrials": [t for t in diag["finalTrials"] if t["status"] != "valid"],
         "predictionCount": result["forecasts"]["totalRows"],
         "sourceFiles": {
             str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(
                 [
                     *(ROOT / "engine" / "atlas_quant").rglob("*.py"),
-                    ROOT / "scripts" / "benchmark-filter-universe.py",
+                    *(ROOT / "scripts").glob("benchmark-filter*.py"),
                     ROOT / "engine" / "requirements.lock.txt",
                 ]
             )
@@ -158,6 +168,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--plan-only", action="store_true")
+    from atlas_quant.capacity.profiles import FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID
+    parser.add_argument("--profile", choices=[FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID],
+        default=os.environ.get("ATLAS_CAPACITY_PROFILE", FULL_FILTER_PROFILE_ID))
     parser.add_argument(
         "--family",
         choices=["mean_reversion", "trend"],
@@ -166,13 +179,19 @@ def main():
     parser.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     os.environ["ATLAS_CAPACITY_FAMILY"] = args.family
+    os.environ["ATLAS_CAPACITY_PROFILE"] = args.profile
     output = args.output.absolute()
 
     from atlas_quant.capacity import FeatureGraph
-    from atlas_quant.capacity.profiles import FULL_FILTER_PROFILE_ID as PROFILE_ID
+    from atlas_quant.capacity.profiles import FULL_FILTER_PROFILE_ID
+    PROFILE_ID = os.environ.get("ATLAS_CAPACITY_PROFILE", FULL_FILTER_PROFILE_ID)
     import pandas as pd
 
     strategy = benchmark_strategy()
+    from atlas_quant.statistical_quant.schema import validate
+    from atlas_quant.statistical_quant.models import candidates
+    validate(strategy, capacity_profile=PROFILE_ID)
+    candidate_set = candidates(strategy["model"]["estimator"])
     nodes = len(FeatureGraph.compile(strategy["factors"]).nodes)
     dates = len(
         pd.bdate_range(strategy["universe"]["start"], strategy["universe"]["end"])
@@ -180,6 +199,11 @@ def main():
     estimated_cache = dates * 1000 * 8 * (10 + nodes + 16 + 16 + 9) + 32 * 1024 * 1024
     admission = {
         "profile": PROFILE_ID,
+        "experimentalCandidateNotProductionAdmission": PROFILE_ID == AUTO_FILTER_CANDIDATE_ID,
+        "candidateSet": candidate_set,
+        "candidateConfigurations": len(candidate_set),
+        "pooledAllSymbols": True,
+        "independentFactorFreeBaselineRequired": True,
         "strategy": strategy,
         "calendarSessions": dates,
         "inputRows": dates * 1000,

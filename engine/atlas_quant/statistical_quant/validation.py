@@ -44,6 +44,17 @@ def _train(samples, spec, train_dates, cutoff, strategy, runtime=None):
     return model, audit
 
 
+def _complexity(spec):
+    rank = {"no_change": 0, "historical_drift": 1, "ridge": 2, "elastic_net": 3, "hist_gradient_boosting": 4}
+    p = spec["params"]
+    # A deterministic, predeclared preference, not an estimated degrees of freedom.
+    if spec["estimator"] == "hist_gradient_boosting":
+        within = (p["max_leaf_nodes"], -p["l2_regularization"])
+    else:
+        within = (-p.get("alpha", 0), -p.get("l1_ratio", 0))
+    return (rank[spec["estimator"]], *within, spec["id"])
+
+
 def select(samples, specs, dates, strategy, runtime=None):
     runtime_args = {} if runtime is None else {"runtime": runtime}
     schedule = folds(dates, strategy["validation"]["innerFolds"], strategy["validation"]["minTrainDates"], strategy["target"]["horizonSessions"]+1)
@@ -59,7 +70,10 @@ def select(samples, specs, dates, strategy, runtime=None):
                 if not valid.any():
                     fail("INSUFFICIENT_FORECAST_DATA", "验证折没有可评分标签")
                 pred = model.predict(samples.X.loc[valid])
-                errors = np.mean((pred-samples.y.loc[valid].to_numpy())**2, axis=1)
+                with np.errstate(over="ignore", invalid="ignore"):
+                    errors = np.mean((pred-samples.y.loc[valid].to_numpy())**2, axis=1)
+                if not np.isfinite(errors).all():
+                    fail("INVALID_FORECAST", "候选验证损失超出有限数值范围")
                 # Equal dates, rather than treating correlated stock rows as IID.
                 score = float(pd.Series(errors, index=samples.meta.loc[valid, "date"]).groupby(level=0).mean().mean())
                 scores.append(score)
@@ -70,11 +84,21 @@ def select(samples, specs, dates, strategy, runtime=None):
                 reason = getattr(exc, "code", "MODEL_FIT_FAILED")
                 break
         trials.append({**spec, "score": float(np.mean(scores)) if reason is None else None,
-                       "status": "valid" if reason is None else "invalid", "invalidReason": reason, "folds": audits})
+                       "status": "valid" if reason is None else "invalid", "invalidReason": reason, "folds": audits,
+                       "foldScoreStd": float(np.std(scores, ddof=1)) if reason is None and len(scores)>1 else None,
+                       "foldScoreHeuristicSE": float(np.std(scores, ddof=1)/np.sqrt(len(scores))) if reason is None and len(scores)>1 else None,
+                       "complexityPreference": list(_complexity(spec)), "heuristicIsConfidenceInterval": False})
     valid = [x for x in trials if x["status"] == "valid" and np.isfinite(x["score"])]
     if not valid:
         fail("INSUFFICIENT_FORECAST_DATA", "没有候选完成全部时间验证折")
-    winner = min(valid, key=lambda x: (x["score"], 0 if x["estimator"] == "no_change" else 1, x["id"]))
+    best = min(valid, key=lambda x: (x["score"], _complexity(x)))
+    tolerance = best["foldScoreHeuristicSE"] or 0.0
+    admissible = [x for x in valid if x["score"] <= best["score"]+tolerance]
+    winner = min(admissible, key=_complexity)
+    for trial in trials:
+        trial.update(selected=trial["id"] == winner["id"], selectionRule="one_standard_error_complexity_heuristic",
+                     minimumMeanScore=best["score"], admissibleScoreCeiling=best["score"]+tolerance,
+                     withinHeuristicTolerance=trial in admissible)
     return {k: winner[k] for k in ("id", "estimator", "params")}, trials
 
 
@@ -130,7 +154,7 @@ def forecast_origins(samples, strategy, *, max_forecasts=None):
     return holdout, indices
 
 
-def forecast(samples, strategy, *, max_forecasts=None, runtime=None):
+def forecast(samples, strategy, *, max_forecasts=None, runtime=None, export_functions=True):
     from ..engine import ResearchError
     runtime_args = {} if runtime is None else {"runtime": runtime}
     dates = samples.dates
@@ -169,7 +193,11 @@ def forecast(samples, strategy, *, max_forecasts=None, runtime=None):
                          "labelEndMax": None, "trainStart": None, "trainEnd": None,
                          "estimator": winner["estimator"], "params": winner["params"], "featureNames": []}
             fit_id = "fit_"+digest({"date": date, "winner": winner, "audit": audit})[:24]
-            fitted_models.append({"id": fit_id, "fitDate": date, "sequentialMaturedLabelsOnly": True, **audit})
+            fit_record = {"id": fit_id, "fitDate": date, "sequentialMaturedLabelsOnly": True, **audit}
+            if current_model is not None and export_functions:
+                from .model_function import export_function
+                fit_record["functionArtifact"] = export_function(current_model, audit, strategy)
+            fitted_models.append(fit_record)
             last_fit = t
         pred = np.full((len(group), 2), np.nan)
         valid_idx = np.flatnonzero(group.inputValid.to_numpy())
@@ -199,7 +227,16 @@ def forecast(samples, strategy, *, max_forecasts=None, runtime=None):
                    "purgeRule": "both label endpoints strictly before fit/validation cutoff",
                    "overlappingLabelsIndependent": False, "significanceTested": False,
                    "familyHypothesis": strategy["model"]["family"],
-                   "meanReversionProven": False}
+                   "meanReversionProven": False,
+                   "selectionAudit": {"schemaVersion": 1, "familyFixedBeforeSelection": strategy["model"]["family"],
+                       "candidateSet": specs, "candidateSetHash": digest(specs), "candidateCount": len(specs),
+                       "candidateSetExpandedUsingOutcomes": False, "terminalSelectionCutoff": holdout,
+                       "rule": "one_standard_error_complexity_heuristic", "score": "equal_date_joint_normalized_mse",
+                       "fitBudgetPerSelection": len(specs)*strategy["validation"]["innerFolds"],
+                       "outerEstimateUsedForSelection": False, "terminalMetricsUsedForSelection": False,
+                       "dependentFoldHeuristicNotConfidenceInterval": True, "eliminatesBiasOrOverfitting": False,
+                       "penalty": "predeclared_estimator_regularization_and_simpler_within_tolerance",
+                       "reinforcementLearningIncluded": False}}
     from .inference import evaluate_forecast_uncertainty
     diagnostics["aggregateUncertainty"] = evaluate_forecast_uncertainty(
         records, strategy["target"]["horizonSessions"], strategy["research"]["observationDays"])

@@ -1,7 +1,9 @@
+import { createModelFunctionEditor } from './model-function-editor.js';
+import { createFactorDiagnostics } from './factor-diagnostics.js';
 // Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
 import { ESTIMATORS } from './defaults.js';
 import { createReportSource } from './report-source.js';
-export function createForecastReports(C, F, { onExecution }) {
+export function createForecastReports(C, F) {
   const { esc: e, fmt, pct, dateText: d, render, api, toast, openModal, closeModal } = C;
   const ui = {
     artifactId: null,
@@ -17,12 +19,12 @@ export function createForecastReports(C, F, { onExecution }) {
     riskPage: 1,
     riskFilter: 'events',
     busy: false,
-    replay: null,
     result: null,
     dateFrom: '',
     dateTo: ''
   };
   const remote = createReportSource(C);
+  const functionEditor = createModelFunctionEditor(C, F);
   const financialReport = () => remote.transport?.format === 'atlas.quant.financial_bundle';
   function financialSourceRef() {
     const ref = remote.transport?.sourceEvidence?.datasetRef;
@@ -70,8 +72,9 @@ export function createForecastReports(C, F, { onExecution }) {
   const tags = {
     forecasts: '预测台账 · P / V / e',
     validation: '预测检验',
+    factorDiagnostics: '因子与联合分布',
     targets: '目标与对冲定义',
-    models: '模型拟合',
+    models: 'F 函数与拟合',
     execution: '独立执行',
     provenance: '来源与复现'
   };
@@ -137,6 +140,7 @@ export function createForecastReports(C, F, { onExecution }) {
   }
   const pages = (page, total, action) =>
     `<div class="sq-catalog-pagination"><span>匹配 ${total.toLocaleString()} 条 · 第 ${page} / ${Math.max(1, Math.ceil(total / 25))} 页 · 每页 25 条</span><div>${F.button(action, '上一页', { page: page - 1, small: true, disabled: page <= 1 })}${F.button(action, '下一页', { page: page + 1, small: true, disabled: page * 25 >= total })}</div></div>`;
+  const factorDiagnostics = createFactorDiagnostics(C, F, { remote, remoteState, table });
   function renderReport(r) {
     remote.bind(C.state.reportTransport, C.state.runId);
     const f = r.forecasts;
@@ -159,7 +163,7 @@ export function createForecastReports(C, F, { onExecution }) {
       Object.assign(ui, {
         artifactId: f.artifactId,
         runIdentity,
-        tab: 'forecasts',
+        tab: r.forecasts.factorResearch ? 'models' : 'forecasts',
         page: 1,
         query: '',
         target: '',
@@ -169,8 +173,7 @@ export function createForecastReports(C, F, { onExecution }) {
         tradePage: 1,
         riskPage: 1,
         riskFilter: 'events',
-        replay: null,
-        dateFrom: '',
+            dateFrom: '',
         dateTo: '',
         baselineOpen: false
       });
@@ -217,7 +220,7 @@ export function createForecastReports(C, F, { onExecution }) {
       )
       .join(
         ''
-      )}</div>${({ forecasts: forecastRows, validation, targets, models, execution, provenance }[ui.tab] || forecastRows)(r)}${r.warnings?.length ? F.advanced('本次计算返回的边界与限制', `<ul class="sq-report-warning-list">${r.warnings.map((x) => `<li>${e(typeof x === 'string' ? x : x.message || JSON.stringify(x))}</li>`).join('')}</ul>`) : ''}`;
+      )}</div>${({ forecasts: forecastRows, validation, factorDiagnostics: factorDiagnostics.render, targets, models, execution, provenance }[ui.tab] || forecastRows)(r)}${r.warnings?.length ? F.advanced('本次计算返回的边界与限制', `<ul class="sq-report-warning-list">${r.warnings.map((x) => `<li>${e(typeof x === 'string' ? x : x.message || JSON.stringify(x))}</li>`).join('')}</ul>`) : ''}`;
   }
   function selectedRows(r) {
     let rows = [...(r.forecasts.rows || [])];
@@ -654,34 +657,9 @@ export function createForecastReports(C, F, { onExecution }) {
       page ? remoteState(page, body) : body + pages(ui.page, rows.length, 'forecast-page'),
       {
         description:
-          '预处理、去相关和状态效应来自实际训练拟合。不会把“模型族名含回归”当作已证明的均值回归。'
+          '预处理、去相关和状态效应来自实际训练拟合。不会把“模型族名含回归”当作已证明的均值回归。',
+        actions: F.button('mfe-library', '已保存的函数版本', { small: true })
       }
-    );
-  }
-  function replayFactorLimits(r, cfg) {
-    const limits = cfg.portfolio.factorExposureLimits || [];
-    return `<h3>这次执行的因子暴露限制</h3><p class="sq-subtle">使用原研究已冻结的因子数据，限制研究池内标准化暴露 |wᵀz|；不会新增因子或重新训练预测。</p><div class="sq-factor-risk">${
-      (r.strategy.factors || [])
-        .map((f) => {
-          const limit = limits.find((x) => x.factorId === f.id);
-          return `<label><input type="checkbox" data-sq-replay-risk-factor="${e(f.id)}" ${limit ? 'checked' : ''}><span>${e(f.name || f.id)}</span><input type="number" data-sq-replay-risk-max="${e(f.id)}" aria-label="执行方案 ${e(f.name || f.id)} 最大绝对暴露" value="${e(limit?.maxAbsExposure ?? 0.5)}" min="0" max="5" step=".05" ${limit ? '' : 'disabled'}></label>`;
-        })
-        .join('') || '<p class="sq-subtle">原研究没有额外因子；这里不补造风险暴露输入。</p>'
-    }</div>`;
-  }
-  function replayForm(r) {
-    const cfg = ui.replay || {
-      execution: structuredClone(r.strategy.execution),
-      portfolio: structuredClone(r.strategy.portfolio),
-      costs: structuredClone(r.strategy.costs)
-    };
-    ui.replay = cfg;
-    const input = (label, path, value, min, max, step = 1) =>
-      `<label class="sq-field"><span>${label}</span><input type="number" id="sq-replay-${path.replaceAll('.', '-')}" data-sq-replay="${path}" min="${min}" max="${max}" step="${step}" value="${e(value)}"></label>`;
-    return F.advanced(
-      '复用这份预测，创建新的执行方案',
-      `${F.note('预测、目标数量、原始行情和日历均保持冻结。这里只变更执行、仓位与费用，不重新拟合模型。')}<div class="sq-form-grid"><label class="sq-field"><span>执行方向</span><select data-sq-replay="execution.side"><option value="long_short" ${cfg.execution.side === 'long_short' ? 'selected' : ''}>理论多空</option><option value="long_only" ${cfg.execution.side === 'long_only' ? 'selected' : ''}>仅多头</option></select></label>${input('最小预期剩余 edge（bps）', 'execution.minEdgeBps', cfg.execution.minEdgeBps, 0, 10000)}${input('最多目标持仓', 'execution.maxPositions', cfg.execution.maxPositions, 1, 50)}${input('目标总敞口', 'portfolio.grossExposure', cfg.portfolio.grossExposure, 0.1, 2, 0.1)}${input('单标的权重上限', 'portfolio.maxWeight', cfg.portfolio.maxWeight, 0.01, 1, 0.01)}${input('净敞口绝对上限', 'portfolio.netExposureLimit', cfg.portfolio.netExposureLimit ?? 2, 0, 2, 0.1)}<label class="sq-field"><span>仓位缩放</span><select data-sq-replay="portfolio.sizingMode"><option value="fixed" ${(cfg.portfolio.sizingMode || 'fixed') === 'fixed' ? 'selected' : ''}>固定名义敞口</option><option value="volatility_target" ${cfg.portfolio.sizingMode === 'volatility_target' ? 'selected' : ''}>历史协方差波动目标</option></select></label>${input('目标年化波动', 'portfolio.targetAnnualVolatility', cfg.portfolio.targetAnnualVolatility ?? 0.1, 0.01, 1, 0.01)}${input('波动窗口', 'portfolio.volatilityLookback', cfg.portfolio.volatilityLookback ?? 60, 20, 252)}${input('调仓检查间隔', 'portfolio.rebalanceDays', cfg.portfolio.rebalanceDays, 1, 60)}${input('初始资金（元）', 'portfolio.initialCapital', cfg.portfolio.initialCapital, 10000, 1e9, 10000)}${input('权重变化阈值（bps）', 'portfolio.rebalanceThresholdBps', cfg.portfolio.rebalanceThresholdBps, 0, 10000)}${input('佣金（bps）', 'costs.commissionBps', cfg.costs.commissionBps, 0, 100, 0.1)}${input('最低佣金（元）', 'costs.minCommission', cfg.costs.minCommission, 0, 1000, 0.1)}${input('滑点（bps）', 'costs.slippageBps', cfg.costs.slippageBps, 0, 200, 0.1)}${input('卖出税费（bps）', 'costs.sellTaxBps', cfg.costs.sellTaxBps, 0, 100, 0.1)}${input('过户费（bps）', 'costs.transferBps', cfg.costs.transferBps, 0, 100, 0.01)}${input('年化理论借券费（bps）', 'costs.borrowAnnualBps', cfg.costs.borrowAnnualBps, 0, 10000)}</div>${replayFactorLimits(r, cfg)}<div class="sq-actions">${F.button('forecast-execute', ui.busy ? '正在提交' : '复用预测运行执行', { primary: true, icon: 'play', disabled: ui.busy })}</div>`,
-      false
     );
   }
   function execution(r) {
@@ -695,7 +673,7 @@ export function createForecastReports(C, F, { onExecution }) {
     const x = r.execution || {},
       m = r.metrics;
     let body = F.note(
-      '本次是完整的纯预测研究：未创建持仓、交易或净值。预测诊断已完成，可以继续研究独立执行方案。'
+      '本次是完整的纯预测研究：未创建持仓、交易或净值。预测诊断与后续策略研究分开保存。'
     );
     if (x.enabled && m) {
       const tradesPage = remote.enabled() ? remote.page('trades') : null;
@@ -728,7 +706,7 @@ export function createForecastReports(C, F, { onExecution }) {
           (tradesPage ? '' : pages(ui.tradePage, r.trades?.length || 0, 'forecast-trade-page'))
       )}${remote.enabled() ? remoteRawCollection('decisions', '执行决策与未成交原因') : F.advanced('执行决策、未成交原因与费用合计', JSONView({ costBreakdown: m.costBreakdown, decisions: (x.decisions || []).slice(0, 200), previewLimit: 200, totalDecisions: x.decisions?.length, completeRecord: '完整报告 JSON 保留全部决策' }))}`;
     }
-    return `${body}${riskEvidence(r)}${replayForm(r)}${F.panel('执行边界', `<dl class="sq-key-values"><dt>预测产物</dt><dd><code>${e(r.forecasts.artifactId)}</code></dd><dt>此次重新拟合</dt><dd>${r.research?.predictionRefitPerformed === false ? '否，复用已冻结预测' : r.research?.predictionRefitPerformed === true ? '本次生成了新的预测' : '未返回证据'}</dd><dt>借券库存</dt><dd>${x.shortInventoryVerified ? '已验证' : '理论假设，未核验实际券源'}</dd><dt>到期终止</dt><dd>不能任意顺延入场；到期不可成交退出按实际可成交时点处理。</dd><dt>成交单位</dt><dd>${e(x.unit === 'fractional_adjusted_research_units' ? '可分割的复权研究单位；未按交易所整手撮合' : x.unit || '预测研究尚未执行')}</dd></dl>`)}`;
+    return `${body}${riskEvidence(r)}${F.note('策略研究和交易执行将在独立模块接入；此处只读取已保存的执行记录。')}${F.panel('执行边界', `<dl class="sq-key-values"><dt>预测产物</dt><dd><code>${e(r.forecasts.artifactId)}</code></dd><dt>此次重新拟合</dt><dd>${r.research?.predictionRefitPerformed === false ? '否，复用已冻结预测' : r.research?.predictionRefitPerformed === true ? '本次生成了新的预测' : '未返回证据'}</dd><dt>借券库存</dt><dd>${x.shortInventoryVerified ? '已验证' : '理论假设，未核验实际券源'}</dd><dt>到期终止</dt><dd>不能任意顺延入场；到期不可成交退出按实际可成交时点处理。</dd><dt>成交单位</dt><dd>${e(x.unit === 'fractional_adjusted_research_units' ? '可分割的复权研究单位；未按交易所整手撮合' : x.unit || '预测研究尚未执行')}</dd></dl>`)}`;
   }
   function provenance(r) {
     const ref = financialSourceRef();
@@ -791,7 +769,7 @@ export function createForecastReports(C, F, { onExecution }) {
             )
           ) + F.note('这是训练状态在四分位区间内扰动的条件效应，不是因果归因或均值回归证明。')
         : ''
-    }${F.advanced('去相关与输入剔除', JSONView(fit.decorrelation))}${F.advanced('查看原始拟合记录', JSONView(fit))}</div>`;
+    }${functionEditor.render(fit, { runId: C.state.runId, bundleId: remote.transport?.bundleId || null, modelFitId: fit.id })}${F.advanced('去相关与输入剔除', JSONView(fit.decorrelation))}${F.advanced('查看原始拟合记录', JSONView(fit))}</div>`;
   }
   function remoteBaseline(r) {
     const page = remote.page('baselineRows');
@@ -882,6 +860,7 @@ export function createForecastReports(C, F, { onExecution }) {
     )}<p class="sq-subtle">${e(row.riskBreaches?.map(reasonLabel).join('；') || '收盘未记录超限')}</p>${F.advanced('查看原始日账本', JSONView(row))}`;
   }
   async function handle(el) {
+    if (el.dataset.sq?.startsWith('mfe-')) return functionEditor.handle(el);
     const action = el.dataset.sq;
     if (!action?.startsWith('forecast-')) return false;
     const r = ui.result;
@@ -998,73 +977,27 @@ export function createForecastReports(C, F, { onExecution }) {
         JSONView((reportDiagnostics(r).finalTrials || []).find((x) => x.id === el.dataset.id)),
         true
       );
-    if (action === 'forecast-execute') {
-      if (financialReport() || remote.transport?.executionEligible === false) {
-        toast('此财务产物仅用于预测研究，交易执行尚未开放。');
-        return true;
-      }
-      const invalid = [
-        ...document.querySelectorAll('[data-sq-replay],[data-sq-replay-risk-max]')
-      ].find((x) => !x.checkValidity());
-      if (invalid) {
-        invalid.reportValidity();
-        return true;
-      }
-      ui.busy = true;
-      render();
-      try {
-        await onExecution(r.forecasts.artifactId, {
-          ...ui.replay,
-          execution: { ...ui.replay.execution, enabled: true }
-        });
-        toast('已提交独立执行，将复用同一预测产物。');
-      } finally {
-        ui.busy = false;
-        render();
-      }
-    }
+    if (action === 'forecast-execute') toast('策略执行尚未在本工作区开放。');
     return true;
   }
   let searchTimer;
   function onInput(el) {
+    functionEditor.onInput(el);
     const remoteFilters = {
       'sq-forecast-target': 'target',
       'sq-forecast-date-from': 'dateFrom',
       'sq-forecast-date-to': 'dateTo'
     };
     if (remoteFilters[el.id]) ui[remoteFilters[el.id]] = el.value;
-    if (el.dataset.sqReplayRiskMax) {
-      const limit = ui.replay?.portfolio.factorExposureLimits?.find(
-        (x) => x.factorId === el.dataset.sqReplayRiskMax
-      );
-      if (limit) limit.maxAbsExposure = el.value === '' ? null : Number(el.value);
-    }
     if (el.id === 'sq-forecast-search') {
       ui.query = el.value;
       ui.page = 1;
       clearTimeout(searchTimer);
       searchTimer = setTimeout(render, 180);
     }
-    if (el.dataset.sqReplay) {
-      const [part, key] = el.dataset.sqReplay.split('.');
-      if (!ui.replay || !['execution', 'portfolio', 'costs'].includes(part)) return;
-      ui.replay[part][key] =
-        el.type === 'number' ? (el.value === '' ? null : Number(el.value)) : el.value;
-    }
   }
   function onChange(el) {
-    if (el.dataset.sqReplayRiskFactor && ui.replay) {
-      const id = el.dataset.sqReplayRiskFactor;
-      ui.replay.portfolio.factorExposureLimits = (
-        ui.replay.portfolio.factorExposureLimits || []
-      ).filter((x) => x.factorId !== id);
-      if (el.checked)
-        ui.replay.portfolio.factorExposureLimits.push({
-          factorId: id,
-          maxAbsExposure: 0.5
-        });
-      render();
-    }
+    functionEditor.onInput(el);
     if (el.id === 'sq-risk-filter') {
       ui.riskFilter = el.value;
       ui.riskPage = 1;
