@@ -1,5 +1,5 @@
 {
-  "status": "LOCAL_CODEC_AND_SMALL_F_PARITY_IMPLEMENTED_NOT_HOSTED",
+  "status": "LOCAL_FULL_SCOPE_F_AND_INDEPENDENT_SOURCE_DOMAIN_VERIFIED_NOT_HOSTED",
   "format": "atlas.quant.financial_bundle",
   "version": 2,
   "capability": "atlas.quant.financial_bundle/2",
@@ -148,12 +148,75 @@
       "sourceAuthorityVerified": false
     },
     "independentPairedAudit": {
+      "auditor": "atlas.financial_graph_bundle.stdlib_audit/2",
+      "status": "PASS",
       "resultChecks": 710319,
-      "sourceChecks": 3847451,
+      "sourceChecks": 3859466,
       "engineImports": false,
-      "maxAbsoluteError": 0,
+      "modelsFitted": 0,
+      "providerCalls": 0,
+      "maxAbsoluteError": 0.0,
       "externalRegistryAndSourceBytesMatched": true,
-      "knownCoverageGap": "joint removal of forecast/baseline/plan not yet independently rejected"
+      "sourceForecastDomainVerified": true,
+      "sourceCoverage": {
+        "baselineRequired": true,
+        "coverageBasis": "frozen source calendar and all symbols; independently interpreted declared strategy clock",
+        "expectedForecastRows": 2050,
+        "expectedOriginDates": 41,
+        "factorLookback": 0,
+        "fullAssetCoverageVerified": true,
+        "holdoutStart": "20241105",
+        "invalidTailOriginsRetained": true,
+        "originClockVerified": true,
+        "originalRequestedStrategyAuthenticated": false,
+        "sampleStartIndex": 61,
+        "targetDefinitionsVerified": true
+      },
+      "inputValidityRecomputed": false,
+      "financialFormulasRecomputed": false,
+      "modelFunctionsReevaluated": false,
+      "researchStatisticsRecomputed": false,
+      "providerAuthenticityVerified": false,
+      "sourceAuthorityVerified": false,
+      "modelAdmissionRegistered": false,
+      "receipt": {
+        "path": "../atlas-quant-graph-audit/private/graph-source-domain-20261008-01/frozen-50-paired-audit.json",
+        "sha256": "eb319b6204de4a21e9a4bc0d36b946a47951c0b0a6c26a0dbc71d21d74980c53"
+      },
+      "coordinatedRemoval": {
+        "status": "PASS",
+        "allInnerHashesRebuilt": true,
+        "transportAndSelfConsistencyPassed": true,
+        "rejected": [
+          {
+            "attack": "half_pool",
+            "code": "RESULT_TARGETS",
+            "remainingForecastRows": 1025,
+            "remainingBaselineRows": 1025,
+            "remainingTargets": 25
+          },
+          {
+            "attack": "day",
+            "code": "RESULT_COVERAGE",
+            "remainingForecastRows": 2000,
+            "remainingBaselineRows": 2000,
+            "remainingTargets": 50
+          },
+          {
+            "attack": "tail",
+            "code": "RESULT_COVERAGE",
+            "remainingForecastRows": 1750,
+            "remainingBaselineRows": 1750,
+            "remainingTargets": 50
+          }
+        ],
+        "originalFilesUnchanged": true,
+        "originalFileCount": 21,
+        "receipt": {
+          "path": "../atlas-quant-graph-audit/private/graph-source-domain-20261008-01/coordinated-attack-summary.json",
+          "sha256": "e7a3650737ea1e47be48a48657cf49da815927cb9a3dbc1f0ff7b0e22abdf8c2"
+        }
+      }
     },
     "freshProcessRecomposition": {
       "modelsFitted": 0,
@@ -164,5 +227,5 @@
     },
     "laterRevisionsAreNotNewFits": true
   },
-  "hostedBlocker": "SOURCE_DERIVED_FORECAST_DOMAIN_CHECK_REQUIRED: mutable forecast and plan cannot independently prove complete frozen-universe coverage"
+  "hostedBlocker": "ISOLATED_HTTP_OWNER_LEASE_SOURCE_RESULT_AND_RECOVERY_ACCEPTANCE_REQUIRED: local source-domain verification is complete; hosted graph routes and full archive download acceptance remain unverified"
 }

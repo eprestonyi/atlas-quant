@@ -134,5 +134,11 @@
     "complete dataset3 and financial_bundle2 downloads independently audited with external pins",
     "same-child local hosted F explicit new job only if needed and predeclared, no replay of retained 50 run"
   ],
-  "production": false
+  "production": false,
+  "localSourceDomainGate": {
+    "status": "PASS",
+    "evidenceContract": "financial-graph-auto-v1.json#/localFullScopeEvidence/independentPairedAudit",
+    "hostedAcceptanceImplied": false,
+    "newModelFitPerformed": false
+  }
 }
