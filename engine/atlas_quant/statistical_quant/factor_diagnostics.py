@@ -9,7 +9,9 @@ from itertools import combinations
 import numpy as np
 import pandas as pd
 
-MAX_JOINT_PAIRS = 6
+# Covers every pair in the admitted 16-factor pooled profiles (up to 20
+# factor/derived inputs), while retaining a hard ceiling for larger studies.
+MAX_JOINT_PAIRS = 256
 JOINT_BINS = 5
 MAX_TIME_SERIES_TARGETS = 32
 
@@ -84,27 +86,35 @@ def _summary(values, all_dates):
             "unavailableReason": None if x else "fewer_than_three_finite_targets_or_constant_cross_section", "pValue": None}
 
 
-def _joint(x, y, x_train, y_train, names, dates):
-    valid = np.isfinite(x) & np.isfinite(y)
+def _joint_axis(values, development):
     # Development-only quantiles freeze the display boundaries. +/-infinity are
     # represented as null exterior bounds; finite terminal outliers are retained.
-    axes = []
-    for source in (x_train, y_train):
-        source = np.asarray(source, dtype=float)
-        source = source[np.isfinite(source)]
-        if not len(source):
-            return {"x": names[0], "y": names[1], "status": "unavailable", "reason": "no_development_values_for_bins"}
-        scale = max(float(np.max(np.abs(source))), np.finfo(float).tiny)
-        interior = np.unique(np.quantile(source/scale, np.arange(1, JOINT_BINS)/JOINT_BINS)*scale)
-        axes.append(np.r_[-np.inf, interior, np.inf])
-    counts, _, _ = np.histogram2d(np.asarray(x)[valid], np.asarray(y)[valid], bins=axes)
+    source = np.asarray(development, dtype=float)
+    source = source[np.isfinite(source)]
+    if not len(source):
+        return None
+    scale = max(float(np.max(np.abs(source))), np.finfo(float).tiny)
+    interior = np.unique(np.quantile(source/scale, np.arange(1, JOINT_BINS)/JOINT_BINS)*scale)
+    values = np.asarray(values, dtype=float)
+    return {"edges": np.r_[-np.inf, interior, np.inf],
+            "valid": np.isfinite(values),
+            "bins": np.searchsorted(interior, values, side="right")}
+
+
+def _joint(x, y, names, dates):
+    if x is None or y is None:
+        return {"x": names[0], "y": names[1], "status": "unavailable", "reason": "no_development_values_for_bins"}
+    valid = x["valid"] & y["valid"]
+    axes = (x["edges"], y["edges"])
+    nx, ny = len(axes[0])-1, len(axes[1])-1
+    counts = np.bincount(x["bins"][valid]*ny+y["bins"][valid], minlength=nx*ny).reshape(nx, ny)
     n = int(valid.sum())
     observed = np.asarray(dates)[valid]
     return {"x": names[0], "y": names[1], "status": "available" if n else "unavailable",
             "xEdges": [float(v) if np.isfinite(v) else None for v in axes[0]],
             "yEdges": [float(v) if np.isfinite(v) else None for v in axes[1]],
             "counts": counts.astype(int).tolist(), "probabilities": (counts/n).tolist() if n else None,
-            "sampleCount": n, "missingPairCount": int(len(x)-n),
+            "sampleCount": n, "missingPairCount": int(len(valid)-n),
             "firstDate": str(observed.min()) if n else None, "lastDate": str(observed.max()) if n else None,
             "edgeSource": "pre_terminal_development_feature_quantiles", "requestedBins": JOINT_BINS,
             "intervalConvention": "[left,right); exterior null means -infinity/+infinity; final right closed",
@@ -156,8 +166,10 @@ def factor_diagnostics(samples, holdout_start, factor_definitions=None):
     # Priority is fixed by feature declarations, never by strongest observed IC.
     priority = [c for c in columns if c.startswith("factor:")] + [c for c in columns if not c.startswith("factor:")]
     pairs = list(combinations(priority, 2))
-    joints = [_joint(X[a].to_numpy(), X[b].to_numpy(), development[a], development[b], (a, b), meta.date.to_numpy())
-              for a, b in pairs[:MAX_JOINT_PAIRS]]
+    selected_pairs = pairs[:MAX_JOINT_PAIRS]
+    axes = {c: _joint_axis(X[c], development[c]) for c in dict.fromkeys(c for pair in selected_pairs for c in pair)}
+    observed_dates = meta.date.to_numpy()
+    joints = [_joint(axes[a], axes[b], (a, b), observed_dates) for a, b in selected_pairs]
     return {"period": "terminal_sequential_out_of_sample", "firstDate": str(meta.date.min()) if len(meta) else None,
             "lastDate": str(meta.date.max()) if len(meta) else None, "origins": len(meta), "maturedValidOrigins": int(mature.sum()),
             "target": "realized_exit_level_change_over_origin_known_gross", "targetDefinition": "(realizedFuture-currentState)/scale",

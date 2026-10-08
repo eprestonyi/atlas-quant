@@ -76,7 +76,7 @@ def test_joint_bins_are_frozen_in_development_keep_outliers_and_do_not_change_se
 
 def test_pairwise_covariance_counts_and_joint_budget_are_explicit():
     s = samples()
-    for i in range(12):
+    for i in range(23):
         s.X[f"state{i}"] = s.X["factor:a"]+i
     s.X.loc[40:44, "factor:a"] = np.nan
     report = factor_diagnostics(s, "20240111")
@@ -88,6 +88,35 @@ def test_pairwise_covariance_counts_and_joint_budget_are_explicit():
     assert dep["omittedPairs"] == dep["totalPossiblePairs"]-MAX_JOINT_PAIRS
     assert not dep["positiveSemidefiniteGuaranteed"]
     json.dumps(report, allow_nan=False)
+
+
+def test_full_profile_all_pairs_match_independent_histograms():
+    from itertools import combinations
+    s = samples()
+    for i in range(17):
+        s.X[f"state{i}"] = (s.X["factor:a"]+i) % (i+3)
+    # Includes constant axes, ties exactly on edges, tail outliers and missing
+    # values. This independently checks every pair, not only the first six.
+    s.X.loc[40:42, "state16"] = np.nan
+    s.X.loc[43, "state16"] = 1e30
+    report = factor_diagnostics(s, "20240111")
+    dep = report["dependence"]
+    assert dep["totalPossiblePairs"] == 190 and dep["omittedPairs"] == 0
+    expected_pairs = list(combinations(list(s.X), 2))
+    assert [(j["x"], j["y"]) for j in dep["jointDistributions"]] == expected_pairs
+    terminal = s.X.loc[s.meta.date >= "20240111"]
+    development = s.X.loc[s.meta.date < "20240111"]
+    for joint in dep["jointDistributions"]:
+        axes = []
+        for name in (joint["x"], joint["y"]):
+            source = development[name].dropna().to_numpy()
+            bound = max(abs(source))
+            axes.append(np.r_[-np.inf, np.unique(np.quantile(source/bound, [.2,.4,.6,.8])*bound), np.inf])
+        pair = terminal[[joint["x"], joint["y"]]].dropna()
+        counts, _, _ = np.histogram2d(pair.iloc[:,0], pair.iloc[:,1], bins=axes)
+        assert joint["counts"] == counts.astype(int).tolist()
+        assert joint["sampleCount"] == len(pair)
+        assert np.sum(joint["probabilities"]) == pytest.approx(1)
 
 
 def test_one_standard_error_rule_prefers_predeclared_simplicity_and_labels_it_heuristic(monkeypatch):

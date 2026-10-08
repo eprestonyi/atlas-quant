@@ -120,7 +120,7 @@
       "descriptiveFit": "pooled terminal-sample univariate OLS slope/intercept/R², no p-values or IID standard errors; not OOS incremental or causal contribution",
       "dependence": "featureNames + pairwise-complete correlation/covariance/pairCounts + jointDistributions",
       "jointDistribution": "{x,y,status,xEdges,yEdges,counts,probabilities,sampleCount,missingPairCount,firstDate,lastDate,edgeSource,requestedBins,intervalConvention,interpretation}; null exterior edge denotes -/+infinity; empirical joint frequencies, not assumed density",
-      "jointSelection": "first6 declared feature pairs, factors first; no outcome ranking; 5 requested quantile bins fixed from pre-terminal feature values, duplicate boundaries coalesced",
+      "jointSelection": "up to 256 declared feature pairs, factors first; includes every pair for admitted 16-factor profiles with at most 20 inputs; no outcome ranking; 5 requested quantile bins fixed once per axis from pre-terminal feature values, duplicate boundaries coalesced; historical reports retain their declared budget",
       "significance": "unavailable for factor-level tests because overlap/dependence not adjusted",
       "selectionUse": false
     }
