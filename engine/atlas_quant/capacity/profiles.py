@@ -5,6 +5,7 @@ from datetime import datetime
 
 PROFILE_ID = "pooled_asset_300_v1"
 FULL_FILTER_PROFILE_ID = "pooled_asset_1000_v1"
+AUTO_FILTER_CANDIDATE_ID = "pooled_asset_1000_auto_candidate_v1"
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,7 @@ class CapacityProfile:
         ).days
         if (
             s["target"]["kind"] != "asset_price"
-            or s["model"]["estimator"] != "ridge"
+            or s["model"]["estimator"] != ("auto" if self.id == AUTO_FILTER_CANDIDATE_ID else "ridge")
             or s["execution"]["enabled"]
             or len(s["factors"]) > self.max_factors
             or span > self.max_calendar_days
@@ -38,13 +39,14 @@ class CapacityProfile:
             or s["validation"]["innerFolds"] != 2
             or s["validation"]["outerFolds"] != 2
             or (
-                self.id == FULL_FILTER_PROFILE_ID
+                self.id in {FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID}
                 and s["model"]["family"] not in {"mean_reversion", "trend"}
             )
+            or (self.id == AUTO_FILTER_CANDIDATE_ID and s["model"]["family"] != "mean_reversion")
         ):
             fail(
                 "CAPACITY_PROFILE",
-                f"{self.id} requires asset_price, Ridge, forecast-only, <=16 factors, <= {self.max_calendar_days} calendar days, refit>=20 and exactly 2 inner/outer folds; the 1000 profile currently supports mean_reversion/trend only",
+                f"{self.id} requires asset_price, {'auto' if self.id == AUTO_FILTER_CANDIDATE_ID else 'Ridge'}, forecast-only, <=16 factors, <= {self.max_calendar_days} calendar days, refit>=20 and exactly 2 inner/outer folds; the candidate auto profile supports mean_reversion only",
             )
 
     def to_dict(self):
@@ -54,9 +56,9 @@ class CapacityProfile:
 def get_profile(profile_id):
     from ..statistical_quant.schema import fail
 
-    if profile_id == FULL_FILTER_PROFILE_ID:
+    if profile_id in {FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID}:
         return CapacityProfile(
-            id=FULL_FILTER_PROFILE_ID,
+            id=profile_id,
             max_symbols=1000,
             max_rows=300_000,
             max_samples=300_000,
