@@ -1,6 +1,13 @@
 import { ApiError } from '../errors.mjs';
 import { NOW } from '../runtime.mjs';
-import { readChunk, loadStage, leasedJob, parsedStage, terminalDiscard } from './storage.mjs';
+import {
+  readChunk,
+  loadStage,
+  leasedJob,
+  parsedStage,
+  terminalDiscard,
+  assertTransport
+} from './storage.mjs';
 import { verifyDocuments } from './streams.mjs';
 import { SORTED_SNAPSHOT, snapshotValidation, verifySnapshotReceipts } from './snapshot-index.mjs';
 
@@ -110,12 +117,18 @@ export async function verifyRecords(env, stage, parsed) {
   );
 }
 
-export async function finalizeBundle(env, input) {
+export async function finalizeBundle(
+  env,
+  input,
+  { expectedFormat = 'atlas.quant.bundle', authorize = null, verifySource = null } = {}
+) {
   const job = await leasedJob(env, input);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
   const stage = await loadStage(env, input.stageId, job);
   if (stage.bundle_id !== input.bundleId)
     throw new ApiError('BUNDLE_CONFLICT', '传输身份不匹配', 409);
+  const parsed = await parsedStage(stage);
+  assertTransport(parsed, expectedFormat);
   if (stage.status === 'committed')
     return {
       ok: true,
@@ -124,7 +137,7 @@ export async function finalizeBundle(env, input) {
       idempotent: true
     };
   if (stage.status === 'aborted' || job.status !== 'running') invalid('终态任务不能验证新增产物');
-  const parsed = await parsedStage(stage);
+  if (authorize) await authorize(env, job, parsed);
   const receipts = await env.DB.prepare(
     'SELECT collection,ordinal,sha256,byte_length,row_count,start_row,object_key FROM quant_bundle_chunks WHERE stage_id=?'
   )
@@ -148,6 +161,10 @@ export async function finalizeBundle(env, input) {
   await verifyDocuments(parsed, (collection, descriptor) =>
     readChunk(env, stage, collection, descriptor, byKey)
   );
+  if (verifySource)
+    await verifySource(parsed, (collection, descriptor) =>
+      readChunk(env, stage, collection, descriptor, byKey)
+    );
   await env.ARTIFACTS.put(stage.manifest_key, stage.manifest_text, {
     sha256: stage.bundle_id,
     httpMetadata: { contentType: 'application/json' }

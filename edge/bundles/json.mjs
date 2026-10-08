@@ -14,28 +14,42 @@ const compareUnicode = (a, b) => {
   }
   return left.length - right.length;
 };
-function canonicalNumber(token) {
-  // Integers may exceed JS's safe-integer range. Preserve their exact decimal
-  // token; converting them through Number would silently change canonical bytes.
+function floatToken(number) {
+  if (Object.is(number, -0)) return '-0.0';
+  if (number === 0) return '0.0';
+  const sign = number < 0 ? '-' : '';
+  const text = Math.abs(number).toString();
+  const [mantissa, expText = '0'] = text.split('e');
+  const dot = mantissa.indexOf('.');
+  const decimalPosition = (dot < 0 ? mantissa.length : dot) + Number(expText);
+  const allDigits = mantissa.replace('.', '');
+  const first = allDigits.search(/[1-9]/);
+  const digits = allDigits.slice(first).replace(/0+$/, '');
+  const exponent = decimalPosition - first - 1;
+  if (exponent < -4 || exponent >= 16) {
+    return (
+      sign +
+      digits[0] +
+      (digits.length > 1 ? '.' + digits.slice(1) : '') +
+      'e' +
+      (exponent < 0 ? '-' : '+') +
+      String(Math.abs(exponent)).padStart(2, '0')
+    );
+  }
+  const position = exponent + 1;
+  if (position <= 0) return sign + '0.' + '0'.repeat(-position) + digits;
+  if (position >= digits.length) return sign + digits + '0'.repeat(position - digits.length) + '.0';
+  return sign + digits.slice(0, position) + '.' + digits.slice(position);
+}
+function canonicalNumber(token, codec) {
+  // Integer tokens never round-trip through a JS Number: this preserves exact
+  // large integers. A financial float token preserves its type and signed zero.
   if (/^-?(?:0|[1-9]\d*)$/.test(token)) return token !== '-0';
   const number = Number(token);
-  if (!Number.isFinite(number) || Number.isInteger(number)) return false;
-  const sign = number < 0 ? '-' : '';
-  let text = Math.abs(number).toString();
-  if (Math.abs(number) < 0.0001) {
-    let mantissa, exponent;
-    if (text.includes('e')) [mantissa, exponent] = text.split('e');
-    else {
-      const digits = text.slice(2),
-        first = digits.search(/[1-9]/);
-      const significant = digits.slice(first);
-      mantissa = significant[0] + (significant.length > 1 ? '.' + significant.slice(1) : '');
-      exponent = String(-first - 1);
-    }
-    const e = Number(exponent);
-    text = mantissa + 'e' + (e < 0 ? '-' : '+') + String(Math.abs(e)).padStart(2, '0');
-  }
-  return token === sign + text;
+  if (!Number.isFinite(number)) return false;
+  if (codec === 'financial_json_v1') return token === floatToken(number);
+  if (Number.isInteger(number)) return false;
+  return token === floatToken(number);
 }
 function wellFormed(value) {
   for (let i = 0; i < value.length; i++) {
@@ -60,7 +74,11 @@ export function keys(value, allowed, label) {
 /** Validate before JSON.parse: duplicate keys must never hide an earlier value.
  * The scanner retains raw numeric spelling; hashes always cover original bytes.
  */
-export function parseStrictJson(text, { canonical = true, sensitive = true } = {}) {
+export function parseStrictJson(
+  text,
+  { canonical = true, sensitive = true, codec = 'forecast_json_v1' } = {}
+) {
+  if (!['forecast_json_v1', 'financial_json_v1'].includes(codec)) fail('未注册 JSON 编码');
   if (typeof text !== 'string') fail('分片须为 UTF-8 JSON 文本');
   let position = 0;
   const numberPattern = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
@@ -148,7 +166,7 @@ export function parseStrictJson(text, { canonical = true, sensitive = true } = {
     numberPattern.lastIndex = position;
     const token = numberPattern.exec(text)?.[0];
     if (!token || !Number.isFinite(Number(token))) fail('JSON 需要有限数值');
-    if (canonical && !canonicalNumber(token)) fail('JSON 数字不符合原 canonical 编码');
+    if (canonical && !canonicalNumber(token, codec)) fail('JSON 数字不符合原 canonical 编码');
     position += token.length;
   }
   value();

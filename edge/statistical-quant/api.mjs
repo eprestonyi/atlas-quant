@@ -393,8 +393,17 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
       keys(input, ['forecastArtifactId', 'execution', 'portfolio', 'costs'], '执行复用');
       const source = await ownedForecast(env, owner, String(input.forecastArtifactId ?? ''));
       const sourceMetadata = parse(source.metadata, {});
-      if (sourceMetadata.executionEligible === false || sourceMetadata.transportFormat === 'atlas.quant.financial_bundle' || await env.DB.prepare('SELECT 1 FROM quant_run_datasets WHERE job_id=? AND owner=?').bind(source.job_id, owner).first())
-        throw new ApiError('FINANCIAL_REPLAY_NOT_AVAILABLE', '财务数据集产物当前仅提供预测研究，尚未开放交易执行', 409);
+      if (
+        sourceMetadata.executionEligible === false ||
+        sourceMetadata.transportFormat === 'atlas.quant.financial_bundle' ||
+        await env.DB.prepare('SELECT 1 FROM quant_run_datasets WHERE job_id=? AND owner=?')
+          .bind(source.job_id, owner).first()
+      )
+        throw new ApiError(
+          'FINANCIAL_REPLAY_NOT_AVAILABLE',
+          '财务数据集产物当前仅提供预测研究，尚未开放交易执行',
+          409
+        );
       const bundleStage = await ownedForecastStage(env, owner, source.id);
       const artifact = bundleStage
         ? (await parsedStage(bundleStage)).metadata.forecast

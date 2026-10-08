@@ -190,10 +190,24 @@ recoverable. Routes are `POST /runner/financial-bundles/begin`, `POST
 
 Completion accepts only the small existing `{id,leaseToken,stageId,bundleId}`
 packet. The old `/runner/complete`, old begin/finalize/chunk routes and execution
-replay refuse this format. No large old completion body is decoded twice.
+replay refuse successful results of this format. A computation or input failure
+with only `{id,leaseToken,error}` still uses the old `/runner/complete`; it does
+not require a result stage. No large old completion body is decoded twice.
 
 The existing `quant_bundle_*` tables and owner report/page/archive URLs are
 reused with explicit stored-format dispatch; no migration 0009 is needed.
 Metadata advertises the new format, its exact `sourceEvidence`, and
 `executionEligible:false`. This codec alone does not activate worker routing or
 ready-dataset admission.
+
+The server callback returns the authorized parsed dataset manifest as well as
+`sourceEvidence`. Finalization streams the original typed snapshot provenance
+and row chunks into the dataset's exact `researchRows` payload recipe, then
+compares its SHA256 and byte length to that component. A self-consistent rewrite
+of all result hashes cannot replace an admitted source value or its numeric
+type. This adds one bounded pass over snapshot chunks, without assembling the
+entire dataset or claiming that the Worker recomputed financial formulas.
+
+The private report transport advertises `sourceEvidence` and
+`executionEligible:false`; a separate download of the source dataset is still
+required for complete offline evidence. See [the independent audit command](FINANCIAL_BUNDLE_AUDIT.md).

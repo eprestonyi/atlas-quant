@@ -3,7 +3,14 @@ import { NOW, sha } from '../runtime.mjs';
 import { diagnosticSummary, universeSummary } from '../statistical-quant/summaries.mjs';
 import { BUNDLE_PROFILE } from './profile.mjs';
 import { byteLength } from './json.mjs';
-import { leasedJob, loadStage, parsedStage, researchLink, terminalDiscard } from './storage.mjs';
+import {
+  leasedJob,
+  loadStage,
+  parsedStage,
+  researchLink,
+  terminalDiscard,
+  assertTransport
+} from './storage.mjs';
 
 function removePath(value, path) {
   const parts = path.slice(1).split('/');
@@ -37,18 +44,24 @@ export function reportSummary(parsed) {
 }
 
 /** Publish job, forecast, model and frozen-input references in one D1 transaction. */
-export async function completeBundle(env, input) {
+export async function completeBundle(
+  env,
+  input,
+  { expectedFormat = 'atlas.quant.bundle', authorize = null } = {}
+) {
   const job = await leasedJob(env, input);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
   const stage = await loadStage(env, input.stageId, job);
   if (stage.bundle_id !== input.bundleId)
     throw new ApiError('BUNDLE_CONFLICT', '完成内容身份不一致', 409);
+  const parsed = await parsedStage(stage);
+  assertTransport(parsed, expectedFormat);
   if (stage.status === 'committed' && job.status === 'completed')
     return { ok: true, status: 'completed', idempotent: true };
   if (stage.status !== 'verified' || job.status !== 'running')
     throw new ApiError('BUNDLE_NOT_VERIFIED', '完整验证后才能发布研究', 409);
-  const parsed = await parsedStage(stage),
-    link = await researchLink(env, job);
+  if (authorize) await authorize(env, job, parsed);
+  const link = await researchLink(env, job);
   const report = reportSummary(parsed),
     forecast = parsed.metadata.forecast,
     manifest = parsed.manifest;
@@ -76,7 +89,14 @@ export async function completeBundle(env, input) {
       universe: universeSummary(forecast.sourceStrategy.universe),
       model: forecast.sourceStrategy.model,
       synthetic: !!report.provenance.synthetic,
-      independentlyValidatedAlpha: false
+      independentlyValidatedAlpha: false,
+      ...(manifest.sourceEvidence
+        ? {
+            sourceEvidence: manifest.sourceEvidence,
+            transportFormat: manifest.format,
+            executionEligible: false
+          }
+        : {})
     };
     statements.push(
       env.DB.prepare(

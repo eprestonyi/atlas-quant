@@ -17,7 +17,7 @@ function atPath(value, path) {
   return value;
 }
 
-function skeleton(document, recipe, collections, artifactId) {
+function skeleton(document, recipe, collections, artifactId, codec) {
   const uses = new Set();
   let reference = false;
   const text = recipe.parts
@@ -52,7 +52,7 @@ function skeleton(document, recipe, collections, artifactId) {
     .join('');
   if (byteLength(text) > BUNDLE_PROFILE.manifestBytes)
     fail('文档骨架超过预算', 'BUNDLE_BUDGET', 413);
-  const root = parseStrictJson(text),
+  const root = parseStrictJson(text, { codec }),
     found = new Set();
   if (!object(root)) fail('文档根节点须为对象');
   function visit(value, path = '') {
@@ -93,6 +93,19 @@ function skeleton(document, recipe, collections, artifactId) {
 
 /** Raw manifest identity is intentionally independent of JSON serialization. */
 export async function validateManifest(manifestText, expectedId = null) {
+  return validateManifestLayout(manifestText, expectedId, LEGACY_PROTOCOL);
+}
+export const LEGACY_PROTOCOL = Object.freeze({
+  format: 'atlas.quant.bundle',
+  version: 1,
+  kinds: ['forecast', 'execution'],
+  extraKeys: [],
+  codecs: null,
+  snapshotVersion: 1
+});
+/** Mechanical layout verifier. Callers provide a server-registered protocol;
+ * request data cannot select or override these format rules. */
+export async function validateManifestLayout(manifestText, expectedId, protocol) {
   if (typeof manifestText !== 'string' || byteLength(manifestText) > BUNDLE_PROFILE.manifestBytes) {
     fail('manifest 超过 512 KiB', 'BUNDLE_BUDGET', 413);
   }
@@ -108,14 +121,15 @@ export async function validateManifest(manifestText, expectedId = null) {
       'dataFingerprint',
       'documents',
       'collections',
-      'totals'
+      'totals',
+      ...protocol.extraKeys
     ],
     'manifest'
   );
   if (
-    manifest.format !== 'atlas.quant.bundle' ||
-    manifest.version !== 1 ||
-    !['forecast', 'execution'].includes(manifest.kind)
+    manifest.format !== protocol.format ||
+    manifest.version !== protocol.version ||
+    !protocol.kinds.includes(manifest.kind)
   )
     fail('传输版本无效');
   for (const field of ['forecastArtifactId', 'predictionConfigHash', 'dataFingerprint']) {
@@ -188,7 +202,12 @@ export async function validateManifest(manifestText, expectedId = null) {
   const metadata = {};
   for (const name of documentNames) {
     const document = manifest.documents[name];
-    keys(document, ['parts', 'sha256', 'byteLength'], 'document');
+    keys(
+      document,
+      ['parts', 'sha256', 'byteLength', ...(protocol.codecs ? ['codec'] : [])],
+      'document'
+    );
+    if (protocol.codecs && document.codec !== protocol.codecs[name]) fail('文档编码不符合注册协议');
     if (
       !Array.isArray(document.parts) ||
       document.parts.length > 2048 ||
@@ -199,7 +218,13 @@ export async function validateManifest(manifestText, expectedId = null) {
       !HASH.test(document.sha256)
     )
       fail('文档指令或预算无效');
-    const parsed = skeleton(name, document, collections, manifest.forecastArtifactId);
+    const parsed = skeleton(
+      name,
+      document,
+      collections,
+      manifest.forecastArtifactId,
+      protocol.codecs?.[name] ?? 'forecast_json_v1'
+    );
     for (const collection of collections.values())
       if (collection.document === name && !parsed.uses.has(collection.id))
         fail('不可达集合不能进入 manifest', 'BUNDLE_LAYOUT');
@@ -260,7 +285,7 @@ export async function validateManifest(manifestText, expectedId = null) {
     fail('对照记录与计划不符');
   if (
     manifest.kind === 'forecast' &&
-    (metadata.snapshot.schemaVersion !== 1 ||
+    (metadata.snapshot.schemaVersion !== protocol.snapshotVersion ||
       metadata.snapshot.dataFingerprint !== manifest.dataFingerprint ||
       !object(metadata.snapshot.provenance) ||
       collections.get('snapshotRows').rowCount > 110000 ||
@@ -270,11 +295,11 @@ export async function validateManifest(manifestText, expectedId = null) {
   return { manifest, manifestText, bundleId, collections, metadata, rowCount };
 }
 
-export async function validateChunk(text, descriptor) {
+export async function validateChunk(text, descriptor, codec = 'forecast_json_v1') {
   if (byteLength(text) !== descriptor.byteLength || (await sha(text)) !== descriptor.sha256) {
     fail('分片实际字节或哈希不一致', 'BUNDLE_HASH');
   }
-  const rows = parseStrictJson(text);
+  const rows = parseStrictJson(text, { codec });
   if (
     !Array.isArray(rows) ||
     rows.length !== descriptor.count ||

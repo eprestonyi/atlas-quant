@@ -4,6 +4,7 @@ import { validateStoredStatisticalQuant } from '../statistical-quant/validation.
 import { BUNDLE_PROFILE, HASH } from './profile.mjs';
 import { byteLength } from './json.mjs';
 import { validateManifest, validateChunk } from './manifest.mjs';
+import { FINANCIAL_FORMAT, validateFinancialManifest } from '../financial-bundles/manifest.mjs';
 import { indexStatements, recordIndex } from './records.mjs';
 import {
   INDEXED_SNAPSHOT,
@@ -91,6 +92,9 @@ export async function loadStage(env, stageId, job = null) {
   return stage;
 }
 export async function parsedStage(stage) {
+  const format = parse(stage.manifest_text)?.format;
+  if (format === FINANCIAL_FORMAT)
+    return validateFinancialManifest(stage.manifest_text, stage.bundle_id);
   return validateManifest(stage.manifest_text, stage.bundle_id);
 }
 export async function sourceStage(env, job) {
@@ -104,7 +108,10 @@ export async function sourceStage(env, job) {
     .bind(job.owner, link.source_forecast_id)
     .first();
   if (!source) throw new ApiError('BUNDLE_SOURCE_UNAVAILABLE', '来源不是已提交的分片产物', 409);
-  return loadStage(env, source.stage_id);
+  const stage = await loadStage(env, source.stage_id);
+  if ((await parsedStage(stage)).manifest.format !== 'atlas.quant.bundle')
+    throw new ApiError('FINANCIAL_EXECUTION_DISABLED', '金融来源尚不支持独立执行', 409);
+  return stage;
 }
 export async function ownedStageForRun(env, owner, jobId) {
   const stage = await env.DB.prepare(
@@ -171,12 +178,20 @@ async function assertJobContent(env, job, link, parsed) {
     conflict('纯预测不能返回执行曲线或成交');
 }
 
-export async function beginBundle(env, input) {
+export function assertTransport(parsed, expectedFormat = 'atlas.quant.bundle') {
+  if (parsed.manifest.format !== expectedFormat)
+    throw new ApiError('BUNDLE_FORMAT', '此入口不接受该传输格式', 409);
+}
+export async function beginBundle(
+  env,
+  input,
+  { validate = validateManifest, authorize = null } = {}
+) {
   const requestedStrategy = requestedSnapshotStrategy(input);
   const job = await leasedJob(env, input),
     link = await researchLink(env, job);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
-  const parsed = await validateManifest(input.manifestText, input.bundleId);
+  const parsed = await validate(input.manifestText, input.bundleId);
   await assertJobContent(env, job, link, parsed);
   let stage = await env.DB.prepare('SELECT * FROM quant_bundle_stages WHERE job_id=?')
     .bind(job.id)
@@ -195,6 +210,7 @@ export async function beginBundle(env, input) {
       stage.owner !== job.owner)
   )
     conflict('同一任务的分片内容不可更换');
+  if (job.status === 'running' && authorize) await authorize(env, job, parsed);
   if (!stage) {
     if (job.status !== 'running') conflict('终态任务不能创建新分片');
     const id = random(),
@@ -291,7 +307,14 @@ export async function readChunk(env, stage, collection, descriptor, receipts = n
   return raw;
 }
 
-export async function uploadChunk(env, input, collectionId, ordinal, text) {
+export async function uploadChunk(
+  env,
+  input,
+  collectionId,
+  ordinal,
+  text,
+  { expectedFormat = 'atlas.quant.bundle', authorize = null } = {}
+) {
   const job = await leasedJob(env, input);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
   const stage = await loadStage(env, input.stageId, job);
@@ -301,7 +324,10 @@ export async function uploadChunk(env, input, collectionId, ordinal, text) {
     descriptor = collection?.chunks[ordinal];
   if (!descriptor || !Number.isInteger(ordinal) || ordinal < 0)
     throw new ApiError('BUNDLE_CHUNK', '分片位置未在 manifest 声明');
-  const rows = await validateChunk(text, descriptor);
+  assertTransport(parsed, expectedFormat);
+  if (job.status === 'running' && authorize) await authorize(env, job, parsed);
+  const codec = parsed.manifest.documents[collection.document].codec ?? 'forecast_json_v1';
+  const rows = await validateChunk(text, descriptor, codec);
   const sortedSnapshot =
     collectionId === 'snapshotRows' && snapshotValidation(stage).strategy === SORTED_SNAPSHOT;
   const snapshotReceipt = sortedSnapshot ? summarizeSnapshot(rows, descriptor) : null;
