@@ -19,6 +19,25 @@ import graph_dataset_audit as graph
 import financial_bundle_audit as old
 
 
+def asset_construction_fits(dates, targets, *, start=61, observation=1, refit=20):
+    """Asset definitions exist before holdout, even without a fitted predictor.
+
+    This explicit transport fixture follows the declared observation/refit clock;
+    it does not call the auditor's expected-domain helper or fit any model.
+    """
+    fits=[]
+    for position in range(start,len(dates),observation):
+        if fits and position-fits[-1][0]<refit:
+            continue
+        fits.append((position,{
+            'date':dates[position],
+            'informationCutoff':dates[position-1],
+            'targetIds':[target['id'] for target in targets],
+            'status':'valid',
+        }))
+    return [row for _,row in fits]
+
+
 @pytest.fixture(scope='module')
 def fixture(legacy_source,long_sources):
     sources=long_sources
@@ -63,7 +82,8 @@ def fixture(legacy_source,long_sources):
                 'informationCutoff':dates[t]+'_AFTER_CLOSE','horizonSessions':5,
                 'status':'invalid','invalidReason':'SYNTHETIC_NO_FIT'})
     forecast={'schemaVersion':1,'totalRows':len(rows),'truncated':False,'sourceStrategy':strategy,'rows':rows,
-        'targetDefinitions':targets,'modelFits':[],'hedgeFits':[],
+        'targetDefinitions':targets,'modelFits':[],
+        'hedgeFits':asset_construction_fits(dates,targets),
         'diagnostics':{**interval,'factorIncrement':{'baselineRows':deepcopy(rows),
             'baselineModelFits':[],'baselineValidation':deepcopy(interval)}},
         'dataFingerprint':fhash,'predictionConfigHash':phash}
@@ -148,6 +168,8 @@ def test_transport_pair_pin_and_legacy_rejection_without_model_fit(fixture,tmp_p
     assert report['sourceForecastDomainVerified'] is True and report['inputValidityRecomputed'] is False
     assert report['sourceCoverage']['expectedOriginDates']==41
     assert report['sourceCoverage']['expectedForecastRows']==len(fixture[1]['coverage']['observedSymbols'])*41
+    assert report['sourceCoverage']['expectedHedgeFits']==11
+    assert report['sourceCoverage']['fullHedgeTargetReferencesVerified'] is True
     with pytest.raises(ValueError):old.audit_financial_bundle(result)
     for kw in [{'expected_bundle_id':'0'*64},{'expected_dataset_root':'0'*64}]:
         with pytest.raises(ValueError):audit.audit_financial_graph_bundle(result,source_dataset=dataset,**kw)
@@ -240,6 +262,9 @@ def test_declared_stride_is_anchored_before_terminal_boundary(fixture,tmp_path,o
     strategy=docs['forecast']['sourceStrategy']
     strategy['research']['observationDays']=observation
     strategy['factors'][0]['expression']=expression
+    docs['forecast']['hedgeFits']=asset_construction_fits(
+        dates,docs['forecast']['targetDefinitions'],start=start,
+        observation=observation,refit=strategy['model']['refitDays'])
     docs['report']['strategy']=strategy;docs['report']['research']['observationDays']=observation
     prediction={k:v for k,v in strategy.items() if k not in {'execution','portfolio','costs','name','graph'}}
     docs['forecast']['predictionConfigHash']=audit.sha(audit.canonical(prediction))
@@ -265,3 +290,17 @@ def test_declared_stride_is_anchored_before_terminal_boundary(fixture,tmp_path,o
     assert audit.audit_financial_graph_bundle(result)['status']=='INCOMPLETE_SOURCE'
     with pytest.raises(ValueError,match='asset grid|Origin order'):
         audit.audit_financial_graph_bundle(result,source_dataset=dataset)
+
+
+@pytest.mark.parametrize('attack',['missing_prefit','missing_target','future_cutoff'])
+def test_rehashed_asset_construction_cannot_omit_source_refits(fixture,tmp_path,attack):
+    def mutate(docs):
+        fits=docs['forecast']['hedgeFits']
+        if attack=='missing_prefit':fits.pop(0)
+        elif attack=='missing_target':fits[0]['targetIds'].pop()
+        else:fits[0]['informationCutoff']=fits[0]['date']
+    result=build(fixture,tmp_path,mutate);dataset=source(fixture,tmp_path)
+    assert audit.audit_financial_graph_bundle(result)['status']=='INCOMPLETE_SOURCE'
+    with pytest.raises(ValueError) as caught:
+        audit.audit_financial_graph_bundle(result,source_dataset=dataset)
+    assert caught.value.code=='RESULT_HEDGE_REFERENCES'
