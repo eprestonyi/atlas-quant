@@ -5,6 +5,17 @@ import { BUNDLE_PROFILE, HASH } from './profile.mjs';
 import { byteLength } from './json.mjs';
 import { validateManifest, validateChunk } from './manifest.mjs';
 import { indexStatements, recordIndex } from './records.mjs';
+import {
+  INDEXED_SNAPSHOT,
+  SORTED_SNAPSHOT,
+  requestedSnapshotStrategy,
+  snapshotValidation,
+  stageMetadata,
+  summarizeSnapshot,
+  snapshotReceiptStatement,
+  receiptPath,
+  assertSnapshotReceipt
+} from './snapshot-index.mjs';
 
 export const terminalDiscard = (job) => ({
   ok: true,
@@ -161,6 +172,7 @@ async function assertJobContent(env, job, link, parsed) {
 }
 
 export async function beginBundle(env, input) {
+  const requestedStrategy = requestedSnapshotStrategy(input);
   const job = await leasedJob(env, input),
     link = await researchLink(env, job);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
@@ -169,6 +181,12 @@ export async function beginBundle(env, input) {
   let stage = await env.DB.prepare('SELECT * FROM quant_bundle_stages WHERE job_id=?')
     .bind(job.id)
     .first();
+  if (
+    stage &&
+    requestedStrategy !== null &&
+    requestedStrategy !== snapshotValidation(stage).strategy
+  )
+    conflict('同一上传阶段不能更改冻结行情索引策略');
   if (
     stage &&
     (stage.bundle_id !== parsed.bundleId ||
@@ -182,7 +200,10 @@ export async function beginBundle(env, input) {
     const id = random(),
       now = NOW(),
       key = `bundle/${job.owner}/${id}/manifest.json`;
-    const metadata = JSON.stringify(parsed.metadata);
+    const strategy = requestedStrategy ?? INDEXED_SNAPSHOT;
+    if (strategy === SORTED_SNAPSHOT && env.BUNDLE_SNAPSHOT_SORTED_V1 !== 'true')
+      throw new ApiError('BUNDLE_POLICY_UNAVAILABLE', '服务端尚未启用有序行情索引策略', 409);
+    const metadata = stageMetadata(parsed, strategy);
     if (byteLength(metadata) > BUNDLE_PROFILE.manifestBytes)
       throw new ApiError('BUNDLE_BUDGET', '元数据骨架超过预算', 413);
     await env.DB.prepare(
@@ -213,7 +234,8 @@ export async function beginBundle(env, input) {
     if (
       stage.bundle_id !== parsed.bundleId ||
       stage.manifest_text !== parsed.manifestText ||
-      stage.lease_token !== job.lease_token
+      stage.lease_token !== job.lease_token ||
+      snapshotValidation(stage).strategy !== strategy
     )
       conflict('并发开始请求内容不一致');
   }
@@ -238,6 +260,7 @@ export async function beginBundle(env, input) {
     stageId: stage.id,
     bundleId: stage.bundle_id,
     status: stage.status,
+    snapshotIndexStrategy: snapshotValidation(stage).strategy,
     missing
   };
 }
@@ -279,6 +302,16 @@ export async function uploadChunk(env, input, collectionId, ordinal, text) {
   if (!descriptor || !Number.isInteger(ordinal) || ordinal < 0)
     throw new ApiError('BUNDLE_CHUNK', '分片位置未在 manifest 声明');
   const rows = await validateChunk(text, descriptor);
+  const sortedSnapshot =
+    collectionId === 'snapshotRows' && snapshotValidation(stage).strategy === SORTED_SNAPSHOT;
+  const snapshotReceipt = sortedSnapshot ? summarizeSnapshot(rows, descriptor) : null;
+  const verifyPriorSnapshot = async () => {
+    if (!snapshotReceipt) return;
+    const fresh = await loadStage(env, stage.id, job);
+    const receipt = snapshotValidation(fresh).receipts[String(ordinal)];
+    assertSnapshotReceipt(receipt, descriptor);
+    if (!same(receipt, snapshotReceipt)) conflict('行情边界与已保存分片不一致');
+  };
   const prior = await env.DB.prepare(
     'SELECT sha256 FROM quant_bundle_chunks WHERE stage_id=? AND collection=? AND ordinal=?'
   )
@@ -295,15 +328,17 @@ export async function uploadChunk(env, input, collectionId, ordinal, text) {
   if (prior) {
     if (prior.sha256 !== descriptor.sha256) conflict('已保存分片与 manifest 不一致');
     await readChunk(env, stage, collectionId, descriptor);
+    await verifyPriorSnapshot();
     return reply(true);
   }
   if (stage.status !== 'staging' || job.status !== 'running')
     conflict('已验证或终态传输不能新增分片');
   const indexes = [];
-  for (let index = 0; index < rows.length; index++)
-    indexes.push(
-      await recordIndex(collectionId, rows[index], descriptor.start + index, ordinal, index)
-    );
+  if (!sortedSnapshot)
+    for (let index = 0; index < rows.length; index++)
+      indexes.push(
+        await recordIndex(collectionId, rows[index], descriptor.start + index, ordinal, index)
+      );
   const key = `bundle/${job.owner}/${stage.id}/${collectionId}/${ordinal}-${descriptor.sha256}.json`;
   await env.ARTIFACTS.put(key, text, {
     sha256: descriptor.sha256,
@@ -311,11 +346,17 @@ export async function uploadChunk(env, input, collectionId, ordinal, text) {
   });
   try {
     const statements = indexStatements(env, stage, collectionId, indexes);
+    if (snapshotReceipt)
+      statements.push(snapshotReceiptStatement(env, stage, ordinal, snapshotReceipt, NOW()));
+    const receiptGuard = snapshotReceipt ? ' AND json_extract(s.metadata,?)=?' : '';
+    const guardValues = snapshotReceipt
+      ? [receiptPath(ordinal) + '.sha256', descriptor.sha256]
+      : [];
     statements.push(
       env.DB.prepare(
         `INSERT INTO quant_bundle_chunks(stage_id,collection,ordinal,start_row,row_count,sha256,byte_length,object_key,created_at)
       SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM quant_bundle_stages s JOIN jobs j ON j.id=s.job_id
-      WHERE s.id=? AND s.status='staging' AND j.status='running' AND j.lease_token=s.lease_token AND j.lease_until>?)`
+      WHERE s.id=? AND s.status='staging' AND j.status='running' AND j.lease_token=s.lease_token AND j.lease_until>?${receiptGuard})`
       ).bind(
         stage.id,
         collectionId,
@@ -327,7 +368,8 @@ export async function uploadChunk(env, input, collectionId, ordinal, text) {
         key,
         NOW(),
         stage.id,
-        NOW()
+        NOW(),
+        ...guardValues
       )
     );
     await env.DB.batch(statements);
@@ -337,7 +379,10 @@ export async function uploadChunk(env, input, collectionId, ordinal, text) {
     )
       .bind(stage.id, collectionId, ordinal)
       .first();
-    if (winner?.sha256 === descriptor.sha256) return reply(true);
+    if (winner?.sha256 === descriptor.sha256) {
+      await verifyPriorSnapshot();
+      return reply(true);
+    }
     throw error;
   }
   const receipt = await env.DB.prepare(

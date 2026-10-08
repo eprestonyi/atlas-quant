@@ -1,6 +1,6 @@
 # Phase B：完整证券池预测与因子研究容量方案
 
-状态：**待审设计，尚未实现，也不是当前服务能力**。本文件基于 Phase A worktree 的实际代码与合成资源证据，提出下一轮可实施的数值／数据／内存方案；不修改现有上限，不承诺供应商权限、运行时间或盈利。Phase A 仍须独立完成 Worker、runner、审计和 GUI 的链路验收。
+状态：**完整扩容闭环的设计；尚非当前服务能力**。Phase A 已完成独立链路验收；Phase B 的本地数值首切片在独立 worktree 实施中，精确接口与已实现边界见 [CAPACITY_CORE.md](CAPACITY_CORE.md)。本文件保留更广的目标设计，不代表这些阶段均已实现；公开上限未提高，不承诺供应商权限、运行时间或盈利。
 
 Phase A 的最终传输合同是 [BUNDLE_TRANSPORT_V1.md](BUNDLE_TRANSPORT_V1.md)：保留 forecast artifact v1 的逻辑身份，新增 `atlas.quant.bundle/1`；不是把 artifactId 改成 manifest hash。早期 [SCALING_DESIGN.md](SCALING_DESIGN.md) 中“Phase A 直接引入 artifact v2／Parquet”的建议已被这个合同替代。
 
