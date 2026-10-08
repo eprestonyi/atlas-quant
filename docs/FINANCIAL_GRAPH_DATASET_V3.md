@@ -110,3 +110,24 @@ The separate local profile is `financial_fundamental_graph_auto_50_v1`. It accep
 Seventeen snapshot tests and eleven bundle tests cover explicit profile boundaries, independently authorized source restoration, source-only/forged-admission refusal, altered values/provenance/commitments, complete logical-size checks, codec/layout tampering, old-parser rejection and new archive/directory boundaries. A genuine small artificial study was run on actual old-v2 and new-v3 inputs: all frozen forecast bytes were identical, with exact input fingerprints and provenance. These are engineering/numerical parity checks, not a validated trading edge.
 
 The small retained paired audit fixture is `private/graph-bundle-small-audit-20261008-01/test_retained_two_archive_fixt0`. It contains `financial.tar`, `dataset.tar`, both exported directories and separate original caller registry pins. An independent stdlib paired audit and the newly identified full 50-security F job remain required before claiming that end-to-end capacity is accepted. Production and hosted flags remain absent/disabled.
+
+
+## One full-scope local F run and retained audit boundaries
+
+After the independent small paired audit passed, new job `094ca26b-91cf-4d6a-bb95-befd96440ae8` ran once against the unchanged 50-security source root `cca665750bd7ba9d5eacc7ac7b0e54418397c35bf7f22fbb1981349d3cad3172`. Its predeclaration, progress events, exact result/source archives and every failure remain in `private/financial-graph-auto-50-20261008-01`. The caller's shared private compute lock excluded concurrent heavy jobs; a parent actively enforced 900 total seconds, 300 seconds per fit, 3 GiB RSS and 500 MiB free disk. No provider was contacted.
+
+The child freshly recomposed all sources and verified the complete snapshot before F. It then ran the same nested/sequential F code with all eight declared candidates and a separately reselected factor-free baseline. All 2,050 main predictions and 2,050 baseline rows remain: 1,750 mature and 300 unavailable-future tails. Nineteen factor/derived inputs produced all 171 empirical joint tables, full factor statistics and three final callable F artifacts. The 105 actual fit events include one early candidate failure: primary outer-fold `elastic_net:0` did not converge, and its invalid trial/reason was retained rather than deleting or rerunning it. Final selection retained all eight candidates. `no_change` won; status is `NO_VALIDATED_FORECAST_EDGE`, and there are no trades.
+
+| Measurement | Result |
+| --- | ---: |
+| Child / supervisor elapsed | 49.30 / 50.22 seconds |
+| Child peak RSS | 574,210,048 bytes |
+| Physical thin snapshot | 5,183,350 bytes |
+| Full expanded snapshot including all metadata | 24,925,386 bytes |
+| Financial / source USTAR | 8,948,736 / 28,959,232 bytes |
+
+Bundle ID is `5fdc2c64d229a96a28c0c5cfa470b5fb2083193bf5bcf631585d559463feff73`; forecast ID is `1c8b5993b206828ba9933591b48d648476c5304836cc8360f2addeac2c85f02a`. The independent stdlib paired audit checked 710,319 result conditions and 3,847,451 source conditions, with exact original external registry/source pins and zero numerical-identity error. It did not recompute F, statistics or source formulas. A first audit invocation using the system Python 3.9 failed because the existing auditor uses `zip(strict=True)`; that failure is retained. The same bytes passed unchanged under modern Python with `-S` and no engine imports, without changing the auditor or oracle.
+
+A separate supervised process then extracted the saved source TAR and freshly recomposed every source formula and the research input fingerprint. The regenerated snapshot matched exactly: 27.90 seconds, 643,645,440-byte peak RSS, no new F/provider run. Its receipt is under `fresh-recomposition/`. An after-run code attestation and the actually executed new runtime/script are preserved under `executed-code/`; this is explicitly not a prerun signature, and later source changes never represent a new fit of this job.
+
+**Hosted gate remains blocked.** A separate cross-format adversarial review found that old coverage audits can accept coordinated removal of a security's main predictions, baseline and declared plan while the full source snapshot remains. The successful checks above prove the stated exact-byte/source/numerical identities, not independent completeness of the forecast domain. New graph result verification and the independent paired auditor must derive expected terminal origins from the frozen source scope/calendar and declared research clock, then reject any missing security/date regardless of a self-consistent edited plan. The original 50-security outputs must stay unchanged; this gap is fixed and tested against them and adversarial derived copies without fitting again.

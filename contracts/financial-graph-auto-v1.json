@@ -1,5 +1,5 @@
 {
-  "status": "LOCAL_ONLY_FULL_SCOPE_F_ACCEPTANCE_PENDING",
+  "status": "LOCAL_F_COMPLETED_HOSTED_BLOCKED_SOURCE_COVERAGE_AUDIT",
   "admissionProfile": "financial_fundamental_graph_auto_50_v1",
   "source": {
     "format": "atlas.quant.research_dataset",
@@ -47,5 +47,76 @@
   "hosted": false,
   "production": false,
   "legacyClaimsAccepted": false,
-  "noBiasOrOverfitGuarantee": false
+  "noBiasOrOverfitGuarantee": false,
+  "localFullScopeEvidence": {
+    "jobId": "094ca26b-91cf-4d6a-bb95-befd96440ae8",
+    "bundleId": "5fdc2c64d229a96a28c0c5cfa470b5fb2083193bf5bcf631585d559463feff73",
+    "datasetRoot": "cca665750bd7ba9d5eacc7ac7b0e54418397c35bf7f22fbb1981349d3cad3172",
+    "forecastArtifactId": "1c8b5993b206828ba9933591b48d648476c5304836cc8360f2addeac2c85f02a",
+    "symbols": 50,
+    "factorCount": 16,
+    "forecastRows": 2050,
+    "baselineRows": 2050,
+    "modelFits": 3,
+    "fitCount": 105,
+    "factorFeatures": 19,
+    "jointDistributions": 171,
+    "functionArtifacts": 3,
+    "selectedModel": {
+      "estimator": "no_change",
+      "id": "no_change:0",
+      "params": {}
+    },
+    "evidenceStatus": "NO_VALIDATED_FORECAST_EDGE",
+    "wallSeconds": 49.29672029198264,
+    "childPeakRssBytes": 574210048,
+    "archives": {
+      "dataset.tar": {
+        "byteLength": 28959232,
+        "sha256": "7af94be900b8e20db737802418a8902ad84df5e5ca5c395f09b6f7ce0e77dc09"
+      },
+      "financial.tar": {
+        "byteLength": 8948736,
+        "sha256": "11779d42283cc393e1666d12c55d2fe5f5e56e68f8449649c4da325cabbcdc74"
+      }
+    },
+    "providerCalls": 0,
+    "trades": 0,
+    "synthetic": true,
+    "terminalMatureRows": 1750,
+    "terminalTailRows": 300,
+    "candidateNonconvergenceRetained": {
+      "primaryOuterFold": "elastic_net:0",
+      "reason": "MODEL_DID_NOT_CONVERGE"
+    },
+    "exactSnapshot": {
+      "logicalExpandedSnapshot": {
+        "byteLength": 24925386,
+        "sha256": "97509cd81f3dfc9c542ce90c395794e1683abd59e128ea6763550818420b16d3"
+      },
+      "modelAdmissionRegistered": false,
+      "physicalSnapshot": {
+        "byteLength": 5183350,
+        "sha256": "9a9ddf7010f5331f7f18154e3accb37d909d93e25f27c6059edea131bb628da3"
+      },
+      "sourceAuthorityVerified": false
+    },
+    "independentPairedAudit": {
+      "resultChecks": 710319,
+      "sourceChecks": 3847451,
+      "engineImports": false,
+      "maxAbsoluteError": 0,
+      "externalRegistryAndSourceBytesMatched": true,
+      "knownCoverageGap": "joint removal of forecast/baseline/plan not yet independently rejected"
+    },
+    "freshProcessRecomposition": {
+      "modelsFitted": 0,
+      "providerCalls": 0,
+      "snapshotExact": true,
+      "wallSeconds": 27.900111625000136,
+      "childPeakRssBytes": 643645440
+    },
+    "laterRevisionsAreNotNewFits": true
+  },
+  "hostedBlocker": "SOURCE_DERIVED_FORECAST_DOMAIN_CHECK_REQUIRED: mutable forecast and plan cannot independently prove complete frozen-universe coverage"
 }
