@@ -1,0 +1,729 @@
+{
+  "fields": [
+    {
+      "alias": "fd_income_revenue",
+      "canonical_unit": "CNY",
+      "endpoint": "income",
+      "id": "income.revenue",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "flow",
+      "positive_outflow": false,
+      "provider_field": "revenue"
+    },
+    {
+      "alias": "fd_income_operate_profit",
+      "canonical_unit": "CNY",
+      "endpoint": "income",
+      "id": "income.operate_profit",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "flow",
+      "positive_outflow": false,
+      "provider_field": "operate_profit"
+    },
+    {
+      "alias": "fd_income_n_income",
+      "canonical_unit": "CNY",
+      "endpoint": "income",
+      "id": "income.n_income",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "flow",
+      "positive_outflow": false,
+      "provider_field": "n_income"
+    },
+    {
+      "alias": "fd_income_n_income_attr_p",
+      "canonical_unit": "CNY",
+      "endpoint": "income",
+      "id": "income.n_income_attr_p",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "flow",
+      "positive_outflow": false,
+      "provider_field": "n_income_attr_p"
+    },
+    {
+      "alias": "fd_balance_total_assets",
+      "canonical_unit": "CNY",
+      "endpoint": "balancesheet",
+      "id": "balancesheet.total_assets",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "point",
+      "positive_outflow": false,
+      "provider_field": "total_assets"
+    },
+    {
+      "alias": "fd_balance_total_liab",
+      "canonical_unit": "CNY",
+      "endpoint": "balancesheet",
+      "id": "balancesheet.total_liab",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "point",
+      "positive_outflow": false,
+      "provider_field": "total_liab"
+    },
+    {
+      "alias": "fd_balance_total_cur_assets",
+      "canonical_unit": "CNY",
+      "endpoint": "balancesheet",
+      "id": "balancesheet.total_cur_assets",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "point",
+      "positive_outflow": false,
+      "provider_field": "total_cur_assets"
+    },
+    {
+      "alias": "fd_balance_total_cur_liab",
+      "canonical_unit": "CNY",
+      "endpoint": "balancesheet",
+      "id": "balancesheet.total_cur_liab",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "point",
+      "positive_outflow": false,
+      "provider_field": "total_cur_liab"
+    },
+    {
+      "alias": "fd_balance_money_cap",
+      "canonical_unit": "CNY",
+      "endpoint": "balancesheet",
+      "id": "balancesheet.money_cap",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "point",
+      "positive_outflow": false,
+      "provider_field": "money_cap"
+    },
+    {
+      "alias": "fd_balance_accounts_receiv",
+      "canonical_unit": "CNY",
+      "endpoint": "balancesheet",
+      "id": "balancesheet.accounts_receiv",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "point",
+      "positive_outflow": false,
+      "provider_field": "accounts_receiv"
+    },
+    {
+      "alias": "fd_balance_goodwill",
+      "canonical_unit": "CNY",
+      "endpoint": "balancesheet",
+      "id": "balancesheet.goodwill",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "point",
+      "positive_outflow": false,
+      "provider_field": "goodwill"
+    },
+    {
+      "alias": "fd_balance_st_borr",
+      "canonical_unit": "CNY",
+      "endpoint": "balancesheet",
+      "id": "balancesheet.st_borr",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "point",
+      "positive_outflow": false,
+      "provider_field": "st_borr"
+    },
+    {
+      "alias": "fd_balance_lt_borr",
+      "canonical_unit": "CNY",
+      "endpoint": "balancesheet",
+      "id": "balancesheet.lt_borr",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "point",
+      "positive_outflow": false,
+      "provider_field": "lt_borr"
+    },
+    {
+      "alias": "fd_cashflow_operating",
+      "canonical_unit": "CNY",
+      "endpoint": "cashflow",
+      "id": "cashflow.n_cashflow_act",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "flow",
+      "positive_outflow": false,
+      "provider_field": "n_cashflow_act"
+    },
+    {
+      "alias": "fd_cashflow_capex_cash",
+      "canonical_unit": "CNY",
+      "endpoint": "cashflow",
+      "id": "cashflow.c_pay_acq_const_fiolta",
+      "mapping_version": "native_statement_fields_v1",
+      "period_kind": "flow",
+      "positive_outflow": true,
+      "provider_field": "c_pay_acq_const_fiolta"
+    }
+  ],
+  "formulaVersion": "financial_states_v1",
+  "items": [
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "income.revenue",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "quarter",
+          "income.revenue",
+          4
+        ],
+        "id": "model_fin_revenue_quarter_yoy",
+        "name": "收入季度同比",
+        "numerator": [
+          [
+            "quarter",
+            "income.revenue",
+            0
+          ]
+        ],
+        "subtract_one": true
+      },
+      "expression": "model_fin_revenue_quarter_yoy",
+      "id": "model_fin_revenue_quarter_yoy",
+      "name": "收入季度同比",
+      "requiredFields": [
+        "income.revenue"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "income.revenue",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "ttm",
+          "income.revenue",
+          4
+        ],
+        "id": "model_fin_revenue_ttm_yoy",
+        "name": "TTM收入同比",
+        "numerator": [
+          [
+            "ttm",
+            "income.revenue",
+            0
+          ]
+        ],
+        "subtract_one": true
+      },
+      "expression": "model_fin_revenue_ttm_yoy",
+      "id": "model_fin_revenue_ttm_yoy",
+      "name": "TTM收入同比",
+      "requiredFields": [
+        "income.revenue"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "income.revenue",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "ttm",
+          "income.revenue",
+          0
+        ],
+        "id": "model_fin_operating_margin",
+        "name": "经营利润率",
+        "numerator": [
+          [
+            "ttm",
+            "income.operate_profit",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_operating_margin",
+      "id": "model_fin_operating_margin",
+      "name": "经营利润率",
+      "requiredFields": [
+        "income.operate_profit",
+        "income.revenue"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "income.revenue",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "ttm",
+          "income.revenue",
+          0
+        ],
+        "id": "model_fin_parent_net_margin",
+        "name": "归母净利率",
+        "numerator": [
+          [
+            "ttm",
+            "income.n_income_attr_p",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_parent_net_margin",
+      "id": "model_fin_parent_net_margin",
+      "name": "归母净利率",
+      "requiredFields": [
+        "income.n_income_attr_p",
+        "income.revenue"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "income.revenue",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "ttm",
+          "income.revenue",
+          0
+        ],
+        "id": "model_fin_cash_revenue_ratio",
+        "name": "经营现金收入比",
+        "numerator": [
+          [
+            "ttm",
+            "cashflow.n_cashflow_act",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_cash_revenue_ratio",
+      "id": "model_fin_cash_revenue_ratio",
+      "name": "经营现金收入比",
+      "requiredFields": [
+        "cashflow.n_cashflow_act",
+        "income.revenue"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "income.n_income",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "average_assets",
+          "balancesheet.total_assets",
+          0
+        ],
+        "id": "model_fin_profit_cash_asset_gap",
+        "name": "现金利润差",
+        "numerator": [
+          [
+            "ttm",
+            "income.n_income",
+            0
+          ],
+          [
+            "subtract_ttm",
+            "cashflow.n_cashflow_act",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_profit_cash_asset_gap",
+      "id": "model_fin_profit_cash_asset_gap",
+      "name": "现金利润差",
+      "requiredFields": [
+        "balancesheet.total_assets",
+        "cashflow.n_cashflow_act",
+        "income.n_income"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "cashflow.n_cashflow_act",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "average_assets",
+          "balancesheet.total_assets",
+          0
+        ],
+        "id": "model_fin_cash_assets_ratio",
+        "name": "现金流资产比",
+        "numerator": [
+          [
+            "ttm",
+            "cashflow.n_cashflow_act",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_cash_assets_ratio",
+      "id": "model_fin_cash_assets_ratio",
+      "name": "现金流资产比",
+      "requiredFields": [
+        "balancesheet.total_assets",
+        "cashflow.n_cashflow_act"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "income.revenue",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "ttm",
+          "income.revenue",
+          0
+        ],
+        "id": "model_fin_capex_revenue_ratio",
+        "name": "购建现金支出强度",
+        "numerator": [
+          [
+            "ttm",
+            "cashflow.c_pay_acq_const_fiolta",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_capex_revenue_ratio",
+      "id": "model_fin_capex_revenue_ratio",
+      "name": "购建现金支出强度",
+      "requiredFields": [
+        "cashflow.c_pay_acq_const_fiolta",
+        "income.revenue"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "cashflow.n_cashflow_act",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "average_assets",
+          "balancesheet.total_assets",
+          0
+        ],
+        "id": "model_fin_cash_less_capex_assets",
+        "name": "经营现金流减购建支出与资产比",
+        "numerator": [
+          [
+            "ttm",
+            "cashflow.n_cashflow_act",
+            0
+          ],
+          [
+            "subtract_ttm",
+            "cashflow.c_pay_acq_const_fiolta",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_cash_less_capex_assets",
+      "id": "model_fin_cash_less_capex_assets",
+      "name": "经营现金流减购建支出与资产比",
+      "requiredFields": [
+        "balancesheet.total_assets",
+        "cashflow.c_pay_acq_const_fiolta",
+        "cashflow.n_cashflow_act"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "balancesheet.total_assets",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "point",
+          "balancesheet.total_assets",
+          4
+        ],
+        "id": "model_fin_assets_yoy",
+        "name": "资产同比",
+        "numerator": [
+          [
+            "point",
+            "balancesheet.total_assets",
+            0
+          ]
+        ],
+        "subtract_one": true
+      },
+      "expression": "model_fin_assets_yoy",
+      "id": "model_fin_assets_yoy",
+      "name": "资产同比",
+      "requiredFields": [
+        "balancesheet.total_assets"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "balancesheet.total_assets",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "point",
+          "balancesheet.total_assets",
+          0
+        ],
+        "id": "model_fin_cash_asset_share",
+        "name": "现金资产占比",
+        "numerator": [
+          [
+            "point",
+            "balancesheet.money_cap",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_cash_asset_share",
+      "id": "model_fin_cash_asset_share",
+      "name": "现金资产占比",
+      "requiredFields": [
+        "balancesheet.money_cap",
+        "balancesheet.total_assets"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "balancesheet.total_assets",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "point",
+          "balancesheet.total_cur_liab",
+          0
+        ],
+        "id": "model_fin_current_coverage",
+        "name": "流动性覆盖",
+        "numerator": [
+          [
+            "point",
+            "balancesheet.total_cur_assets",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_current_coverage",
+      "id": "model_fin_current_coverage",
+      "name": "流动性覆盖",
+      "requiredFields": [
+        "balancesheet.total_assets",
+        "balancesheet.total_cur_assets",
+        "balancesheet.total_cur_liab"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "balancesheet.total_assets",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "point",
+          "balancesheet.total_assets",
+          0
+        ],
+        "id": "model_fin_liability_asset_share",
+        "name": "账面负债占比",
+        "numerator": [
+          [
+            "point",
+            "balancesheet.total_liab",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_liability_asset_share",
+      "id": "model_fin_liability_asset_share",
+      "name": "账面负债占比",
+      "requiredFields": [
+        "balancesheet.total_assets",
+        "balancesheet.total_liab"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "balancesheet.total_assets",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "point",
+          "balancesheet.total_assets",
+          0
+        ],
+        "id": "model_fin_borrowings_asset_share",
+        "name": "短长借款与资产比",
+        "numerator": [
+          [
+            "point",
+            "balancesheet.st_borr",
+            0
+          ],
+          [
+            "point",
+            "balancesheet.lt_borr",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_borrowings_asset_share",
+      "id": "model_fin_borrowings_asset_share",
+      "name": "短长借款与资产比",
+      "requiredFields": [
+        "balancesheet.lt_borr",
+        "balancesheet.st_borr",
+        "balancesheet.total_assets"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "balancesheet.total_assets",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "point",
+          "balancesheet.total_assets",
+          0
+        ],
+        "id": "model_fin_receivable_asset_share",
+        "name": "应收账款资产占比",
+        "numerator": [
+          [
+            "point",
+            "balancesheet.accounts_receiv",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_receivable_asset_share",
+      "id": "model_fin_receivable_asset_share",
+      "name": "应收账款资产占比",
+      "requiredFields": [
+        "balancesheet.accounts_receiv",
+        "balancesheet.total_assets"
+      ]
+    },
+    {
+      "availability": {
+        "status": "definition_only"
+      },
+      "definition": {
+        "anchor_field": "balancesheet.total_assets",
+        "applicable_company_types": [
+          "1"
+        ],
+        "denominator": [
+          "point",
+          "balancesheet.total_assets",
+          0
+        ],
+        "id": "model_fin_goodwill_asset_share",
+        "name": "商誉资产占比",
+        "numerator": [
+          [
+            "point",
+            "balancesheet.goodwill",
+            0
+          ]
+        ],
+        "subtract_one": false
+      },
+      "expression": "model_fin_goodwill_asset_share",
+      "id": "model_fin_goodwill_asset_share",
+      "name": "商誉资产占比",
+      "requiredFields": [
+        "balancesheet.goodwill",
+        "balancesheet.total_assets"
+      ]
+    }
+  ],
+  "policyVersion": "statement_asof_v1",
+  "supportedSelection": {
+    "flowBasis": [
+      "quarter",
+      "ytd"
+    ],
+    "scope": [
+      "consolidated",
+      "parent"
+    ]
+  },
+  "unitOptions": [
+    {
+      "currency": "CNY",
+      "nativeUnit": "CNY",
+      "scale": "1"
+    },
+    {
+      "currency": "CNY",
+      "nativeUnit": "CNY_1000",
+      "scale": "1000"
+    },
+    {
+      "currency": "CNY",
+      "nativeUnit": "CNY_10000",
+      "scale": "10000"
+    }
+  ]
+}
