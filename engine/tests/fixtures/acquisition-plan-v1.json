@@ -1,0 +1,274 @@
+{
+  "input": {
+    "requestId": "00000000-0000-0000-0000-000000000001",
+    "profile": "annual_statements_2_v1",
+    "name": "官方契约测试 SYNTHETIC",
+    "symbols": [
+      "600002.SH",
+      "600001.SH"
+    ],
+    "period": "20241231",
+    "start": "20250303",
+    "end": "20250305",
+    "announcementStart": "20250303",
+    "selectedStateIds": [
+      "model_fin_cash_asset_share"
+    ]
+  },
+  "scope": "test-fixture-entitlement-v1",
+  "today": "20261008",
+  "plan": {
+    "version": 1,
+    "profile": "annual_statements_2_v1",
+    "name": "官方契约测试 SYNTHETIC",
+    "selection": {
+      "symbols": [
+        "600001.SH",
+        "600002.SH"
+      ],
+      "period": "20241231",
+      "start": "20250303",
+      "end": "20250305",
+      "announcementStart": "20250303",
+      "selectedStateIds": [
+        "model_fin_cash_asset_share"
+      ],
+      "scope": "consolidated",
+      "flowBasis": "ytd",
+      "exchange": "SSE"
+    },
+    "requests": [
+      {
+        "requestKey": "2c942eb7f7090e1566e907875153333c91058a67d34f7159524e047db9fce796",
+        "requestVersion": "financial_provider_request/v1",
+        "profileVersion": "annual_statements_2_v1@1",
+        "provider": "TUSHARE_PRO",
+        "authorizationScope": "test-fixture-entitlement-v1",
+        "normalizerVersion": "financial_annual_normalizer/v1",
+        "endpoint": "trade_cal",
+        "params": {
+          "exchange": "SSE",
+          "start_date": "20250303",
+          "end_date": "20250305"
+        },
+        "fields": [
+          "exchange",
+          "cal_date",
+          "is_open",
+          "pretrade_date"
+        ]
+      },
+      {
+        "requestKey": "d428ee55b3554fc5352805307b9c5ceb59a5f2e0a50c0a3045ccdc341edea7fd",
+        "requestVersion": "financial_provider_request/v1",
+        "profileVersion": "annual_statements_2_v1@1",
+        "provider": "TUSHARE_PRO",
+        "authorizationScope": "test-fixture-entitlement-v1",
+        "normalizerVersion": "financial_annual_normalizer/v1",
+        "endpoint": "income",
+        "params": {
+          "ts_code": "600001.SH",
+          "period": "20241231",
+          "report_type": "1",
+          "comp_type": "1"
+        },
+        "fields": [
+          "ts_code",
+          "ann_date",
+          "f_ann_date",
+          "end_date",
+          "report_type",
+          "comp_type",
+          "update_flag",
+          "total_revenue",
+          "revenue",
+          "operate_profit",
+          "total_profit",
+          "n_income",
+          "n_income_attr_p",
+          "basic_eps",
+          "diluted_eps",
+          "ebit",
+          "ebitda"
+        ]
+      },
+      {
+        "requestKey": "0fb5841b836c508809d44faf91f2781b3b94cc96a49efa4587fd5914023c232d",
+        "requestVersion": "financial_provider_request/v1",
+        "profileVersion": "annual_statements_2_v1@1",
+        "provider": "TUSHARE_PRO",
+        "authorizationScope": "test-fixture-entitlement-v1",
+        "normalizerVersion": "financial_annual_normalizer/v1",
+        "endpoint": "balancesheet",
+        "params": {
+          "ts_code": "600001.SH",
+          "period": "20241231",
+          "report_type": "1",
+          "comp_type": "1"
+        },
+        "fields": [
+          "ts_code",
+          "ann_date",
+          "f_ann_date",
+          "end_date",
+          "report_type",
+          "comp_type",
+          "update_flag",
+          "total_assets",
+          "total_liab",
+          "total_hldr_eqy_exc_min_int",
+          "total_cur_assets",
+          "total_cur_liab",
+          "money_cap",
+          "accounts_receiv",
+          "inventories",
+          "goodwill",
+          "st_borr",
+          "lt_borr"
+        ]
+      },
+      {
+        "requestKey": "bea7d6506084337f1507ce83b78853bc922118ea92a5d29b6092a4edd64e9e44",
+        "requestVersion": "financial_provider_request/v1",
+        "profileVersion": "annual_statements_2_v1@1",
+        "provider": "TUSHARE_PRO",
+        "authorizationScope": "test-fixture-entitlement-v1",
+        "normalizerVersion": "financial_annual_normalizer/v1",
+        "endpoint": "cashflow",
+        "params": {
+          "ts_code": "600001.SH",
+          "period": "20241231",
+          "report_type": "1",
+          "comp_type": "1"
+        },
+        "fields": [
+          "ts_code",
+          "ann_date",
+          "f_ann_date",
+          "end_date",
+          "report_type",
+          "comp_type",
+          "update_flag",
+          "n_cashflow_act",
+          "n_cashflow_inv_act",
+          "n_cash_flows_fnc_act",
+          "c_pay_acq_const_fiolta",
+          "free_cashflow",
+          "net_profit"
+        ]
+      },
+      {
+        "requestKey": "f7627b1355dd712c6032d0ab6f7b508a444843c87a546b4d054269c9fff6527c",
+        "requestVersion": "financial_provider_request/v1",
+        "profileVersion": "annual_statements_2_v1@1",
+        "provider": "TUSHARE_PRO",
+        "authorizationScope": "test-fixture-entitlement-v1",
+        "normalizerVersion": "financial_annual_normalizer/v1",
+        "endpoint": "income",
+        "params": {
+          "ts_code": "600002.SH",
+          "period": "20241231",
+          "report_type": "1",
+          "comp_type": "1"
+        },
+        "fields": [
+          "ts_code",
+          "ann_date",
+          "f_ann_date",
+          "end_date",
+          "report_type",
+          "comp_type",
+          "update_flag",
+          "total_revenue",
+          "revenue",
+          "operate_profit",
+          "total_profit",
+          "n_income",
+          "n_income_attr_p",
+          "basic_eps",
+          "diluted_eps",
+          "ebit",
+          "ebitda"
+        ]
+      },
+      {
+        "requestKey": "bc0106787c79d9abca0ea1b126cc156c43e4fa6bd04bcd652efb88832e8b5322",
+        "requestVersion": "financial_provider_request/v1",
+        "profileVersion": "annual_statements_2_v1@1",
+        "provider": "TUSHARE_PRO",
+        "authorizationScope": "test-fixture-entitlement-v1",
+        "normalizerVersion": "financial_annual_normalizer/v1",
+        "endpoint": "balancesheet",
+        "params": {
+          "ts_code": "600002.SH",
+          "period": "20241231",
+          "report_type": "1",
+          "comp_type": "1"
+        },
+        "fields": [
+          "ts_code",
+          "ann_date",
+          "f_ann_date",
+          "end_date",
+          "report_type",
+          "comp_type",
+          "update_flag",
+          "total_assets",
+          "total_liab",
+          "total_hldr_eqy_exc_min_int",
+          "total_cur_assets",
+          "total_cur_liab",
+          "money_cap",
+          "accounts_receiv",
+          "inventories",
+          "goodwill",
+          "st_borr",
+          "lt_borr"
+        ]
+      },
+      {
+        "requestKey": "888731d8cfc04489d7c5fd26d6b182c4bdf6f9ada58ed3c0eb3b11084059813b",
+        "requestVersion": "financial_provider_request/v1",
+        "profileVersion": "annual_statements_2_v1@1",
+        "provider": "TUSHARE_PRO",
+        "authorizationScope": "test-fixture-entitlement-v1",
+        "normalizerVersion": "financial_annual_normalizer/v1",
+        "endpoint": "cashflow",
+        "params": {
+          "ts_code": "600002.SH",
+          "period": "20241231",
+          "report_type": "1",
+          "comp_type": "1"
+        },
+        "fields": [
+          "ts_code",
+          "ann_date",
+          "f_ann_date",
+          "end_date",
+          "report_type",
+          "comp_type",
+          "update_flag",
+          "n_cashflow_act",
+          "n_cashflow_inv_act",
+          "n_cash_flows_fnc_act",
+          "c_pay_acq_const_fiolta",
+          "free_cashflow",
+          "net_profit"
+        ]
+      }
+    ],
+    "budget": {
+      "maximumProviderCalls": 7,
+      "maximumResponseBytes": 4194304,
+      "maximumTotalBytes": 16777216
+    },
+    "limitations": [
+      "GENERAL_COMPANY_CONSOLIDATED_ANNUAL_ONLY",
+      "UNITS_UNVERIFIED",
+      "ORIGINAL_AS_PUBLISHED_UNVERIFIED",
+      "SINGLE_PERIOD_MAY_NOT_SUPPORT_TTM"
+    ],
+    "researchBinding": false,
+    "planRoot": "14f6512b03e7b39d5b29cb5c2f920e9455393469ee7488431fe2c34aa877c3c3"
+  }
+}
