@@ -185,3 +185,34 @@ def test_v_restoration_rejects_overflow_instead_of_printing_null():
     with np.errstate(over="ignore", invalid="ignore"):
         with pytest.raises(ValueError, match="restored level"):
             predict_function(artifact, rows(X[[x["name"] for x in artifact["inputSchema"]]].iloc[:1]), current_state=[1e308], scale=[1e308])
+
+
+def test_integral_binary64_js_transport_and_derive_identity_golden():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node runtime unavailable")
+    _, artifact, _ = fitted(candidates("ridge")[0])
+    derived = edit_function(artifact, [{"path":"/estimator/intercepts/1", "value":1e20}])
+    script = "let s='';process.stdin.on('data',x=>s+=x);process.stdin.on('end',()=>process.stdout.write(JSON.stringify(JSON.parse(s))))"
+    js = subprocess.run([node,"-e",script], input=json.dumps(derived), text=True, capture_output=True, check=True)
+    transported = json.loads(js.stdout)
+    assert type(transported["estimator"]["intercepts"][1]) is int
+    assert validate_function(transported)["artifactId"] == derived["artifactId"]
+    bad = copy.deepcopy(artifact); bad["provenance"]["parameters"]["alpha"] = True
+    with pytest.raises(ValueError, match="estimator provenance"):
+        validate_function(reseal(bad))
+    with pytest.raises(ValueError, match="editable"):
+        edit_function(artifact, [{"path":"/estimator/coefficients/1/00", "value":1.}])
+
+
+def test_checked_in_golden_references_evaluate_and_derive_identically():
+    fixture = json.loads((Path(__file__).parent/"fixtures/model-function-golden-v1.json").read_text())
+    for case in fixture["cases"]:
+        given = case["input"]
+        actual = predict_function(case["artifact"], given["rows"], current_state=given["currentState"], scale=given["scale"])
+        np.testing.assert_allclose(actual["normalizedChanges"], case["expected"]["normalizedChanges"], rtol=1e-12, atol=1e-14)
+        for edit in case["derivations"]:
+            derived = edit_function(case["artifact"], edit["edits"])
+            assert derived["artifactId"] == edit["artifactId"]
+            result = predict_function(derived, given["rows"], current_state=given["currentState"], scale=given["scale"])
+            np.testing.assert_allclose(result["normalizedChanges"], edit["expected"]["normalizedChanges"], rtol=1e-12, atol=1e-14)

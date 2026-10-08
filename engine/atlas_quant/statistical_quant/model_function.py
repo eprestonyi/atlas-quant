@@ -45,9 +45,13 @@ def function_digest(value):
         if isinstance(item, bool) or item is None or isinstance(item, str):
             return item
         if isinstance(item, (float, int)):
-            if not _numeric(item) or isinstance(item, int) and abs(item) > 2**53:
+            if not _numeric(item):
                 _bad("unsupported hash number")
             number = float(item)
+            # JS may serialize an integral binary64 such as 1e20 without an
+            # exponent. Accept its exact Python-int parse, never silently round.
+            if isinstance(item, int) and int(number) != item:
+                _bad("unsupported hash number")
             return {"$f64": struct.pack("!d", 0.0 if number == 0 else number).hex()}
         if isinstance(item, list):
             return [canonical(x, depth+1) for x in item]
@@ -196,7 +200,7 @@ def _metadata(a):
     provenance = a["provenance"]
     _keys(provenance, ("estimator", "parameters", "sklearnVersion"))
     from .models import GRIDS
-    if not isinstance(provenance["estimator"], str) or provenance["estimator"] not in GRIDS or provenance["parameters"] not in GRIDS[provenance["estimator"]] or not isinstance(provenance["sklearnVersion"], str) or not re.fullmatch(r"[0-9A-Za-z.+-]{1,40}", provenance["sklearnVersion"]):
+    if not isinstance(provenance["estimator"], str) or provenance["estimator"] not in GRIDS or not isinstance(provenance["parameters"], dict) or any(not _numeric(v) for v in provenance["parameters"].values()) or provenance["parameters"] not in GRIDS[provenance["estimator"]] or not isinstance(provenance["sklearnVersion"], str) or not re.fullmatch(r"[0-9A-Za-z.+-]{1,40}", provenance["sklearnVersion"]):
         _bad("invalid estimator provenance")
     edit_policy = {"allowed": ["estimator_numeric_parameters"], "arbitraryCode": False, "editedEvidenceStatus": "UNVALIDATED_USER_EDIT"}
     if a["editPolicy"] != edit_policy:
@@ -382,9 +386,9 @@ def edit_function(artifact, edits):
         if kind == "constant":
             permitted = len(keys) == 4 and keys[:3] == ["", "estimator", "value"] and keys[3] in ("0", "1")
         elif kind == "linear":
-            permitted = (len(keys) == 4 and keys[:3] == ["", "estimator", "intercepts"] and keys[3] in ("0", "1")) or (len(keys) == 5 and keys[:3] == ["", "estimator", "coefficients"] and keys[3] in ("0", "1") and keys[4].isdigit())
+            permitted = (len(keys) == 4 and keys[:3] == ["", "estimator", "intercepts"] and keys[3] in ("0", "1")) or (len(keys) == 5 and keys[:3] == ["", "estimator", "coefficients"] and keys[3] in ("0", "1") and re.fullmatch(r"0|[1-9][0-9]*", keys[4]))
         else:
-            permitted = (len(keys) == 5 and keys[:3] == ["", "estimator", "outputs"] and keys[3] in ("0", "1") and keys[4] == "baseline") or (len(keys) == 8 and keys[:3] == ["", "estimator", "outputs"] and keys[3] in ("0", "1") and keys[4] == "trees" and all(x.isdigit() for x in keys[5:]) and keys[7] == "0")
+            permitted = (len(keys) == 5 and keys[:3] == ["", "estimator", "outputs"] and keys[3] in ("0", "1") and keys[4] == "baseline") or (len(keys) == 8 and keys[:3] == ["", "estimator", "outputs"] and keys[3] in ("0", "1") and keys[4] == "trees" and all(re.fullmatch(r"0|[1-9][0-9]*", x) for x in keys[5:]) and keys[7] == "0")
         if not permitted:
             _bad("only coefficients, intercepts, constants, or tree leaf values are editable")
         try:
