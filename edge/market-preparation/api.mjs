@@ -4,7 +4,8 @@ import { DATASET_FORMAT, datasetRef } from "./publication.mjs";
 import { pageQuery } from "../financial/common.mjs";
 import { parse } from "../runtime.mjs";
 import { marketResearchAdmissions } from "./admissions.mjs";
-import { start, cancel, ownedJob, jobView, enabled } from "./queue.mjs";
+import { start, cancel, enabled } from "./queue.mjs";
+import { readJobProgress } from "./progress.mjs";
 import { NOW, random, json, body, rate } from "../runtime.mjs";
 import {
   LIMITS,
@@ -89,7 +90,7 @@ export async function marketPreparationApi(req, env, path, owner) {
   );
   if (job && req.method === "GET" && !job[2])
     return json({
-      job: jobView(await ownedJob(env, owner, job[1])),
+      job: await readJobProgress(env, owner, job[1]),
       ...(await marketResearchAdmissions(env)),
     });
   if (job && req.method === "POST" && job[2])

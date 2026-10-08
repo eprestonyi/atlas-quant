@@ -546,6 +546,30 @@ test("a rehashed raw group or raw offset cannot change the exact saved response"
     }
   }
 });
+test("source progress counts retained receipts once without calling them completed research", async () => {
+  const x = await setup();
+  const read = async () => (await (await x.req('/market-preparation-jobs/' + x.job.id)).json()).job;
+  try {
+    const empty = await read();
+    assert.deepEqual(empty.sourceProgress, {
+      declaredRequests: fixture.plan.budget.declaredRequests,
+      receiptsSaved: 0, rawBytesSaved: 0, outcomeUnknown: 0,
+    });
+    const request = fixture.plan.requests[0];
+    const saved = await receipt(x, request);
+    const first = await read();
+    assert.equal(first.sourceProgress.receiptsSaved, 1);
+    assert.equal(first.sourceProgress.rawBytesSaved, fixture.receipts[request.requestKey].byteLength);
+    assert.equal(first.status, 'running');
+    const recovered = await beginRequest(x.env, x.job.id, request.requestKey, {
+      leaseToken: x.job.leaseToken, attemptId: randomUUID(),
+    });
+    assert.equal(recovered.receiptId, saved.receiptId);
+    assert.equal(recovered.maySend, false);
+    assert.deepEqual((await read()).sourceProgress, first.sourceProgress);
+  } finally { await x.mf.dispose(); }
+});
+
 test("unknown outcome remains sticky across claim retry", async () => {
   const x = await setup();
   try {
@@ -557,6 +581,9 @@ test("unknown outcome remains sticky across claim retry", async () => {
       reason: "SYNTHETIC unknown outcome",
     });
     assert.equal((await u.json()).manualReviewRequired, true);
+    const progress = (await (await x.req('/market-preparation-jobs/' + x.job.id)).json()).job.sourceProgress;
+    assert.equal(progress.outcomeUnknown, 1);
+    assert.equal(progress.receiptsSaved, 0);
     assert.equal(
       (
         await x.req(path + "/begin", "POST", {
@@ -793,6 +820,10 @@ test("immutable authorized receipt may be cached by another owner only through i
     });
     assert.equal(ack.maySend, false);
     assert.equal(ack.receiptId, saved.receiptId);
+    const cachedProgress = (await (await x.req('/market-preparation-jobs/' + j.id, 'GET', undefined, { cookie })).json()).job.sourceProgress;
+    assert.equal(cachedProgress.receiptsSaved, 1, 'owner-authorized cached source is a retained receipt, not a new provider attempt');
+    assert.equal(cachedProgress.rawBytesSaved, fixture.receipts[r.requestKey].byteLength);
+    assert.equal(cachedProgress.outcomeUnknown, 0);
     await assert.rejects(
       () =>
         getReceipt(
