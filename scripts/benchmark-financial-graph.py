@@ -16,6 +16,7 @@ def child(source,out):
     import pandas as pd
     from atlas_quant.provider import _validate_panel,_records
     from atlas_quant.financial_statements.package import decode_package
+    from atlas_quant.financial_statements.prepare import _safe_rows
     from atlas_quant.financial_runner.trust import resolve_package_registry
     from atlas_quant.research_dataset import derive_market_snapshot_view
     from atlas_quant.research_dataset.codec import encode,sha,require
@@ -77,6 +78,7 @@ def child(source,out):
             'qualityFlags':sorted({x for source in sources for x in source['evidence']['qualityFlags']})}
     rows=[{**row,**panels[row['ts_code'],row['trade_date']]} for row in market['rows']]
     data=_validate_panel({'universe':scope},rows,external_fields=external)
+    rows=_safe_rows(data)  # Match actual legacy dataset joining numeric normalization.
     # This reproduces existing logical metadata for exact size measurement only;
     # it does not call private model-admission registration or fit F.
     provenance=deepcopy(market['provenance'])

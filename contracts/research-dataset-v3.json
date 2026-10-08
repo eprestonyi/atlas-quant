@@ -1,5 +1,5 @@
 {
-  "status": "PROPOSED_COMPONENT_DESIGN_NOT_ADMITTED",
+  "status": "LOCAL_SOURCE_CLOSURE_IMPLEMENTED_NOT_MODEL_ADMITTED",
   "format": "atlas.quant.research_dataset",
   "version": 3,
   "profile": "financial_snapshot_graph_50_v1",
@@ -210,6 +210,67 @@
     "modelsFitted": 0,
     "sourceRecompositionFromRawPerformed": false,
     "completeDatasetManifestImplemented": false,
-    "wholeSystemAccepted": false
+    "wholeSystemAccepted": false,
+    "joinedMeasurementQualification": "Prototype measurement used pre-normalization market integers, not the actual legacy-normalized joined model input; numbers and evidence retained unchanged. Superseded as a final joined oracle by sourceClosureEvidence."
+  },
+  "numericEnvelope": {
+    "keys": [
+      "schemaVersion",
+      "numericInput",
+      "provenance",
+      "logicalJoined"
+    ],
+    "schemaVersion": 1,
+    "numericInput": "atlas.quant.exact_column_table/1",
+    "logicalJoined": {
+      "keys": [
+        "sha256",
+        "byteLength"
+      ],
+      "reconstruction": "exact schemaVersion=1 rows/provenance after unchanged legacy numeric-panel normalization"
+    },
+    "rawSourceIdentity": "Original market int/float tokens remain exact in marketDataset and marketOrigin; model-panel normalization is a distinct existing semantic step."
+  },
+  "sourceClosureEvidence": {
+    "status": "PASS_SOURCE_CLOSURE_ONLY",
+    "datasetRoot": "cca665750bd7ba9d5eacc7ac7b0e54418397c35bf7f22fbb1981349d3cad3172",
+    "symbols": 50,
+    "rows": 13100,
+    "states": 16,
+    "calendarDaysInclusive": 366,
+    "physicalClosureBytes": 28924215,
+    "manifestBytes": 13767,
+    "parts": 60,
+    "components": 10,
+    "logicalJoined": {
+      "byteLength": 24923037,
+      "sha256": "8077543843d06f7f575f606da27ec4fa378155be5e716435aed9cf4ea5ff072b"
+    },
+    "financialDatasetRoot": "a8c26a623bb79b0503c010f504065d7aa6fb05db304d528e81a78afd5e0a5bc9",
+    "dataFingerprint": "7153e3436e2aa3aa2997d115c6b09799c775b285b9b5f0672c6cfd5846104975",
+    "sourceValidation": {
+      "authorityMeaning": "independently_authorized_registry_bytes_and_recomputed_frozen_packages",
+      "completeHistoricalVersionsVerified": false,
+      "financialRecomputed": true,
+      "modelAdmissionRegistered": false,
+      "originalAsPublishedVerified": false,
+      "revisionTimeVerified": false,
+      "sourceAuthorityVerified": true,
+      "synthetic": true
+    },
+    "providerCalls": 0,
+    "modelsFitted": 0,
+    "modelAdmissionRegistered": false,
+    "hosted": false,
+    "production": false,
+    "buildChildWallSeconds": 17.801581332983915,
+    "buildPeakRssBytes": 680263680,
+    "recomposeChildWallSeconds": 17.294001750007737,
+    "recomposePeakRssBytes": 739573760,
+    "separateProcessRawRecomposition": true,
+    "actualLegacy50DatasetExists": false,
+    "oracle": "actual small old-v2/new-v3 equality plus full-scope retained-component numeric normalization; no successful legacy 50 dataset exists",
+    "independentArchiveAudit": false,
+    "thinSnapshot": false
   }
 }

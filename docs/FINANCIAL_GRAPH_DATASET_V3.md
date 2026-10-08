@@ -20,7 +20,7 @@ Replace repeated row key names with a declared column table. Numeric columns pre
 
 The dataset stores this numerical component with its complete logical research provenance. Financial bundle/2 keeps an actual column table in its thin numerical snapshot, plus the frozen numerical fingerprints, dataset/3 reference and compact provenance/commitment. It does not fetch replacement values by URL and does not rely on a remote reference as if it were frozen input. The separate dataset archive retains raw statements and source graph.
 
-Both physical and logical joined-document limits remain 24 MiB. The current 50-security numeric row array is 24,802,815 bytes, leaving only 363,009 bytes before provenance/outer syntax. The new acceptance must account for the exact complete logical document. If it exceeds that existing limit, return failure and preserve the evidence; do not assume a column representation authorizes larger decoded input. Thin representation removes repeated transport/storage bytes but does not override the logical input guard.
+Both physical and logical joined-document limits remain 24 MiB. The early prototype measured the 50-security numeric row array as 24,802,815 bytes before the existing panel numeric normalization. That is not the final model input oracle. The actual normalized row array is 24,855,215 bytes and its complete joined document is 24,923,037 bytes, leaving 242,787 bytes under 24 MiB. The new acceptance must account for the exact complete logical document. If it exceeds that existing limit, return failure and preserve the evidence; do not assume a column representation authorizes larger decoded input. Thin representation removes repeated transport/storage bytes but does not override the logical input guard.
 
 Worker transport will eventually slice column values/indices into bounded pieces; part hashes and ordinal/count continuity must prove reconstruction. This is future transport integration. The initial Python component implementation will use bounded whole column tables, not change live routes or claim they are already streamable over the Worker.
 
@@ -52,15 +52,15 @@ A new supervised component acceptance used the **unchanged retained 50-security 
 | --- | ---: |
 | Two complete prepared graphs | 15,919,030 bytes |
 | Exact numeric column table | 5,060,771 bytes |
-| Complete logical joined document, including provenance | 24,870,637 bytes |
-| Remaining below unchanged 24 MiB logical guard | 295,187 bytes |
+| Prototype joined document before legacy numeric normalization | 24,870,637 bytes |
+| Prototype remaining bytes (not final model input acceptance) | 295,187 bytes |
 | Measured physical components plus full 256 KiB manifest reserve | 28,720,595 bytes |
 | Child peak RSS | 555,859,968 bytes |
 | Child / supervisor wall time | 10.17 / 11.58 seconds |
 
-The logical joined document SHA is `b48e2df426902027cbbb5b438571d300490e19cc4f61f2718f131ff9312e1a69`. Private evidence is at `private/financial-graph-components-50-20261008-01`. The supervisor actively enforced 900 seconds, 3 GiB sampled RSS and 500 MiB disk reserve; it exited 0 with no stop reason. The previous failed source evidence remains intact. `benchmark-financial-graph.py` records both the declaration and measured process evidence.
+The prototype joined document SHA is `b48e2df426902027cbbb5b438571d300490e19cc4f61f2718f131ff9312e1a69`. The source-closure acceptance below found that this prototype did not apply the final market numeric normalization to its measured rows. Its bytes/hash are retained as historical component evidence, not as a successful legacy 50-security dataset identity. Private evidence is at `private/financial-graph-components-50-20261008-01`. The supervisor actively enforced 900 seconds, 3 GiB sampled RSS and 500 MiB disk reserve; it exited 0 with no stop reason. The previous failed source evidence remains intact. `benchmark-financial-graph.py` records both the declaration and measured process evidence.
 
-The acceptance is `PASS_COMPONENTS_ONLY`: the official dataset/3 manifest/reader, fresh raw-statement recomposition gate, thin financial snapshot, same-child F, independent new-format archive verifier and hosted transport are still absent. The measured component-byte sum includes the full manifest reservation but is not a claim that a complete new dataset archive was built.
+At this recorded stage the acceptance was `PASS_COMPONENTS_ONLY`: no complete manifest, raw-source recomposition, thin snapshot, same-child F or new archive audit had run. The later source-closure acceptance below advances only the source gates. The measured component-byte sum includes the full manifest reservation but is not a claim that a complete new dataset archive was built.
 
 ## Next source-closure implementation boundary
 
@@ -71,3 +71,29 @@ A fresh `restore_graph_dataset` must re-run the financial preparation formulas f
 A source-only restoration result should keep `modelAdmissionRegistered: false` initially. A later explicit new-profile admission can issue the existing process-local financial input capability only after this new validator has completed. It must not invoke the old dataset/2 validator with a higher budget, patch old provenance to skip admission, or deserialize a pre-authorized Python object into a child. The eventual child will restore source and fit F in the same process, with a new job identity and unchanged supervisor protections.
 
 The thin snapshot constructor should accept this completed local source closure and build the proposed column snapshot. Its complete logical input envelope, not merely the row array, must be checked against 24 MiB. Result bundle/2 and dataset/3 must remain distinguishable from their older parsers, saved as separate new archives, and verified by a stdlib implementation that does not import these graph codecs. The 50-security F run is deferred until these source and snapshot gates exist; no component-only result opens production admission.
+
+
+## Complete local source closure, 2026-10-08
+
+`graph_v3/{manifest,source,dataset}.py` now implements the separately versioned closed component graph, an immutable bounded reader and fresh raw-package build/restoration. Every source is resolved from independently supplied exact registry bytes; every financial formula is rerun, its original prepared root and exact prepared-payload SHA checked, and only one expanded package is retained at a time. The compact graph supplies the reconstructed panel used for joining. Original source package/market bytes remain unchanged. A copied or rehashed coverage claim fails the fresh comparison. Result frames remain unregistered for model admission.
+
+Actual old-v2/new-v3 small-fixture joined rows, complete provenance, schema and coverage are byte-identical. Fifty-three targeted graph, source and original snapshot-view tests pass. Legacy readers reject dataset/3 and model-input preparation rejects the source-only result.
+
+The first full-scope build (`private/financial-graph-source-50-20261008-01`) is retained as a failed oracle comparison. Its complete source was valid, but the earlier component prototype computed its joined identity using market `vol`/`adj_factor` integers after separately validating a float-normalized frame. Actual legacy-v2 composition uses the normalized output. The prototype script is corrected; its old evidence is neither overwritten nor retrospectively presented as a valid legacy dataset.
+
+The second explicit attempt (`private/financial-graph-source-50-20261008-02`) uses a separately saved normalized oracle derived from the retained old component values and the existing legacy panel semantics. It records 26,200 int-to-float logical cell conversions; **raw market input bytes are unchanged**. The old 50-security dataset/2 never passed its source-byte guard, so no successful old 50-security dataset/root is asserted.
+
+Both fresh build and second-process raw-source recomposition passed with all 50 securities, 13,100 rows, 16 states and 366 inclusive calendar days:
+
+| Measurement | Result |
+| --- | ---: |
+| Physical complete closure | 28,924,215 bytes |
+| Manifest / components / parts | 13,767 bytes / 10 / 60 |
+| Complete normalized joined rows plus provenance | 24,923,037 bytes |
+| Remaining under unchanged 24 MiB | 242,787 bytes |
+| Fresh build wall / peak RSS | 17.80 seconds / 680,263,680 bytes |
+| Separate recompose wall / peak RSS | 17.29 seconds / 739,573,760 bytes |
+
+Dataset root: `cca665750bd7ba9d5eacc7ac7b0e54418397c35bf7f22fbb1981349d3cad3172`. Logical joined SHA: `8077543843d06f7f575f606da27ec4fa378155be5e716435aed9cf4ea5ff072b`. The unchanged source data fingerprint is `7153e3436e2aa3aa2997d115c6b09799c775b285b9b5f0672c6cfd5846104975`. The supervisor enforced 900 seconds total, 3 GiB RSS and the 500 MiB disk reserve and exited without a stop reason.
+
+`sourceAuthorityVerified=true` here means only independently authorized registry bytes plus recomputation of the exact frozen package. All sources remain artificial (`synthetic=true`); original publication/PDF authenticity, full filing history and revision-time verification remain false. Provider calls, model fits and executions are zero. Thin snapshot, model admission, full F, result/source dual-archive audit and hosted production remain separate uncompleted gates.
