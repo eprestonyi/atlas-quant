@@ -209,7 +209,7 @@ export async function experimentDatasetBinding(
   version,
 ) {
   const row = await env.DB.prepare(
-    'SELECT r.*,d.scope FROM quant_experiment_datasets r JOIN quant_research_datasets d ON d.id=r.dataset_id AND d.owner=r.owner WHERE r.experiment_id=? AND r.version=? AND r.owner=?',
+    'SELECT r.*,d.scope,d.summary FROM quant_experiment_datasets r JOIN quant_research_datasets d ON d.id=r.dataset_id AND d.owner=r.owner WHERE r.experiment_id=? AND r.version=? AND r.owner=?',
   )
     .bind(experimentId, version, owner)
     .first();
@@ -223,6 +223,12 @@ export async function experimentDatasetBinding(
         },
         admissionProfile: row.profile,
         scope: parse(row.scope),
+        selectedStateIds: parse(row.summary, {}).selectedStateIds || [],
+        stateDefinitions: definitions.items
+          .filter((x) =>
+            (parse(row.summary, {}).selectedStateIds || []).includes(x.id),
+          )
+          .map((x) => ({ id: x.id, name: x.name })),
       }
     : null;
 }

@@ -210,7 +210,7 @@ window.AtlasQuantV4 = {
         `<a class="sq-button" href="#quant/studio/datasets/dataset/${e(s.datasetBinding.datasetRef.datasetId)}?root=${e(s.datasetBinding.datasetRef.datasetRoot)}">查看数据覆盖与完整来源</a>`
       );
     }
-    async function bindDataset(detail, stateIds) {
+    async function bindDataset(detail, stateIds, stateDefinitions = []) {
       if (!detail.researchBindingEnabled || !stateIds?.length)
         throw Error('该数据集目前不能创建模型研究。');
       const strategy = defaultStrategy();
@@ -222,6 +222,7 @@ window.AtlasQuantV4 = {
       strategy.execution.enabled = false;
       strategy.factors = stateIds.map((id) => ({
         id,
+        name: stateDefinitions.find((x) => x.id === id)?.name || id,
         expression: id,
         direction: 1,
         role: 'predictor',
@@ -234,13 +235,18 @@ window.AtlasQuantV4 = {
         admissionProfile: detail.researchAdmission.profile,
         scope: clone(detail.scope),
         selectedStateIds: [...stateIds],
+        stateDefinitions: clone(
+          stateDefinitions
+            .filter((x) => stateIds.includes(x.id))
+            .map((x) => ({ id: x.id, name: x.name })),
+        ),
       };
       ui.activeId = null;
       ui.activeVersion = null;
       s.strategyId = null;
       s.strategyVersion = null;
       persistDraft();
-      goto('target');
+      goto('state');
     }
     function universePage() {
       if (boundDataset())
@@ -257,7 +263,7 @@ window.AtlasQuantV4 = {
         return panel(
           '数据集中的财务状态',
           boundNote() +
-            `<p>按实际来源定义选择输入；缺失值仍然保留。模型是否有足够样本由运行时检验。</p><div class="ds-members">${s.datasetBinding.selectedStateIds.map((id) => `<label class="fin-checkbox"><input type="checkbox" data-sq-dataset-state="${e(id)}" ${s.strategy.factors.some((f) => f.id === id) ? 'checked' : ''}>${e(id)}</label>`).join('')}</div>`,
+            `<p>按实际来源定义选择输入；缺失值仍然保留。模型是否有足够样本由运行时检验。</p><div class="ds-members">${s.datasetBinding.selectedStateIds.map((id) => `<label class="fin-checkbox"><input type="checkbox" data-sq-dataset-state="${e(id)}" ${s.strategy.factors.some((f) => f.expression === id) ? 'checked' : ''}>${e(s.datasetBinding.stateDefinitions?.find((x) => x.id === id)?.name || s.strategy.factors.find((f) => f.id === id)?.name || id)}</label>`).join('')}</div>`,
         );
       const factors = s.strategy.factors;
       return `${panel('把信息定义为可审计的状态', `<div class="sq-equation-strip"><span>点时数据</span>${i('arrow')}<span>因果变换</span>${i('arrow')}<span>X<sub>t</sub> 状态与因子</span>${i('arrow')}<span>F<sub>h</sub> 的输入</span></div><p>预测因子是 F 模型的数值输入；正负方向仅改变特征编码，不决定交易方向或仓位。对冲暴露用于构造 PCA 篮子；事件因子必须具有实际可用时间。</p>`, { kicker: 'INFORMATION SET' })}<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>当前状态输入 <span>${factors.length} / 32</span></h2><a class="sq-button small" href="#quant/studio/state">展开 Studio</a></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(C.findFactor(f.id)?.name || f.id)}</strong><code>${e(f.expression)}</code></div><label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option><option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>PCA 对冲暴露</option><option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入 · 需 PIT</option></select></label>${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('') || empty('尚未添加额外因子', '模型仍可使用其明确声明的内置状态。拖入模块或点击目录中的“加入”。')}<div class="sq-drop-caption">${i('plus')}拖入状态模块，或用键盘选择“加入”</div></div><div class="sq-tabs" role="group" aria-label="状态输入编辑方式">${[['catalog', '因子目录'], ['modules', '状态模块'], ['builder', '构建因子'], ...(isStudio() ? [['fields', '数据库字段']] : [])].map(([id, label]) => button('feature-tab', label, { id, primary: ui.featureTab === id, pressed: ui.featureTab === id, small: true })).join('')}</div>${ui.featureTab === 'modules' ? catalog.view('state') : `<div class="sq-legacy">${ui.featureTab === 'builder' ? C.legacy.builder() : ui.featureTab === 'fields' ? C.legacy.fieldBrowser() : C.legacy.catalogBrowser()}</div>`}${advanced('预处理与输入冗余', `<div class="sq-form-grid">${toggle('训练期截尾', 'preprocess.winsorize', '阈值只由拟合数据确定。')}${toggle('训练期标准化', 'preprocess.standardize', '验证与预测复用训练参数。')}${select('冗余处理', 'preprocess.decorrelation', { none: '保留全部输入', drop_correlated: '剔除高度相关输入' })}${input('绝对相关阈值', 'preprocess.correlationThreshold', { min: 0.5, max: 1, step: 0.01 })}</div>`, isStudio())}`;
@@ -711,7 +717,9 @@ window.AtlasQuantV4 = {
           s.datasetBinding = item.datasetBinding
             ? {
                 ...clone(item.datasetBinding),
-                selectedStateIds: s.strategy.factors.map((f) => f.id),
+                selectedStateIds: item.datasetBinding.selectedStateIds?.length
+                  ? [...item.datasetBinding.selectedStateIds]
+                  : s.strategy.factors.map((f) => f.id),
               }
             : null;
           if (s.datasetBinding) s.dataSource = 'ready_dataset';
@@ -1397,13 +1405,26 @@ window.AtlasQuantV4 = {
     document.addEventListener('input', (event) => onInput(event.target));
     document.addEventListener('change', (event) => {
       const id = event.target.dataset.sqDatasetState;
-      if (id && boundDataset()) {
+      if (
+        id &&
+        boundDataset() &&
+        s.datasetBinding.selectedStateIds.includes(id)
+      ) {
+        const others = s.strategy.factors.filter((f) => f.expression !== id);
         s.strategy.factors = event.target.checked
           ? [
-              ...s.strategy.factors,
-              { id, expression: id, direction: 1, role: 'predictor' },
+              ...others,
+              {
+                id,
+                name:
+                  s.datasetBinding.stateDefinitions?.find((x) => x.id === id)
+                    ?.name || id,
+                expression: id,
+                direction: 1,
+                role: 'predictor',
+              },
             ]
-          : s.strategy.factors.filter((f) => f.id !== id);
+          : others;
         persistDraft();
         render();
         return;

@@ -229,6 +229,19 @@ assert(
 click('bind');
 await tick();
 assert.equal(q.state.dataSource, 'ready_dataset');
+assert(w.location.hash.endsWith('/state'));
+assert(w.document.querySelector('main').textContent.includes('现金资产占比'));
+q.state.strategy.factors[0].id = 'custom_cash_id';
+q.render();
+let selected = w.document.querySelector('[data-sq-dataset-state]');
+assert.equal(selected.checked, true);
+selected.checked = false;
+selected.dispatchEvent(new w.Event('change', { bubbles: true }));
+assert.equal(q.state.strategy.factors.length, 0);
+selected = w.document.querySelector('[data-sq-dataset-state]');
+selected.checked = true;
+selected.dispatchEvent(new w.Event('change', { bubbles: true }));
+assert.equal(q.state.strategy.factors.length, 1);
 assert.deepEqual(
   JSON.parse(JSON.stringify(q.state.datasetBinding.datasetRef)),
   ref,

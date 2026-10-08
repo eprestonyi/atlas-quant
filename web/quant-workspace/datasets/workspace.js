@@ -399,7 +399,11 @@ export function createDatasetWorkspace(C, F, { onBind }) {
           body: '{}',
         });
       else if (action === 'bind') {
-        await onBind(s.detail, s.detail.summary.selectedStateIds);
+        await onBind(
+          s.detail,
+          s.detail.summary.selectedStateIds,
+          s.definitions,
+        );
       }
     } finally {
       s.busy = false;

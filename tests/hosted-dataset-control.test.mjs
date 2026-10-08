@@ -490,7 +490,14 @@ async function readyFixture(f, o) {
       sources: {
         registry: [],
         financial: [
-          { selection: { selectedStateIds: ['model_fin_cash_asset_share'] } },
+          {
+            selection: {
+              selectedStateIds: [
+                'model_fin_cash_asset_share',
+                'model_fin_operating_margin',
+              ],
+            },
+          },
         ],
       },
     };
@@ -534,7 +541,7 @@ async function readyFixture(f, o) {
     .run();
   await f.db
     .prepare(
-      "INSERT INTO quant_research_datasets(id,owner,name,dataset_root,stage_id,status,scope,summary,created_at) VALUES(?,?,?,?,?,'ready',?,'{}',?)",
+      "INSERT INTO quant_research_datasets(id,owner,name,dataset_root,stage_id,status,scope,summary,created_at) VALUES(?,?,?,?,?,'ready',?,? ,?)",
     )
     .bind(
       datasetId,
@@ -543,6 +550,12 @@ async function readyFixture(f, o) {
       root,
       stageId,
       JSON.stringify(scope),
+      JSON.stringify({
+        selectedStateIds: [
+          'model_fin_cash_asset_share',
+          'model_fin_operating_margin',
+        ],
+      }),
       now,
     )
     .run();
@@ -757,6 +770,17 @@ test('dataset bindings persist per saved experiment version, copy and readback w
   assert.deepEqual(
     loaded.experiment.datasetBinding.datasetRef,
     ready.datasetRef,
+  );
+  assert.equal(loaded.experiment.strategy.factors.length, 1);
+  assert.deepEqual(loaded.experiment.datasetBinding.selectedStateIds, [
+    'model_fin_cash_asset_share',
+    'model_fin_operating_margin',
+  ]);
+  assert.equal(loaded.experiment.datasetBinding.stateDefinitions.length, 2);
+  assert(
+    loaded.experiment.datasetBinding.stateDefinitions.every(
+      (x) => x.name && x.name !== x.id,
+    ),
   );
   await json(
     await f.call('/statistical-quant/experiments/' + id, {
