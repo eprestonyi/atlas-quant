@@ -1,17 +1,27 @@
 /** Local fixture bootstrap only. It seeds existing source receipts, not a new
  * forecast or financial computation. Every retained value is explicitly synthetic. */
 import fs from 'node:fs/promises';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 import { validateManifest } from '../edge/bundles/manifest.mjs';
 import { canonical } from '../edge/datasets/common.mjs';
-const directory = new URL(
-    '../tests/fixtures/dataset-v2-core/',
-    import.meta.url,
-  ),
-  read = (p) => fs.readFile(new URL(p, directory)),
-  sha = (x) => createHash('sha256').update(x).digest('hex');
-export async function seedDatasetSources(db, bucket, owner) {
+const defaultDirectory = new URL(
+  '../tests/fixtures/dataset-v2-core/',
+  import.meta.url,
+);
+const sha = (x) => createHash('sha256').update(x).digest('hex');
+export async function seedDatasetSources(
+  db,
+  bucket,
+  owner,
+  fixtureDirectory = null,
+) {
   if (!/^[0-9a-f-]{36}$/.test(owner)) throw Error('Exact owner UUID required');
+  const directory = fixtureDirectory
+    ? pathToFileURL(path.resolve(fixtureDirectory) + '/')
+    : defaultDirectory;
+  const read = (p) => fs.readFile(new URL(p, directory));
   const origin = JSON.parse(await read('dataset/parts/marketOrigin/0.bin')),
     summary = JSON.parse(await read('summary.json')),
     rawManifest = origin.source.manifestRawText,
@@ -34,7 +44,7 @@ export async function seedDatasetSources(db, bucket, owner) {
     !registry.evidenceLevel.includes('SYNTHETIC')
   )
     throw Error('Only explicit synthetic evidence allowed');
-  const prefix = 'synthetic-dataset/' + owner;
+  const prefix = 'synthetic-dataset/' + owner + '/' + runId;
   await bucket.put(prefix + '/calendar', registryRaw);
   await db
     .prepare(
@@ -229,7 +239,11 @@ export async function seedDatasetSources(db, bucket, owner) {
       inputId,
       publicationId,
       JSON.stringify(roots),
-      JSON.stringify({ hasUsableStates: true }),
+      JSON.stringify({
+        hasUsableStates: f.securities.some((x) =>
+          x.states.some((y) => y.okRows > 0),
+        ),
+      }),
       now,
     )
     .run();

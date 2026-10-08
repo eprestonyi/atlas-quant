@@ -1,13 +1,23 @@
 /** Loopback-only hosted dataset integration service, no provider client/secret. */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { Miniflare } from 'miniflare';
 import { buildWorkerSource, loadWebAssets } from './worker-source.mjs';
 import { seedDatasetSources } from './hosted-dataset-fixture.mjs';
-const root = path.resolve(import.meta.dirname, '..'),
-  port = Number(process.env.PORT || 8932),
-  runnerSecret = randomBytes(32).toString('hex');
+const root = path.resolve(import.meta.dirname, '..');
+const resumed =
+  process.env.DATASET_PREVIEW_RESUME === 'true'
+    ? JSON.parse(
+        await fs.readFile(
+          path.join(root, 'private/hosted-dataset-preview-session.json'),
+          'utf8',
+        ),
+      )
+    : null;
+const port = Number(process.env.PORT || 8932),
+  runnerSecret = resumed?.runnerSecret || randomBytes(32).toString('hex'),
+  fixtureDirectory = process.env.DATASET_FIXTURE_DIRECTORY || null;
 const options = {
   modules: true,
   script: await buildWorkerSource({
@@ -19,10 +29,15 @@ const options = {
   port,
   d1Databases: ['DB'],
   r2Buckets: ['ARTIFACTS'],
+  d1Persist: path.join(root, 'private/hosted-dataset-runtime/d1'),
+  r2Persist: path.join(root, 'private/hosted-dataset-runtime/r2'),
   bindings: {
     RUNNER_SECRET: runnerSecret,
     RESEARCH_DATASETS_ENABLED: 'true',
-    FINANCIAL_DATASET_RESEARCH_ENABLED: 'false',
+    FINANCIAL_DATASET_RESEARCH_ENABLED:
+      process.env.FINANCIAL_DATASET_RESEARCH_ENABLED === 'true'
+        ? 'true'
+        : 'false',
     TUSHARE_PUBLIC_AUTHORIZED: 'false',
     FINANCIAL_WORKSPACE_ENABLED: 'true',
   },
@@ -38,13 +53,24 @@ await db.exec(
 );
 await mf.ready;
 const baseUrl = `http://dataset.localhost:${port}`,
-  response = await mf.dispatchFetch(baseUrl + '/quant/api/session'),
+  response = await mf.dispatchFetch(
+    baseUrl + '/quant/api/session',
+    resumed ? { headers: { cookie: resumed.cookie } } : undefined,
+  ),
   session = await response.json(),
-  sources = await seedDatasetSources(db, bucket, session.workspace.id),
+  sources =
+    resumed ||
+    (await seedDatasetSources(
+      db,
+      bucket,
+      session.workspace.id,
+      fixtureDirectory,
+    )),
   config = {
     baseUrl,
     runnerSecret,
-    cookie: response.headers.get('set-cookie').split(';')[0],
+    fixtureDirectory,
+    cookie: resumed?.cookie || response.headers.get('set-cookie').split(';')[0],
     ...sources,
     seedRequest: path.join(root, 'private/dataset-preview-seed-request.json'),
     seedResponse: path.join(root, 'private/dataset-preview-seed-response.json'),
@@ -61,7 +87,23 @@ console.log(`Dataset preview: ${baseUrl}/quant/#quant/studio/datasets/source`);
 console.log('Private bootstrap: ' + configPath);
 let busy = false,
   lastSeed = '',
-  lastReload = 0;
+  lastReload = await fs
+    .stat(path.join(root, 'private/hosted-dataset-reload'))
+    .then((x) => x.mtimeMs)
+    .catch(() => 0);
+const priorRequest = await fs
+  .readFile(config.seedRequest, 'utf8')
+  .catch(() => null);
+const priorResponse = await fs
+  .readFile(config.seedResponse, 'utf8')
+  .then(JSON.parse)
+  .catch(() => null);
+if (
+  priorRequest &&
+  priorResponse?._controlRequestSha256 ===
+    createHash('sha256').update(priorRequest).digest('hex')
+)
+  lastSeed = priorRequest;
 const timer = setInterval(async () => {
   if (busy) return;
   busy = true;
@@ -71,15 +113,35 @@ const timer = setInterval(async () => {
       .catch(() => null);
     if (request && request !== lastSeed) {
       const v = JSON.parse(request);
-      const exists = await db
+      const controlDb = await mf.getD1Database('DB'),
+        controlBucket = await mf.getR2Bucket('ARTIFACTS');
+      const exists = await controlDb
         .prepare('SELECT id FROM workspaces WHERE id=?')
         .bind(v.owner)
         .first();
       if (!exists) throw Error('Requested exact workspace absent');
-      const result = await seedDatasetSources(db, bucket, v.owner);
-      await fs.writeFile(config.seedResponse, JSON.stringify(result, null, 2), {
-        mode: 0o600,
-      });
+      const result = await seedDatasetSources(
+        controlDb,
+        controlBucket,
+        v.owner,
+        v.fixtureDirectory || fixtureDirectory,
+      );
+      await fs.writeFile(
+        config.seedResponse,
+        JSON.stringify(
+          {
+            ...result,
+            _controlRequestSha256: createHash('sha256')
+              .update(request)
+              .digest('hex'),
+          },
+          null,
+          2,
+        ),
+        {
+          mode: 0o600,
+        },
+      );
       lastSeed = request;
     }
     const signal = await fs
