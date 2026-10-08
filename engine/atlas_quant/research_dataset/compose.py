@@ -193,8 +193,20 @@ def _prepare(
     )
     for key in ("symbols", "start", "end"):
         if key in meta:
+            value = meta[key]
+            if key == "symbols":
+                # Acquisition order is retained in the frozen source bytes.
+                # Universe membership is unordered, but duplicates are invalid.
+                require(
+                    isinstance(value, list)
+                    and all(isinstance(symbol, str) for symbol in value)
+                    and len(value) == len(set(value)),
+                    "DATASET_SCOPE",
+                    "Market provenance symbols must be unique strings",
+                )
+                value = sorted(value)
             require(
-                meta[key] == scope_value[key],
+                value == scope_value[key],
                 "DATASET_SCOPE",
                 "Market provenance scope differs",
             )

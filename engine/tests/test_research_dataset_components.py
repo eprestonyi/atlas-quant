@@ -782,3 +782,28 @@ def test_public_projection_cannot_hide_a_missing_coverage_component(sources):
     with pytest.raises(DatasetError) as error:
         typed.verify_integrity()
     assert error.value.code == "DATASET_PART_MISSING"
+
+
+def test_market_acquisition_order_preserves_bytes_without_changing_membership(sources):
+    scope = {
+        **sources["scope"],
+        "symbols": sorted([*sources["scope"]["symbols"], "000002.SZ"]),
+    }
+    frame, provenance = make_demo_data({"universe": scope})
+    market = {"schemaVersion": 1, "rows": _safe_rows(frame), "provenance": provenance}
+    market["provenance"]["symbols"] = list(reversed(scope["symbols"]))
+    frozen = encode(market)
+    publication, parts = compose(sources, scope=scope, market=market)
+    typed = reader(publication, parts)
+    assert typed.payload("marketDataset") == frozen
+    restored = restore_dataset(typed, sources["registry"])
+    assert set(restored.data["ts_code"]) == set(scope["symbols"])
+    for invalid in (
+        [scope["symbols"][0]] * 2,
+        [*scope["symbols"], "999999.SZ"],
+        [1, 2],
+    ):
+        bad = deepcopy(market)
+        bad["provenance"]["symbols"] = invalid
+        with pytest.raises(DatasetError, match="Market provenance"):
+            compose(sources, scope=scope, market=bad)
