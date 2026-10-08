@@ -1,0 +1,89 @@
+{
+  "id": "annual_statements_2_v1",
+  "version": 1,
+  "provider": "TUSHARE_PRO",
+  "requestVersion": "financial_provider_request/v1",
+  "normalizerVersion": "financial_annual_normalizer/v1",
+  "maxSymbols": 2,
+  "maxRequests": 7,
+  "maxCalendarDays": 366,
+  "maxResponseBytes": 4194304,
+  "maxTotalBytes": 16777216,
+  "maxStatementRows": 1000,
+  "maxSourceRows": 20000,
+  "scope": "consolidated",
+  "flowBasis": "ytd",
+  "reportType": "1",
+  "companyType": "1",
+  "exchanges": {
+    "SH": "SSE",
+    "SZ": "SZSE"
+  },
+  "statementEndpoints": [
+    "income",
+    "balancesheet",
+    "cashflow"
+  ],
+  "fields": {
+    "income": [
+      "ts_code",
+      "ann_date",
+      "f_ann_date",
+      "end_date",
+      "report_type",
+      "comp_type",
+      "update_flag",
+      "total_revenue",
+      "revenue",
+      "operate_profit",
+      "total_profit",
+      "n_income",
+      "n_income_attr_p",
+      "basic_eps",
+      "diluted_eps",
+      "ebit",
+      "ebitda"
+    ],
+    "balancesheet": [
+      "ts_code",
+      "ann_date",
+      "f_ann_date",
+      "end_date",
+      "report_type",
+      "comp_type",
+      "update_flag",
+      "total_assets",
+      "total_liab",
+      "total_hldr_eqy_exc_min_int",
+      "total_cur_assets",
+      "total_cur_liab",
+      "money_cap",
+      "accounts_receiv",
+      "inventories",
+      "goodwill",
+      "st_borr",
+      "lt_borr"
+    ],
+    "cashflow": [
+      "ts_code",
+      "ann_date",
+      "f_ann_date",
+      "end_date",
+      "report_type",
+      "comp_type",
+      "update_flag",
+      "n_cashflow_act",
+      "n_cashflow_inv_act",
+      "n_cash_flows_fnc_act",
+      "c_pay_acq_const_fiolta",
+      "free_cashflow",
+      "net_profit"
+    ],
+    "trade_cal": [
+      "exchange",
+      "cal_date",
+      "is_open",
+      "pretrade_date"
+    ]
+  }
+}
