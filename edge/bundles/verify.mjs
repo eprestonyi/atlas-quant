@@ -137,7 +137,12 @@ export async function verifyRecords(env, stage, parsed) {
 export async function finalizeBundle(
   env,
   input,
-  { expectedFormat = 'atlas.quant.bundle', authorize = null, verifySource = null } = {}
+  {
+    expectedFormat = 'atlas.quant.bundle',
+    expectedVersion = 1,
+    authorize = null,
+    verifySource = null
+  } = {}
 ) {
   const job = await leasedJob(env, input);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
@@ -145,7 +150,7 @@ export async function finalizeBundle(
   if (stage.bundle_id !== input.bundleId)
     throw new ApiError('BUNDLE_CONFLICT', '传输身份不匹配', 409);
   const parsed = await parsedStage(stage);
-  assertTransport(parsed, expectedFormat);
+  assertTransport(parsed, expectedFormat, expectedVersion);
   if (stage.status === 'committed')
     return {
       ok: true,
@@ -190,8 +195,10 @@ export async function finalizeBundle(
     );
   }
   if (verifySource)
-    await verifySource(parsed, (collection, descriptor) =>
-      readChunk(env, stage, collection, descriptor, byKey)
+    await verifySource(
+      parsed,
+      (collection, descriptor) => readChunk(env, stage, collection, descriptor, byKey),
+      { env, stage }
     );
   await env.ARTIFACTS.put(stage.manifest_key, stage.manifest_text, {
     sha256: stage.bundle_id,

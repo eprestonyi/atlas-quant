@@ -48,7 +48,7 @@ export function reportSummary(parsed) {
 export async function completeBundle(
   env,
   input,
-  { expectedFormat = 'atlas.quant.bundle', authorize = null } = {}
+  { expectedFormat = 'atlas.quant.bundle', expectedVersion = 1, authorize = null } = {}
 ) {
   const job = await leasedJob(env, input);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
@@ -56,7 +56,7 @@ export async function completeBundle(
   if (stage.bundle_id !== input.bundleId)
     throw new ApiError('BUNDLE_CONFLICT', '完成内容身份不一致', 409);
   const parsed = await parsedStage(stage);
-  assertTransport(parsed, expectedFormat);
+  assertTransport(parsed, expectedFormat, expectedVersion);
   if (stage.status === 'committed' && job.status === 'completed')
     return { ok: true, status: 'completed', idempotent: true };
   if (stage.status !== 'verified' || job.status !== 'running')

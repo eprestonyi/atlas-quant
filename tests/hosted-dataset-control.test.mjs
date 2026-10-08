@@ -487,6 +487,8 @@ async function readyFixture(f, o) {
     text = canonical(manifest),
     root = h(text),
     spec = {
+      profile: 'financial_snapshot_view_50_v1',
+      request: { profile: 'financial_snapshot_view_50_v1' },
       sources: {
         registry: [],
         financial: [

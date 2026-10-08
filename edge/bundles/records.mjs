@@ -48,7 +48,11 @@ export function targetLabel(row) {
 }
 
 export async function recordIndex(
-  collection, row, ordinal, chunkOrdinal, itemIndex,
+  collection,
+  row,
+  ordinal,
+  chunkOrdinal,
+  itemIndex,
   { marketHedgeTargets = null } = {}
 ) {
   if (!object(row)) fail('记录须为对象');
@@ -151,6 +155,9 @@ export async function recordIndex(
       status: row.status ?? null
     };
     status = identifier(row.status, '拟合状态', true);
+  } else if (collection === 'snapshotColumns') {
+    rowId = identifier(row.name, '冻结数据列');
+    metadata = { kind: row.kind };
   } else if (collection === 'snapshotRows') {
     rowId = snapshotRecordKey(row);
     day = row.trade_date;

@@ -75,6 +75,8 @@ async function environment(t) {
       flowBasis: packageValue.selection.flowBasis,
     };
   const spec = {
+    profile: 'financial_snapshot_view_50_v1',
+    request: { profile: 'financial_snapshot_view_50_v1' },
     sources: {
       market: {
         scope: summary.scope,

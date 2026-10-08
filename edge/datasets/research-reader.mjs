@@ -1,25 +1,13 @@
 /** Bounded provider-free source delivery to the exact live research lease. */
 import { assertRunDataset } from './research.mjs';
-import {
-  LIMITS,
-  bytes,
-  hashBytes,
-  fail,
-  id,
-  integer,
-  json,
-  readObject,
-} from './common.mjs';
-import {
-  registryPage,
-  registryResponse,
-  protectedResponse,
-} from './transport.mjs';
+import { datasetContext } from './context.mjs';
+import { LIMITS, bytes, hashBytes, fail, id, integer, json, readObject } from './common.mjs';
+import { registryPage, registryResponse, protectedResponse } from './transport.mjs';
 export async function researchDatasetApi(req, env, path) {
   if (!path.startsWith('/runner/research-datasets/')) return null;
   const m =
     /^\/runner\/research-datasets\/([a-f0-9-]+)\/(input|manifest|parts|registry)(?:\/([a-zA-Z0-9-]+))?(?:\/(\d+))?$/.exec(
-      path,
+      path
     );
   if (!m) fail('NOT_FOUND', '研究数据集读取接口不存在', 404);
   if (req.method !== 'GET') fail('METHOD', '冻结数据集只允许GET', 405);
@@ -29,7 +17,7 @@ export async function researchDatasetApi(req, env, path) {
   id(jobId);
   id(token);
   const job = await env.DB.prepare(
-    "SELECT * FROM jobs WHERE id=? AND lease_token=? AND status='running' AND lease_until>?",
+    "SELECT * FROM jobs WHERE id=? AND lease_token=? AND status='running' AND lease_until>?"
   )
     .bind(jobId, token, new Date().toISOString())
     .first();
@@ -38,15 +26,12 @@ export async function researchDatasetApi(req, env, path) {
     root = closure.datasetRef.datasetRoot,
     base = `/quant/api/runner/research-datasets/${job.id}`;
   for (const key of url.searchParams.keys())
-    if (
-      key !== 'datasetRoot' &&
-      !(key === 'offset' && action === 'registry' && !ref)
-    )
+    if (key !== 'datasetRoot' && !(key === 'offset' && action === 'registry' && !ref))
       fail('UNKNOWN_PROPERTY', '读取参数不支持');
   if (action !== 'input' && url.searchParams.get('datasetRoot') !== root)
     fail('DATASET_ROOT', '读取须固定同一数据集根', 409);
   const composition = await env.DB.prepare(
-    'SELECT * FROM quant_dataset_jobs WHERE id=? AND owner=?',
+    'SELECT * FROM quant_dataset_jobs WHERE id=? AND owner=?'
   )
     .bind(closure.stage.job_id, job.owner)
     .first();
@@ -60,31 +45,25 @@ export async function researchDatasetApi(req, env, path) {
       manifest: {
         sha256: root,
         byteLength: bytes(closure.manifestText).length,
-        url: `${base}/manifest?datasetRoot=${root}`,
+        url: `${base}/manifest?datasetRoot=${root}`
       },
       partUrlTemplate: `${base}/parts/{componentId}/{ordinal}?datasetRoot=${root}`,
       registry: {
         count: closure.plan.sources.registry.length,
-        totalBytes: closure.plan.sources.registry.reduce(
-          (n, x) => n + x.byteLength,
-          0,
-        ),
-        listUrl: `${base}/registry?datasetRoot=${root}&offset=0`,
+        totalBytes: closure.plan.sources.registry.reduce((n, x) => n + x.byteLength, 0),
+        listUrl: `${base}/registry?datasetRoot=${root}&offset=0`
       },
-      limits: LIMITS,
+      limits: LIMITS
     });
-  if (action === 'manifest' && !ref)
-    return protectedResponse(bytes(closure.manifestText), root);
+  if (action === 'manifest' && !ref) return protectedResponse(bytes(closure.manifestText), root);
   if (action === 'parts' && ref && ordinal !== undefined) {
-    const component = closure.manifest.components.find(
-      (x) => x.componentId === ref,
-    );
+    const component = closure.manifest.components.find((x) => x.componentId === ref);
     if (!component) fail('NOT_FOUND', '该组件不属于数据集', 404);
     const n = Number(ordinal);
     integer(n, 0, component.parts.length - 1);
     const descriptor = component.parts[n],
       stored = await env.DB.prepare(
-        'SELECT * FROM quant_dataset_parts WHERE stage_id=? AND component_id=? AND ordinal=?',
+        'SELECT * FROM quant_dataset_parts WHERE stage_id=? AND component_id=? AND ordinal=?'
       )
         .bind(closure.stage.id, ref, n)
         .first();
@@ -100,20 +79,25 @@ export async function researchDatasetApi(req, env, path) {
         stored.object_key,
         descriptor.sha256,
         descriptor.byteLength,
-        LIMITS.partBytes,
+        LIMITS.partBytes
       ),
-      descriptor.sha256,
+      descriptor.sha256
     );
   }
   if (action === 'registry' && ref)
-    return registryResponse(env, composition, ref);
+    return registryResponse(env, composition, ref, datasetContext(closure.datasetRef.version));
   if (action === 'registry' && !ref) {
     const clean = new URL(url);
     clean.searchParams.delete('datasetRoot');
-    const page = await registryPage(env, composition, clean);
+    const page = await registryPage(
+      env,
+      composition,
+      clean,
+      datasetContext(closure.datasetRef.version)
+    );
     page.items = page.items.map((x) => ({
       ...x,
-      url: `${base}/registry/${x.ref}?datasetRoot=${root}`,
+      url: `${base}/registry/${x.ref}?datasetRoot=${root}`
     }));
     return json(page);
   }

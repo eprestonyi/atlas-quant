@@ -5,6 +5,7 @@ import { BUNDLE_PROFILE, HASH } from './profile.mjs';
 import { byteLength } from './json.mjs';
 import { validateManifest, validateChunk } from './manifest.mjs';
 import { FINANCIAL_FORMAT, validateFinancialManifest } from '../financial-bundles/manifest.mjs';
+import { validateFinancialGraphManifest } from '../financial-graph-bundles/manifest.mjs';
 import {
   assertMarketBundle,
   storedMarketAdmission,
@@ -101,9 +102,12 @@ export async function loadStage(env, stageId, job = null) {
 export async function parsedStage(stage) {
   if (storedMarketAdmission(stage))
     return validateMarketBundle(stage.manifest_text, stage.bundle_id);
-  const format = parse(stage.manifest_text)?.format;
-  if (format === FINANCIAL_FORMAT)
-    return validateFinancialManifest(stage.manifest_text, stage.bundle_id);
+  const { format, version } = parse(stage.manifest_text) || {};
+  if (format === FINANCIAL_FORMAT) {
+    if (version === 1) return validateFinancialManifest(stage.manifest_text, stage.bundle_id);
+    if (version === 2) return validateFinancialGraphManifest(stage.manifest_text, stage.bundle_id);
+    throw new ApiError('BUNDLE_FORMAT', '未登记金融传输版本', 409);
+  }
   return validateManifest(stage.manifest_text, stage.bundle_id);
 }
 export async function sourceStage(env, job) {
@@ -190,8 +194,12 @@ async function assertJobContent(env, job, link, parsed) {
     conflict('纯预测不能返回执行曲线或成交');
 }
 
-export function assertTransport(parsed, expectedFormat = 'atlas.quant.bundle') {
-  if (parsed.manifest.format !== expectedFormat)
+export function assertTransport(
+  parsed,
+  expectedFormat = 'atlas.quant.bundle',
+  expectedVersion = 1
+) {
+  if (parsed.manifest.format !== expectedFormat || parsed.manifest.version !== expectedVersion)
     throw new ApiError('BUNDLE_FORMAT', '此入口不接受该传输格式', 409);
 }
 export async function beginBundle(
@@ -341,7 +349,12 @@ export async function uploadChunk(
   collectionId,
   ordinal,
   text,
-  { expectedFormat = 'atlas.quant.bundle', authorize = null } = {}
+  {
+    expectedFormat = 'atlas.quant.bundle',
+    expectedVersion = 1,
+    authorize = null,
+    validateRows = null
+  } = {}
 ) {
   const job = await leasedJob(env, input);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
@@ -352,10 +365,11 @@ export async function uploadChunk(
     descriptor = collection?.chunks[ordinal];
   if (!descriptor || !Number.isInteger(ordinal) || ordinal < 0)
     throw new ApiError('BUNDLE_CHUNK', '分片位置未在 manifest 声明');
-  assertTransport(parsed, expectedFormat);
+  assertTransport(parsed, expectedFormat, expectedVersion);
   if (job.status === 'running' && authorize) await authorize(env, job, parsed);
   const codec = parsed.manifest.documents[collection.document].codec ?? 'forecast_json_v1';
   const rows = await validateChunk(text, descriptor, codec);
+  if (validateRows) validateRows(collectionId, rows, parsed);
   const sortedSnapshot =
     collectionId === 'snapshotRows' && snapshotValidation(stage).strategy === SORTED_SNAPSHOT;
   const snapshotReceipt = sortedSnapshot ? summarizeSnapshot(rows, descriptor) : null;
@@ -395,16 +409,17 @@ export async function uploadChunk(
   // Only this admitted market route can use compact all-asset hedge references.
   const marketHedgeTargets =
     job.data_source === 'ready_market' && collectionId === 'hedgeFits'
-      ? (await marketAssetTargets(parsed.metadata.report.strategy.universe.symbols)).map(t => t.id)
+      ? (await marketAssetTargets(parsed.metadata.report.strategy.universe.symbols)).map(
+          (t) => t.id
+        )
       : null;
   const indexes = [];
   if (!sortedSnapshot)
     for (let index = 0; index < rows.length; index++)
       indexes.push(
-        await recordIndex(
-          collectionId, rows[index], descriptor.start + index, ordinal, index,
-          { marketHedgeTargets }
-        )
+        await recordIndex(collectionId, rows[index], descriptor.start + index, ordinal, index, {
+          marketHedgeTargets
+        })
       );
   const key = `bundle/${job.owner}/${stage.id}/${collectionId}/${ordinal}-${descriptor.sha256}.json`;
   await env.ARTIFACTS.put(key, text, {
