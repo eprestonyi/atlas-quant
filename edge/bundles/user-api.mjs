@@ -5,6 +5,7 @@ import { documentStream } from './streams.mjs';
 import { reportSummary } from './publication.mjs';
 import { pageQuery, pageRecords, detailRecord, chartRecords } from './pages.mjs';
 import { readPrivateObject } from '../private-objects.mjs';
+import { bundleArchiveResponse } from './archive.mjs';
 
 export function transportView(stage, parsed, runId) {
   return {
@@ -13,12 +14,14 @@ export function transportView(stage, parsed, runId) {
     bundleId: stage.bundle_id,
     complete: true,
     logicalArtifactId: parsed.manifest.forecastArtifactId,
+    hasFrozenInputs: Object.hasOwn(parsed.manifest.documents, 'snapshot'),
     collections: Object.fromEntries(
       [...parsed.collections.values()]
         .filter((c) => c.id !== 'snapshotRows')
         .map((c) => [c.id, { total: c.rowCount }])
     ),
-    downloadUrl: `/quant/api/runs/${runId}/report/download?bundleId=${stage.bundle_id}`
+    downloadUrl: `/quant/api/runs/${runId}/report/download?bundleId=${stage.bundle_id}`,
+    bundleDownloadUrl: `/quant/api/runs/${runId}/report/bundle?bundleId=${stage.bundle_id}`
   };
 }
 export function streamDocumentResponse(env, stage, parsed, name, options = {}) {
@@ -54,7 +57,7 @@ export async function ownedForecastStage(env, owner, forecastId) {
 
 export async function bundleUserApi(req, env, path, owner) {
   const match =
-    /^\/runs\/([^/]+)(?:\/(report)(?:\/(pages|detail|chart|download))?|\/(export))?$/.exec(path);
+    /^\/runs\/([^/]+)(?:\/(report)(?:\/(pages|detail|chart|download|bundle))?|\/(export))?$/.exec(path);
   if (!match || req.method !== 'GET') return null;
   const [, id, reportRoute, operation, oldExport] = match;
   const job = await env.DB.prepare('SELECT * FROM jobs WHERE id=? AND owner=?')
@@ -97,6 +100,7 @@ export async function bundleUserApi(req, env, path, owner) {
     return json(await pageRecords(env, stage, parsed, pageQuery(params, parsed)));
   if (operation === 'detail') return json(await detailRecord(env, stage, parsed, params));
   if (operation === 'chart') return json(await chartRecords(env, stage, parsed, params));
+  if (operation === 'bundle') return bundleArchiveResponse(env, stage, parsed, id);
   return streamDocumentResponse(env, stage, parsed, 'report', {
     filename: `atlas-quant-${id}.json`
   });

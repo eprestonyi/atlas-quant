@@ -2192,3 +2192,7 @@
 .sq-main h1[tabindex='-1']:focus {
   outline: none;
 }
+
+/* Report and reproducibility downloads stay readable in the narrow layout. */
+.sq-report-downloads { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 260px; }
+.sq-report-downloads small { color: var(--muted); line-height: 1.6; overflow-wrap: anywhere; }

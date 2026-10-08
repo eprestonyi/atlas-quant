@@ -83,7 +83,13 @@ v0.5 的分片目录保存完整预测、去因子对照、拟合前观察计划
 .venv/bin/python scripts/audit-bundle.py private/execution-bundle --source-bundle private/forecast-bundle
 ```
 
-`audit-bundle.py` 使用标准库逐片复核原始字节、完整覆盖、引用和现金账本，不导入研究引擎。浏览器按已提交索引筛选与翻页，下载为完整报告 JSON；CLI 的 manifest/chunks 目录与浏览器 JSON 导出是不同格式。
+`audit-bundle.py` 使用标准库逐片复核原始字节、完整覆盖、引用和现金账本，不导入研究引擎。浏览器按已提交索引筛选与翻页。完整报告 JSON 用于阅读与分析；新增的私有复现包同时包含冻结输入与分片清单，可在本机严格导入：
+
+```sh
+python3 scripts/extract-bundle.py atlas-quant-run-bundle.tar private/reproduced
+```
+
+导入完成前会独立审计，已有目录不被覆盖。执行记录包还需要原始预测目录，详见[私有复现包](docs/BUNDLE_EXPORT.md)。旧版单包报告继续保留 JSON 下载。
 
 执行覆盖文件只能包含 `execution`、`portfolio`、`costs`。例如保存为 `private/execution-overrides.json`：
 
