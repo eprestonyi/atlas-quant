@@ -85,3 +85,21 @@ A local HTTP acceptance is separate evidence from these tests. This code alone
 does not establish hosted readiness, production installation, or a successful F
 research run. The source archive must accompany any future financial report;
 a numerical result bundle alone does not prove financial source completeness.
+
+The same generator's explicit `--long-scope` option prepares the fixed 2024
+synthetic weekday calendar (262 sessions). It retains 85 initially missing TTM
+observations instead of manufacturing earlier financial availability. Other
+states, such as operating margin, have262observed values from the fixed earlier
+synthetic disclosure. Generating this source still performs no F fit and gives
+no indication of predictive advantage.
+
+A local unreleased Worker acceptance on2026-10-08 completed composition through
+the actual Python consumer and D1/R2. The HTTP-downloaded archive contained8parts,
+16coverage entries and694272bytes. Offline recomposition from independently pinned
+synthetic source bytes plus the owner-specific calendar grant reproduced every
+part and the manifest. The standalone closure auditor passed47147checks. Its
+separate limitations remain: it does not authenticate PDFs or independently
+recalculate financial formulas; the core recomposition performed the numerical
+comparison. No provider acquisition or prediction fit occurred. The first private
+harness attempt failed during spawn import; its durable claim was settled without
+recomputation, and a regression now covers bootstrap failure before unpickling.
