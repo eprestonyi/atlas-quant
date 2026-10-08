@@ -1,3 +1,4 @@
+import { createModelFunctionEditor } from './model-function-editor.js';
 import { createFactorDiagnostics } from './factor-diagnostics.js';
 // Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
 import { ESTIMATORS } from './defaults.js';
@@ -23,6 +24,7 @@ export function createForecastReports(C, F) {
     dateTo: ''
   };
   const remote = createReportSource(C);
+  const functionEditor = createModelFunctionEditor(C, F);
   const financialReport = () => remote.transport?.format === 'atlas.quant.financial_bundle';
   function financialSourceRef() {
     const ref = remote.transport?.sourceEvidence?.datasetRef;
@@ -655,7 +657,8 @@ export function createForecastReports(C, F) {
       page ? remoteState(page, body) : body + pages(ui.page, rows.length, 'forecast-page'),
       {
         description:
-          '预处理、去相关和状态效应来自实际训练拟合。不会把“模型族名含回归”当作已证明的均值回归。'
+          '预处理、去相关和状态效应来自实际训练拟合。不会把“模型族名含回归”当作已证明的均值回归。',
+        actions: F.button('mfe-library', '已保存的函数版本', { small: true })
       }
     );
   }
@@ -766,7 +769,7 @@ export function createForecastReports(C, F) {
             )
           ) + F.note('这是训练状态在四分位区间内扰动的条件效应，不是因果归因或均值回归证明。')
         : ''
-    }${F.advanced('去相关与输入剔除', JSONView(fit.decorrelation))}${F.advanced('查看原始拟合记录', JSONView(fit))}</div>`;
+    }${functionEditor.render(fit, { runId: C.state.runId, bundleId: remote.transport?.bundleId || null, modelFitId: fit.id })}${F.advanced('去相关与输入剔除', JSONView(fit.decorrelation))}${F.advanced('查看原始拟合记录', JSONView(fit))}</div>`;
   }
   function remoteBaseline(r) {
     const page = remote.page('baselineRows');
@@ -857,6 +860,7 @@ export function createForecastReports(C, F) {
     )}<p class="sq-subtle">${e(row.riskBreaches?.map(reasonLabel).join('；') || '收盘未记录超限')}</p>${F.advanced('查看原始日账本', JSONView(row))}`;
   }
   async function handle(el) {
+    if (el.dataset.sq?.startsWith('mfe-')) return functionEditor.handle(el);
     const action = el.dataset.sq;
     if (!action?.startsWith('forecast-')) return false;
     const r = ui.result;
@@ -978,6 +982,7 @@ export function createForecastReports(C, F) {
   }
   let searchTimer;
   function onInput(el) {
+    functionEditor.onInput(el);
     const remoteFilters = {
       'sq-forecast-target': 'target',
       'sq-forecast-date-from': 'dateFrom',
@@ -992,6 +997,7 @@ export function createForecastReports(C, F) {
     }
   }
   function onChange(el) {
+    functionEditor.onInput(el);
     if (el.id === 'sq-risk-filter') {
       ui.riskFilter = el.value;
       ui.riskPage = 1;
