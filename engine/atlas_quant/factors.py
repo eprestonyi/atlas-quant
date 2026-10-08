@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -15,11 +16,18 @@ import pandas as pd
 
 from .research_registry import is_external_field
 
-FIELDS = frozenset("open high low close raw_close vol amount adj_factor turnover_rate turnover_rate_f volume_ratio pe pe_ttm pb ps ps_ttm dv_ratio dv_ttm total_share float_share free_share total_mv circ_mv".split())
-WINDOW_FUNCTIONS = frozenset("lag returns delta ts_mean ts_std ts_min ts_max ts_sum ts_rank".split())
-UNARY_FUNCTIONS = frozenset("rank zscore log abs sqrt sign".split())
-BINARY_FUNCTIONS = frozenset(("min", "max"))
-ALLOWED_FUNCTIONS = WINDOW_FUNCTIONS | UNARY_FUNCTIONS | BINARY_FUNCTIONS | {"clip"}
+# Both the execution validator and edge explanations consume this versioned
+# contract. Evaluator bodies below remain the authority for actual arithmetic;
+# parity tests exercise every operator with the same declared semantics.
+DSL_CONTRACT = json.loads(Path(__file__).with_name("dsl_contract.json").read_text(encoding="utf-8"))
+FIELDS = frozenset(DSL_CONTRACT["fields"])
+WINDOW_FUNCTIONS = frozenset(k for k, v in DSL_CONTRACT["operators"].items() if v["category"] == "window")
+UNARY_FUNCTIONS = frozenset(k for k, v in DSL_CONTRACT["operators"].items() if v["category"] == "unary")
+BINARY_FUNCTIONS = frozenset(k for k, v in DSL_CONTRACT["operators"].items() if v["category"] == "binary")
+ALLOWED_FUNCTIONS = frozenset(DSL_CONTRACT["operators"])
+_LIMITS = DSL_CONTRACT["limits"]
+_SYNTAX = DSL_CONTRACT["syntax"]
+_TOKEN = re.compile(_SYNTAX["tokenPattern"])
 
 
 class FactorError(ValueError):
@@ -34,25 +42,61 @@ def _number(node):
     if not isinstance(node, ast.Constant) or isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
         raise FactorError("窗口和边界必须为数字常量")
     value = sign * node.value
-    if not np.isfinite(value) or abs(value) > 1_000_000:
+    if abs(value) > _LIMITS["numberAbsMax"] or not np.isfinite(value):
         raise FactorError("数字常量必须有限且绝对值不超过 1000000")
     return value
 
 
 def _parse(expression):
-    if not isinstance(expression, str) or not expression.strip() or len(expression) > 500:
+    if not isinstance(expression, str) or not expression.strip() or len(expression) > _LIMITS["expressionLength"]:
         raise FactorError("因子表达式须为 1–500 字符")
+    # Enforce the shared language before Python's broader lexical grammar.
+    # Joining tokens with spaces preserves boundaries while making ASCII line
+    # breaks ordinary whitespace, exactly as in the edge parser.
+    tokens, pos, nesting = [], 0, 0
+    while pos < len(expression):
+        if expression[pos] in _SYNTAX["whitespace"]:
+            pos += 1
+            continue
+        match = _TOKEN.match(expression, pos)
+        if match is None:
+            raise FactorError("表达式只允许 ASCII 因果数学运算")
+        token = match.group()
+        if token == "(":
+            nesting += 1
+            if nesting > _LIMITS["parenthesisNesting"]:
+                raise FactorError("表达式括号嵌套过深")
+        elif token == ")":
+            nesting -= 1
+            if tokens and tokens[-1] == "," and not _SYNTAX["trailingComma"]:
+                raise FactorError("函数参数不能使用末尾逗号")
+        tokens.append(token)
+        pos = match.end()
     try:
-        tree = ast.parse(expression.strip(), mode="eval")
+        tree = ast.parse(" ".join(tokens), mode="eval")
     except (SyntaxError, RecursionError) as exc:
         raise FactorError("因子表达式语法错误") from exc
-    if sum(1 for _ in ast.walk(tree)) > 128:
-        raise FactorError("因子表达式过于复杂")
+
+    # Semantic tree limits exclude Python's operator/Load/function-name nodes.
+    # Numeric window/bound arguments count just like every other argument.
+    count, pending = 0, [(tree.body, _LIMITS["treeRootDepth"])]
+    while pending:
+        node, depth = pending.pop()
+        count += 1
+        if count > _LIMITS["treeNodes"] or depth > _LIMITS["treeDepth"]:
+            raise FactorError("因子表达式过于复杂")
+        if isinstance(node, ast.Call):
+            children = node.args
+        elif isinstance(node, ast.BinOp):
+            children = [node.left, node.right]
+        elif isinstance(node, ast.UnaryOp):
+            children = [node.operand]
+        else:
+            children = []
+        pending.extend((child, depth + 1) for child in children)
     fields = set()
 
-    def visit(node, depth=0):
-        if depth > 16:
-            raise FactorError("因子表达式嵌套超过 16 层")
+    def visit(node):
         if isinstance(node, ast.Constant):
             _number(node)
             return 0
@@ -62,30 +106,30 @@ def _parse(expression):
             fields.add(node.id)
             return 0
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-            return visit(node.operand, depth + 1)
+            return visit(node.operand)
         if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)):
-            return max(visit(node.left, depth + 1), visit(node.right, depth + 1))
+            return max(visit(node.left), visit(node.right))
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
             name = node.func.id
             if name in WINDOW_FUNCTIONS and len(node.args) == 2:
                 window = _number(node.args[1])
-                if int(window) != window or not 1 <= window <= 252:
+                if int(window) != window or not _LIMITS["windowMin"] <= window <= _LIMITS["windowMax"]:
                     raise FactorError("窗口须为 1–252 的正整数")
-                base = visit(node.args[0], depth + 1)
-                return base + int(window) - (0 if name in {"lag", "returns", "delta"} else 1)
+                base = visit(node.args[0])
+                return base + int(window) + DSL_CONTRACT["operators"][name]["lookbackOffset"]
             if name in UNARY_FUNCTIONS and len(node.args) == 1:
-                return visit(node.args[0], depth + 1)
+                return visit(node.args[0])
             if name in BINARY_FUNCTIONS and len(node.args) == 2:
-                return max(visit(arg, depth + 1) for arg in node.args)
+                return max(visit(arg) for arg in node.args)
             if name == "clip" and len(node.args) == 3:
                 lo, hi = _number(node.args[1]), _number(node.args[2])
                 if lo >= hi:
                     raise FactorError("clip 下界必须小于上界")
-                return visit(node.args[0], depth + 1)
+                return visit(node.args[0])
         raise FactorError("只允许白名单字段、因果函数及 + - * / 运算")
 
     lookback = visit(tree.body)
-    if lookback > 504:
+    if lookback > _LIMITS["lookbackMax"]:
         raise FactorError("组合因子的回看期不得超过 504 个交易日")
     if not fields:
         raise FactorError("因子至少须依赖一个行情字段")
@@ -117,7 +161,7 @@ def evaluate_expression(expression: str, frame: pd.DataFrame) -> pd.Series:
 
     def divide(a, b):
         aa, bb = series(a), series(b)
-        return aa.div(bb.where(bb.abs() > 1e-12))
+        return aa.div(bb.where(bb.abs() > _LIMITS["divisionEpsilon"]))
 
     def calc(node):
         if isinstance(node, ast.Constant):

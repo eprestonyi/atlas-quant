@@ -178,3 +178,47 @@ test('studio endpoints reject nonobject JSON bodies as invalid input rather than
   const response=await request(route,{method:'POST',cookie:owner,data});assert.equal(response.status,400,route+' '+JSON.stringify(data));assert.ok((await response.json()).error?.code);
  }
 });
+
+test('DSL HTTP facts remain deterministic when an AI opinion misreads the same expression', async () => {
+ const code = 'returns(close,20)';
+ const expressionHash = createHash('sha256').update(code).digest('hex');
+ const lint = await (await request('/expressions/lint', {
+  method: 'POST', cookie: owner, data: {expression: code},
+ })).json();
+ assert.equal(lint.valid, true);
+ assert.equal(lint.codeSha256, expressionHash);
+ assert.equal(lint.deterministicFacts.expression, code);
+ assert.equal(lint.deterministicFacts.executionPerformed, false);
+ assert.equal(lint.deterministicFacts.operations[0].formula, 'x[t] / x[t−n] − 1');
+ assert.match(lint.deterministicFacts.operations[0].meaning, /累计相对变化/);
+ assert.equal(lint.deterministicFacts.operations[0].window, 20);
+
+ await mock({throw: true});
+ const manual = (await (await review(code, 'manual', {language: 'dsl'})).json()).review;
+ assert.deepEqual(manual.deterministicFacts, lint.deterministicFacts);
+ assert.equal(manual.codeSha256, expressionHash);
+ assert.equal(manual.correctnessCertified, false);
+ assert.equal(await db.prepare("SELECT value FROM meta WHERE key='test_ai_call'").first(), null);
+
+ // Deliberately wrong provider fixture: transport success never changes facts.
+ await mock({answer: {response: {
+  summary: '这是 20 天前的收益率。', findings: [], patches: [],
+  deterministicFacts: {correctnessCertified: true, meaning: 'wrong override'},
+ }}});
+ const ai = (await (await review(code, 'ai', {language: 'dsl'})).json()).review;
+ assert.equal(ai.summary, '这是 20 天前的收益率。');
+ assert.equal(ai.providerExecuted, true);
+ assert.equal(ai.correctnessCertified, false);
+ assert.deepEqual(ai.deterministicFacts, lint.deterministicFacts);
+ const call = JSON.parse((await db.prepare("SELECT value FROM meta WHERE key='test_ai_call'").first()).value);
+ const context = JSON.parse(call.payload.messages[1].content).researchContext;
+ assert.deepEqual(context.deterministicFacts, lint.deterministicFacts);
+
+ const invalid = await (await request('/expressions/lint', {
+  method: 'POST', cookie: owner, data: {expression: 'lag(close,-1)'},
+ })).json();
+ assert.equal(invalid.deterministicFacts.expression, 'lag(close,-1)');
+ assert.equal(invalid.deterministicFacts.status, 'invalid');
+ assert.equal(invalid.deterministicFacts.executionPerformed, false);
+ assert.equal(invalid.deterministicFacts.operations, undefined);
+});

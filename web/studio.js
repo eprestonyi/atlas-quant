@@ -1,11 +1,33 @@
 /* Atlas Quant v2: accessible research composer and independent studio workspaces. */
 (() => {
   'use strict';
+  // Deterministic parser evidence is presented independently from AI opinions.
+  function dslFactsView(facts, expression, escape, busy = false, codeSha256 = null) {
+    const e = escape;
+    if (busy)
+      return '<div class="v2-dsl-evidence" role="status">正在读取 DSL 解析与算子合同…</div>';
+    if (!facts)
+      return '<div class="v2-dsl-evidence"><h3>DSL 确定语义</h3><p>校验表达式后，显示真实解析器使用的算子、窗口和时点规则。此处不会用 AI 文案补充未知事实。</p></div>';
+    const stale = facts.expression !== expression;
+    if (stale)
+      return '<div class="v2-dsl-evidence stale" role="status"><h3>DSL 确定语义 · 待重新校验</h3><p>代码已改变。上次解析不能确认当前表达式的含义，请重新校验。</p></div>';
+    if (facts.status !== 'parsed')
+      return '<div class="v2-dsl-evidence stale"><h3>DSL 确定语义 · 尚未解析</h3><p>先修正语法。没有有效解析树时，不显示推测的算子含义。</p></div>';
+    const operations = facts.operations || [];
+    const operation = (op) => {
+      const formula =
+        typeof op.window === 'number'
+          ? op.formula.replace(/\bn\b/g, String(op.window))
+          : op.formula;
+      return `<article class="v2-dsl-operation"><h4>${e(op.title)}${op.window !== undefined ? ` · ${e(op.window)} 格` : ''}</h4><code>${e(op.expression)}</code><p class="v2-dsl-formula">${e(formula)}</p><p>${e(op.meaning)}</p><p class="v2-dsl-inputs">${(op.inputs || []).map((input, index) => `${(op.category === 'window' ? ['x', 'n'] : op.category === 'clip' ? ['x', 'lower', 'upper'] : op.category === 'arithmetic' ? ['a', 'b'] : ['x', 'y'])[index]} = ${e(input)}`).join('；')}</p><p class="footnote">缺失处理：${e(op.missing)}</p></article>`;
+    };
+    return `<div class="v2-dsl-evidence" role="status"><div class="v2-dsl-heading"><h3>DSL 确定语义</h3><span>解析成功 · 未运行数据</span></div><p class="v2-dsl-meta">历史回看 ${e(facts.lookback)} 格 · 字段 ${e((facts.fields || []).join('、'))}</p>${operations.length ? operation(operations.at(-1)) : `<p>直接使用当前评估格的字段值：<code>${e(facts.canonicalExpression)}</code>。</p>`}${operations.length > 1 ? `<details><summary>展开 ${operations.length - 1} 个内层运算</summary>${operations.slice(0, -1).map(operation).join('')}</details>` : ''}<div class="v2-dsl-timing"><p>${e(facts.evaluation?.timeMeaning || '网格时点定义未返回。')}</p><p>${e(facts.evaluation?.availability || '输入可用时间尚未确认。')}</p><p>${e(facts.evaluation?.horizon || '')}</p></div><details><summary>缺失边界与合同版本</summary><p>${e(facts.evaluation?.missingClose || '')}</p><p>${e(facts.evaluation?.coverage || '数据覆盖与代码正确性均未验证。')}</p><code>${e(facts.contractVersion || '合同版本未知')}</code>${codeSha256 ? `<p>解析代码 SHA-256</p><code>${e(codeSha256)}</code>` : ''}</details></div>`;
+  }
   window.AtlasQuantV2 = {create(C) {
     const {state:s,esc:e,icon:i,api,toast,render,persistDraft,normalizeStrategy,clone,field,fmt,pct,dateText} = C;
     const stages=[['data','database','数据与股票池'],['factors','layers','因子研究'],['targets','chart','观察与检验'],['models','model','模型与拟合'],['validation','shield','时间验证'],['portfolio','wallet','组合与成本'],['reports','chart','研究报告'],['code','code','代码与 AI 审阅']];
     const models={factor_score:['因子评分','透明的基准排序，用来判断模型是否真正增加价值。','基准'],ridge:['Ridge','适合相关因子，使用 L2 正则化控制系数。','线性'],elastic_net:['Elastic Net','L1 与 L2 正则化，适合冗余特征与稀疏信号。','线性'],bayesian_ridge:['Bayesian Ridge','贝叶斯正则化的线性回归。','统计'],huber:['Huber','降低异常标签对线性拟合的影响。','稳健'],hist_gradient_boosting:['Histogram Gradient Boosting','学习非线性与因子交互，使用有限搜索范围。','提升树'],random_forest:['Random Forest','不同树的集成，探索非线性结构。','集成'],extra_trees:['Extra Trees','随机化分割的树集成，作为另一种非线性候选。','集成']};
-    const v={ready:false,errors:[],universes:[],featuredUniverses:[],universeTotal:0,universeAllTotal:0,membersQuery:'',membersPage:1,universeCategories:[],universeLoading:false,catalogSummary:null,universe:null,universeQuery:'',universeCategory:'index',universePage:1,presets:{goals:[],packs:[],strategies:[]},sources:[],sourceArchitecture:null,sourceAdapters:[],catalog:{items:[],total:0,page:1,pageSize:24},filters:{q:'',category:'',database:'',availability:'',page:1},catalogLoading:false,catalogError:'',catalogTab:'factors',fieldCatalog:{items:[],total:0,page:1,pageSize:24},fieldFilters:{q:'',database:'',page:1},fieldLoading:false,group:'',mapping:{alias:'',fieldId:'',unitCode:'',records:'[]'},mappingJson:'',goal:'',forecastResult:null,forecastJob:null,forecastLoading:false,forecastRunId:'',builder:{name:'我的自定义因子',field:'close',transform:'returns',window:20,expression:'returns(close,20)',direction:1},lint:null,lintBusy:false,editorLanguage:'dsl',code:{dsl:'returns(close,20)',python:'# 在隔离的浏览器 Python 中研究上传的数据\n# data 是当前已导入数据的记录列表；没有上传时为空。\nimport json\nfrom collections import Counter\n\nprint("数据行数:", len(data))\ncounts = Counter(row["ts_code"] for row in data)\nprint(json.dumps(dict(counts), ensure_ascii=False, indent=2))\n\n# result 会作为结构化输出显示\nresult = {"rows": len(data), "symbols": len(counts)}\n',json:''},projects:[],projectId:null,projectVersion:null,projectName:'我的研究脚本',projectSaving:false,review:null,reviewBusy:false,pythonBusy:false,pythonOutput:null,applied:new Set(),selectionRequest:0,mode:'simple'};
+    const v={ready:false,errors:[],universes:[],featuredUniverses:[],universeTotal:0,universeAllTotal:0,membersQuery:'',membersPage:1,universeCategories:[],universeLoading:false,catalogSummary:null,universe:null,universeQuery:'',universeCategory:'index',universePage:1,presets:{goals:[],packs:[],strategies:[]},sources:[],sourceArchitecture:null,sourceAdapters:[],catalog:{items:[],total:0,page:1,pageSize:24},filters:{q:'',category:'',database:'',availability:'',page:1},catalogLoading:false,catalogError:'',catalogTab:'factors',fieldCatalog:{items:[],total:0,page:1,pageSize:24},fieldFilters:{q:'',database:'',page:1},fieldLoading:false,group:'',mapping:{alias:'',fieldId:'',unitCode:'',records:'[]'},mappingJson:'',goal:'',forecastResult:null,forecastJob:null,forecastLoading:false,forecastRunId:'',builder:{name:'我的自定义因子',field:'close',transform:'returns',window:20,expression:'returns(close,20)',direction:1},lint:null,lintBusy:false,lintError:null,editorLanguage:'dsl',code:{dsl:'returns(close,20)',python:'# 在隔离的浏览器 Python 中研究上传的数据\n# data 是当前已导入数据的记录列表；没有上传时为空。\nimport json\nfrom collections import Counter\n\nprint("数据行数:", len(data))\ncounts = Counter(row["ts_code"] for row in data)\nprint(json.dumps(dict(counts), ensure_ascii=False, indent=2))\n\n# result 会作为结构化输出显示\nresult = {"rows": len(data), "symbols": len(counts)}\n',json:''},projects:[],projectId:null,projectVersion:null,projectName:'我的研究脚本',projectSaving:false,review:null,reviewBusy:false,pythonBusy:false,pythonOutput:null,applied:new Set(),selectionRequest:0,mode:'simple'};
     try{const d=JSON.parse(localStorage.getItem('atlas-quant-editor-v2')||'null');if(d?.code)for(const k of ['dsl','python'])if(typeof d.code[k]==='string')v.code[k]=d.code[k];}catch{}
     const isStudio=()=>s.view==='studio';
     const stage=()=>stages.some(x=>x[0]===s.studioStep)?s.studioStep:'data';
@@ -69,7 +91,7 @@
     function groups(){const gs=Array.isArray(s.strategy.graph.groups)?s.strategy.graph.groups:[];const ids=new Set(s.strategy.factors.map(f=>f.id));const included=new Set();const result=gs.map(g=>({...g,factorIds:(g.factorIds||[]).filter(id=>ids.has(id)&&!included.has(id)&&(included.add(id),true))}));const remaining=s.strategy.factors.filter(f=>!included.has(f.id)).map(f=>f.id);if(remaining.length||!result.length)result.push({id:'ungrouped',name:'我的研究信号',factorIds:remaining});return result;}
     function recipeGroups(advanced){return `<div class="v2-recipe-groups">${groups().map(g=>`<section class="v2-recipe-group" data-v2-drop="group:${e(g.id)}"><div class="v2-group-heading"><strong>${e(g.name)}</strong><span>${g.factorIds.length} ${advanced?'个因子':'个信号'}</span>${g.id!=='ungrouped'?action('remove-group','移除','close','subtle small',`data-id="${e(g.id)}" aria-label="移除分组 ${e(g.name)}"`):''}</div>${g.factorIds.map(id=>{const f=s.strategy.factors.find(f=>f.id===id),known=C.findFactor(id);return `<div class="v2-recipe-factor" ${advanced?`data-v2-drag="selected:${e(id)}"`:''}><div><strong>${e(known?.name||f.name||id)}</strong>${advanced?`<code>${e(f.expression)}</code><select aria-label="${e(known?.name||id)} 的方向" data-factor-direction="${e(id)}"><option value="1" ${f.direction===1?'selected':''}>正向</option><option value="-1" ${f.direction===-1?'selected':''}>反向</option></select><select aria-label="${e(known?.name||id)} 的分组" data-v2-factor-group="${e(id)}">${groups().map(x=>`<option value="${e(x.id)}" ${x.id===g.id?'selected':''}>${e(x.name)}</option>`).join('')}</select>`:''}</div>${legacy('remove-factor','', 'close','subtle small',`data-id="${e(id)}" aria-label="移除因子 ${e(known?.name||id)}"`)}</div>`;}).join('')||'<p class="v2-group-empty">把因子拖入这个分组</p>'}</section>`).join('')}</div>`;}
     function builder(){return `<div class="v2-two-col">${section('构建一个可解释的因子',`<div class="v2-panel-content"><label class="field"><span>因子名称</span><input id="v2-builder-name" value="${e(v.builder.name)}" maxlength="80"></label><div class="v2-builder-steps"><label class="field"><span>① 原始字段</span><select id="v2-builder-field">${labelOptions(['close','open','high','low','vol','amount','turnover_rate','pe_ttm','pb','total_mv','circ_mv'],v.builder.field)}</select></label><label class="field"><span>② 变换方法</span><select id="v2-builder-transform">${labelOptions([{id:'returns',name:'变化率'},{id:'ts_mean',name:'移动平均'},{id:'ts_std',name:'滚动波动'},{id:'delta',name:'差值'},{id:'ts_rank',name:'时间序列排名'},{id:'rank',name:'横截面排名'},{id:'zscore',name:'横截面标准分'},{id:'identity',name:'直接使用'}],v.builder.transform)}</select></label><label class="field"><span>③ 回看交易日</span><input id="v2-builder-window" type="number" min="1" max="252" value="${v.builder.window}"></label></div><div class="actions">${action('compose-expression','生成表达式','workflow')}</div><label class="field" style="margin-top:20px"><span>表达式 · 可直接修改</span><textarea id="v2-builder-expression" class="v2-expression-editor" spellcheck="false" maxlength="500">${e(v.builder.expression)}</textarea></label><label class="field"><span>输入符号</span><select id="v2-builder-direction"><option value="1" ${v.builder.direction===1?'selected':''}>正向编码 +1</option><option value="-1" ${v.builder.direction===-1?'selected':''}>反向编码 −1</option></select></label><div class="actions">${action('lint-builder',v.lintBusy?'校验中…':'校验公式','check','ghost',v.lintBusy?'disabled':'')}${action('add-custom','加入当前研究','plus','primary')}${action('builder-code','在代码区打开','code','subtle')}</div>${lintView()}</div>`)}<div>${section('从字段到因子的边界',`<div class="v2-panel-content"><div class="v2-research-flow"><div>原始观测<span>字段、单位、频率</span></div><b>↓</b><div>时点对齐<span>标的映射、发布时间</span></div><b>↓</b><div>因果变换<span>只能使用当时已知的信息</span></div><b>↓</b><div>研究特征<span>训练、验证与独立测试</span></div></div><p class="footnote">Financial DB 的目录字段必须先有真实观测值和发布时间映射，才能成为可回测的因子。表达式合法不等于数据已具备。</p></div>`)}${section('可用表达式',`<div class="v2-panel-content"><pre class="code-snippet">returns(close,20)\nts_std(returns(close,1),20)\nrank(amount / ts_mean(amount,20))\n(close - ts_mean(close,20)) / ts_std(close,20)</pre><p class="footnote">窗口 1–252；最多 500 字符。禁用未来偏移、任意代码与网络访问。</p>${legacy('contribute','贡献到开放因子社区','users')}</div>`)}</div></div>`;}
-    function lintView(){if(!v.lint)return '';return `<div class="v2-lint ${v.lint.valid?'valid':'invalid'}" role="status"><strong>${v.lint.valid?'表达式语法通过':'表达式需要修改'}</strong>${v.lint.lookback!==undefined?`<p>最大回看 ${e(v.lint.lookback)} 个交易日 · 字段 ${e((v.lint.fields||[]).join(', '))}</p>`:''}${(v.lint.diagnostics||[]).map(d=>`<p>${e(typeof d==='string'?d:d.message)}</p>`).join('')}${v.lint.availability?`<p>${e(availability(v.lint))}：${e(reason(v.lint))}</p>${contextualChip(v.lint)}`:''}</div>`;}
+    function lintView(expression=v.builder.expression){if(!v.lint)return '';if(v.lint.expression&&v.lint.expression!==expression)return '<div class="v2-lint" role="status">公式已修改，旧语法结果不适用于当前表达式。</div>';return `<div class="v2-lint ${v.lint.valid?'valid':'invalid'}" role="status"><strong>${v.lint.valid?'表达式语法通过':'表达式需要修改'}</strong>${Number.isFinite(v.lint.lookback)?`<p>最大回看 ${e(v.lint.lookback)} 个完整市场网格间隔 · 字段 ${e((v.lint.fields||[]).join(', '))}</p>`:''}${(v.lint.diagnostics||[]).map(d=>`<p>${e(typeof d==='string'?d:d.message)}</p>`).join('')}${v.lint.availability?`<p>${e(availability(v.lint))}：${e(reason(v.lint))}</p>${contextualChip(v.lint)}`:''}</div>`;}
     function targetScreen(){return flow.studioSignals();}
     function forecastPreview(){const runs=s.runs.filter(r=>['completed','complete','succeeded','success'].includes(r.status));return section('旧版逐股模型输出诊断',`<div class="v2-panel-content"><div class="v2-forecast-loader"><label class="field"><span>选择已完成研究</span><select id="v2-forecast-run" aria-label="选择预测研究记录"><option value="">最近完成的研究</option>${runs.map(r=>`<option value="${e(r.id)}" ${v.forecastRunId===r.id?'selected':''}>${e(r.name||r.strategy?.name||r.id)} · ${e(dateText(r.createdAt))}</option>`).join('')}</select></label>${action('load-forecast',v.forecastLoading?'读取中…':'读取旧诊断','chart','ghost',v.forecastLoading||!runs.length?'disabled':'')}</div>${v.forecastResult?`<p class="footnote">以下是「${e(v.forecastJob?.name||v.forecastResult.strategy?.name||'所选研究')}」的冻结记录；不随上方当前草稿的修改而变化。</p>${C.forecastReport(v.forecastResult,true)}${link('runs/'+encodeURIComponent(v.forecastJob.id),'查看完整运行报告','arrow','ghost')}`:empty(runs.length?'选择旧版已完成研究，读取冻结模型输出与误差。':'尚无旧版已完成研究；新篮子研究请查看残差与敞口报告。')}</div>`);}
     async function loadForecast(){const id=v.forecastRunId||s.runs.find(r=>['completed','complete','succeeded','success'].includes(r.status))?.id;if(!id)throw Error('还没有已完成的研究。');v.forecastLoading=true;render();try{const response=await api('/runs/'+encodeURIComponent(id));v.forecastResult=response.result||response.job?.result;v.forecastJob=response.job;v.forecastRunId=id;if(!v.forecastResult)throw Error('这条运行记录没有可读取的结果。');}finally{v.forecastLoading=false;render();}}
@@ -78,22 +100,101 @@
     function portfolioScreen(){return flow.studioExecution();}
     function reportScreen(){return `${studioHeading('研究报告','每次运行保留策略快照、数据来源、模型选择与最终独立测试。')}${C.runsView()}`;}
     function community(){const list=C.factors().filter(f=>f.source==='community'||f.forkOf||f.isOwner||f.builtin===false);return `${header('OPEN FACTOR COMMUNITY','一起构建开放因子库。','分享公式、研究思路与来源，让每个想法都可以被理解和复用。',legacy('contribute','贡献一个因子','plus','primary'))}<div class="v2-community-banner"><div>${i('users')}<h2>定义公开，数据与策略保持私有。</h2><p>发布因子时，你分享的是公式与研究说明。每个贡献保留作者、许可证、版本与 Fork 关系。</p></div>${link('studio/factors','探索完整因子目录','layers')}</div><div class="v2-catalog-list">${list.length?list.map(factorRow).join(''):empty('还没有社区贡献。创建一个可解释的因子，发布你的第一个研究想法。')}</div><p class="footnote">社区因子默认未经审阅。加入研究前检查可用字段、发布时间、未来信息与许可证。</p>`;}
-    function codeScreen({embedded=false}={}){const lang=v.editorLanguage,code=lang==='json'?(v.code.json||JSON.stringify(s.strategy,null,2)):v.code[lang];return `${embedded?'':studioHeading('代码与 AI 审阅','自己编辑研究逻辑，先检查，再明确应用建议。')}${codeProjects()}<div class="v2-code-workspace"><section class="panel v2-code-panel"><div class="v2-code-tabs">${[['dsl','Factor DSL'],['python','Python 研究'],['json','策略 JSON']].map(([id,label])=>`<button data-v2="language" data-id="${id}" class="${lang===id?'active':''}">${i(id==='json'?'workflow':'code')}${label}</button>`).join('')}</div><div class="v2-code-caption"><span>${lang==='dsl'?'factor.atlas':lang==='python'?'research.py':'strategy.json'}</span><span>${lang==='python'?'浏览器隔离运行 · 最长 120 秒':lang==='dsl'?'因果表达式 · 最多 500 字符':'编辑后需主动应用到当前策略'}</span></div><label class="sr-only" for="v2-code-editor">${lang} 代码编辑器</label><textarea id="v2-code-editor" class="v2-code-editor" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="${lang} 代码编辑器">${e(code)}</textarea><div class="v2-code-actions">${lang==='python'?action('python-run',v.pythonBusy?'运行中…':'运行 Python','play','primary',v.pythonBusy?'disabled':''):lang==='dsl'?action('lint-code',v.lintBusy?'校验中…':'校验表达式','check','primary',v.lintBusy?'disabled':''):action('apply-json','检查并应用策略','check','primary')}${lang!=='json'?action('review-manual',v.reviewBusy?'检查中…':'规则检查','shield','ghost',v.reviewBusy?'disabled':''):''}${lang!=='json'?action('review-ai','AI 审阅','spark','ghost',v.reviewBusy?'disabled':''):''}${action('export-code','导出代码','download','subtle')}${lang==='dsl'?action('code-to-factor','作为因子加入','plus','ghost'):''}</div>${lang==='dsl'?lintView():''}${lang==='python'?`<div class="v2-python-data"><span>${i('database')}${s.dataset?`data 已绑定 ${count(s.dataset.rows.length)} 行导入数据`:'data 为空：导入数据后可在 Python 中读取'}</span>${legacy('import-data','导入数据','upload','subtle small')}</div><div class="v2-output"><h3>运行输出</h3>${v.pythonOutput?`<pre>${e(v.pythonOutput.error||v.pythonOutput.stdout||'（无标准输出）')}</pre>${v.pythonOutput.stderr?`<pre class="error">${e(v.pythonOutput.stderr)}</pre>`:''}${v.pythonOutput.results!==undefined?`<h4>result</h4><pre>${e(typeof v.pythonOutput.results==='string'?v.pythonOutput.results:JSON.stringify(v.pythonOutput.results,null,2))}</pre>`:''}${v.pythonOutput.elapsedMs!==undefined?`<small>${e(v.pythonOutput.elapsedMs)} ms</small>`:''}`:'<p>尚未运行。首次启动将加载隔离的 Python 运行时。</p>'}</div>`:''}</section><aside class="v2-review-panel">${reviewPanel()}${section('研究脚本的作用',`<div class="v2-panel-content"><p>Python 用于你自己的数据探索。运行输出不会自动修改因子或策略。</p><p class="footnote">受支持的 Factor DSL 才会进入服务器回测引擎。代码审阅建议必须由你明确应用；审阅通过不代表策略有效。</p><div class="v2-research-flow"><div>编辑<span>表达式 / Python / 配置</span></div><b>↓</b><div>校验与审阅<span>语法、时序与可用数据</span></div><b>↓</b><div>明确应用<span>查看原代码与建议差异</span></div></div></div>`)}</aside></div>`;}
-    function codeProjects(){return `<div class="v2-project-bar"><label class="field"><span>代码项目</span><select id="v2-code-project" aria-label="打开已保存代码项目"><option value="">未保存的本地草稿</option>${v.projects.map(p=>`<option value="${e(p.id)}" ${p.id===v.projectId?'selected':''}>${e(p.name)} · ${e(p.language)} · v${e(p.version)}</option>`).join('')}</select></label><label class="field"><span>项目名称</span><input id="v2-project-name" value="${e(v.projectName)}" maxlength="80"></label>${action('save-code',v.projectSaving?'保存中…':v.projectId?'保存新版本':'保存代码项目','save','ghost',v.projectSaving||v.editorLanguage==='json'?'disabled':'')}${action('new-code','新草稿','plus','subtle')}</div>`;}
-    async function saveCode(){if(!v.projectName.trim())throw Error('请填写代码项目名称。');if(v.editorLanguage==='json')throw Error('策略 JSON 请使用页面顶部的保存按钮。');v.projectSaving=true;render();try{const response=await api(v.projectId?'/code/projects/'+encodeURIComponent(v.projectId):'/code/projects',{method:v.projectId?'PUT':'POST',body:JSON.stringify({name:v.projectName,language:v.editorLanguage,code:v.code[v.editorLanguage],...(v.projectId?{version:v.projectVersion}:{})})});const p=response.item;v.projectId=p.id;v.projectVersion=p.version;v.projects=[p,...v.projects.filter(x=>x.id!==p.id)];toast('代码项目已保存到私有工作区。');}finally{v.projectSaving=false;render();}}
+    function codeScreen({ embedded = false } = {}) {
+      const lang = v.editorLanguage,
+        code = lang === 'json' ? v.code.json || JSON.stringify(s.strategy, null, 2) : v.code[lang];
+      return `${embedded ? '' : studioHeading('代码与 AI 审阅', '自己编辑研究逻辑，先检查，再明确应用建议。')}${codeProjects()}<div class="v2-code-workspace"><section class="panel v2-code-panel"><div class="v2-code-tabs">${[
+        ['dsl', 'Factor DSL'],
+        ['python', 'Python 研究'],
+        ['json', '策略 JSON'],
+      ]
+        .map(
+          ([id, label]) =>
+            `<button data-v2="language" data-id="${id}" class="${lang === id ? 'active' : ''}">${i(id === 'json' ? 'workflow' : 'code')}${label}</button>`,
+        )
+        .join(
+          '',
+        )}</div><div class="v2-code-caption"><span>${lang === 'dsl' ? 'factor.atlas' : lang === 'python' ? 'research.py' : 'strategy.json'}</span><span>${lang === 'python' ? '浏览器隔离运行 · 最长 120 秒' : lang === 'dsl' ? '因果表达式 · 最多 500 字符' : '编辑后需主动应用到当前策略'}</span></div><label class="sr-only" for="v2-code-editor">${lang} 代码编辑器</label><textarea id="v2-code-editor" class="v2-code-editor" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="${lang} 代码编辑器">${e(code)}</textarea><div class="v2-code-actions">${lang === 'python' ? action('python-run', v.pythonBusy ? '运行中…' : '运行 Python', 'play', 'primary', v.pythonBusy ? 'disabled' : '') : lang === 'dsl' ? action('lint-code', v.lintBusy ? '校验中…' : '校验表达式', 'check', 'primary', v.lintBusy ? 'disabled' : '') : action('apply-json', '检查并应用策略', 'check', 'primary')}${lang !== 'json' ? action('review-manual', v.reviewBusy ? '检查中…' : '规则检查', 'shield', 'ghost', v.reviewBusy ? 'disabled' : '') : ''}${lang !== 'json' ? action('review-ai', 'AI 审阅', 'spark', 'ghost', v.reviewBusy ? 'disabled' : '') : ''}${action('export-code', '导出代码', 'download', 'subtle')}${lang === 'dsl' ? action('code-to-factor', '作为因子加入', 'plus', 'ghost') : ''}</div>${lang === 'dsl' ? `<div id="v2-dsl-facts">${codeFacts()}</div><div id="v2-code-lint">${lintView(code)}</div>` : ''}${lang === 'python' ? `<div class="v2-python-data"><span>${i('database')}${s.dataset ? `data 已绑定 ${count(s.dataset.rows.length)} 行导入数据` : 'data 为空：导入数据后可在 Python 中读取'}</span>${legacy('import-data', '导入数据', 'upload', 'subtle small')}</div><div class="v2-output"><h3>运行输出</h3>${v.pythonOutput ? `<pre>${e(v.pythonOutput.error || v.pythonOutput.stdout || '（无标准输出）')}</pre>${v.pythonOutput.stderr ? `<pre class="error">${e(v.pythonOutput.stderr)}</pre>` : ''}${v.pythonOutput.results !== undefined ? `<h4>result</h4><pre>${e(typeof v.pythonOutput.results === 'string' ? v.pythonOutput.results : JSON.stringify(v.pythonOutput.results, null, 2))}</pre>` : ''}${v.pythonOutput.elapsedMs !== undefined ? `<small>${e(v.pythonOutput.elapsedMs)} ms</small>` : ''}` : '<p>尚未运行。首次启动将加载隔离的 Python 运行时。</p>'}</div>` : ''}</section><aside class="v2-review-panel">${reviewPanel()}${section('研究脚本的作用', `<div class="v2-panel-content"><p>Python 用于你自己的数据探索。运行输出不会自动修改因子或策略。</p><p class="footnote">受支持的 Factor DSL 才会进入服务器回测引擎。代码审阅建议必须由你明确应用；审阅通过不代表策略有效。</p><div class="v2-research-flow"><div>编辑<span>表达式 / Python / 配置</span></div><b>↓</b><div>校验与审阅<span>语法、时序与可用数据</span></div><b>↓</b><div>明确应用<span>查看原代码与建议差异</span></div></div></div>`)}</aside></div>`;
+    }
+    function codeProjects() {
+      return `<div class="v2-project-bar"><label class="field"><span>代码项目</span><select id="v2-code-project" aria-label="打开已保存代码项目"><option value="">未保存的本地草稿</option>${v.projects.map((p) => `<option value="${e(p.id)}" ${p.id === v.projectId ? 'selected' : ''}>${e(p.name)} · ${e(p.language)} · v${e(p.version)}</option>`).join('')}</select></label><label class="field"><span>项目名称</span><input id="v2-project-name" value="${e(v.projectName)}" maxlength="80"></label>${action('save-code', v.projectSaving ? '保存中…' : v.projectId ? '保存新版本' : '保存代码项目', 'save', 'ghost', v.projectSaving || v.editorLanguage === 'json' ? 'disabled' : '')}${action('new-code', '新草稿', 'plus', 'subtle')}</div>`;
+    }
+    async function saveCode() {
+      if (!v.projectName.trim()) throw Error('请填写代码项目名称。');
+      if (v.editorLanguage === 'json') throw Error('策略 JSON 请使用页面顶部的保存按钮。');
+      v.projectSaving = true;
+      render();
+      try {
+        const response = await api(
+          v.projectId ? '/code/projects/' + encodeURIComponent(v.projectId) : '/code/projects',
+          {
+            method: v.projectId ? 'PUT' : 'POST',
+            body: JSON.stringify({
+              name: v.projectName,
+              language: v.editorLanguage,
+              code: v.code[v.editorLanguage],
+              ...(v.projectId ? { version: v.projectVersion } : {}),
+            }),
+          },
+        );
+        const p = response.item;
+        v.projectId = p.id;
+        v.projectVersion = p.version;
+        v.projects = [p, ...v.projects.filter((x) => x.id !== p.id)];
+        toast('代码项目已保存到私有工作区。');
+      } finally {
+        v.projectSaving = false;
+        render();
+      }
+    }
     function reviewEvidence(review) {
-      if (!review.providerExecuted) return '';
-      const changed = typeof review.original === 'string' && review.original !== v.code[review.language];
+      const changed =
+        typeof review.original === 'string' && review.original !== v.code[review.language];
       const fields = [
-        ['服务', review.provider || '未返回'],
-        ['模型', review.model || '未返回'],
+        ['服务', review.providerExecuted ? review.provider || '未返回' : '本地静态规则'],
+        ['模型', review.providerExecuted ? review.model || '未返回' : '未调用 AI'],
         ['审阅语言', review.language || '未返回'],
         ['审阅时间', review.reviewedAt ? C.dateText(review.reviewedAt) : '未返回'],
         ['代码 SHA-256', review.codeSha256 || '未返回'],
       ];
-      return `${changed ? '<p class="footnote">代码已在这次审阅后修改；这些结果对应被审阅的版本。</p>' : ''}<details class="v2-advanced"><summary>审阅来源与代码版本</summary><dl class="sq-key-values">${fields.map(([label, value]) => `<dt>${e(label)}</dt><dd><code>${e(value)}</code></dd>`).join('')}</dl></details>`;
+      return `<p class="footnote" data-review-stale ${changed ? '' : 'hidden'}>代码已在这次审阅后修改；这些意见对应被审阅的旧版本。</p><details class="v2-advanced"><summary>审阅来源与代码版本</summary><dl class="sq-key-values">${fields.map(([label, value]) => `<dt>${e(label)}</dt><dd><code>${e(value)}</code></dd>`).join('')}</dl></details>`;
     }
-    function reviewPanel(){const r=v.review;if(!r)return section('审阅助手',`<div class="v2-panel-content"><div class="v2-review-empty">${i('spark')}<h3>给研究多一双眼睛。</h3><p>规则检查定位表达式、数据依赖与常见风险；AI 审阅会在真实服务返回后显示结果。</p><p>系统不会自动修改你的代码。</p></div></div>`);return section(r.providerExecuted?'AI 审阅结果':'规则检查结果',`<div class="v2-panel-content"><span class="v2-status ${r.providerExecuted?'ready':''}"><i></i>${r.providerExecuted?'已调用 AI 服务':'未调用 AI 服务'}</span>${reviewEvidence(r)}<p class="v2-review-summary">${e(r.summary||'检查完成')}</p>${(r.findings||[]).map(f=>`<article class="v2-finding ${e(f.severity||'info')}"><span>${e(f.severity||'info')}${f.line?` · L${e(f.line)}`:''}</span><p>${e(f.message)}</p>${f.suggestion?`<small>${e(f.suggestion)}</small>`:''}</article>`).join('')}${(r.patches||[]).map((p,index)=>`<article class="v2-patch"><h3>${e(p.title||`建议 ${index+1}`)}</h3><p>${e(p.reason||'')}</p><label>当前代码</label><pre class="v2-diff-before">${e(p.before)}</pre><label>建议修改</label><pre class="v2-diff-after">${e(p.after)}</pre>${action('apply-patch',v.applied.has(index)?'已应用':'应用此建议','check','ghost small',`data-index="${index}" ${v.applied.has(index)?'disabled':''}`)}</article>`).join('')}</div>`);}
+    function reviewPanel() {
+      const r = v.review;
+      if (!r)
+        return section(
+          '审阅助手',
+          `<div class="v2-panel-content"><div class="v2-review-empty">${i('spark')}<h3>给研究多一双眼睛。</h3><p>规则检查定位表达式、数据依赖与常见风险；AI 审阅会在真实服务返回后显示结果。</p><p>系统不会自动修改你的代码。</p></div></div>`,
+        );
+      return section(
+        r.providerExecuted ? 'AI 审阅意见' : '规则检查结果',
+        `<div class="v2-panel-content"><span class="v2-status"><i></i>${r.providerExecuted ? 'AI 服务已返回 · 不是正确性证明' : '规则检查已返回 · 不是正确性证明'}</span>${reviewEvidence(r)}<p class="v2-review-boundary">${r.providerExecuted ? '以下是模型意见，可能包含语义误读。算子与窗口以 DSL 确定语义为准；代码能否正确运行、数据是否有效仍需分别验证。' : '规则检查仅覆盖已实现的静态规则，不代表数值结果或研究结论正确。'}</p><p class="v2-review-summary">${e(r.summary || '检查完成')}</p>${(r.findings || []).map((f) => `<article class="v2-finding ${e(f.severity || 'info')}"><span>${e(f.severity || 'info')}${f.line ? ` · L${e(f.line)}` : ''}</span><p>${e(f.message)}</p>${f.suggestion ? `<small>${e(f.suggestion)}</small>` : ''}</article>`).join('')}${(r.patches || []).map((p, index) => `<article class="v2-patch"><h3>${e(p.title || `建议 ${index + 1}`)}</h3><p>${e(p.reason || '')}</p><label>当前代码</label><pre class="v2-diff-before">${e(p.before)}</pre><label>建议修改</label><pre class="v2-diff-after">${e(p.after)}</pre>${action('apply-patch', v.applied.has(index) ? '已应用' : '应用此建议', 'check', 'ghost small', `data-index="${index}" ${v.applied.has(index) ? 'disabled' : ''}`)}</article>`).join('')}</div>`,
+      );
+    }
+    function codeFacts() {
+      if (v.lintError && !v.lintBusy)
+        return `<div class="v2-dsl-evidence stale" role="status"><h3>DSL 确定语义 · 请求未完成</h3><p>${e(v.lintError.message)}</p><p>代码已保留，请重试校验。本次失败不代表表达式有效或无效。</p></div>`;
+      const evidence = [v.lint, v.review?.language === 'dsl' ? v.review : null].filter(
+        (x) => x?.deterministicFacts,
+      );
+      const selected =
+        evidence.find((x) => x.deterministicFacts.expression === v.code.dsl) || evidence[0];
+      return dslFactsView(
+        selected?.deterministicFacts,
+        v.code.dsl,
+        e,
+        v.lintBusy,
+        selected?.codeSha256,
+      );
+    }
+    function refreshEvidenceState() {
+      const target = document.getElementById('v2-dsl-facts');
+      if (target) target.innerHTML = codeFacts();
+      const lintTarget = document.getElementById('v2-code-lint');
+      if (lintTarget) lintTarget.innerHTML = lintView(v.code.dsl);
+      const stale = document.querySelector('[data-review-stale]');
+      if (stale && v.review) stale.hidden = v.review.original === v.code[v.review.language];
+    }
     async function initialize(){
       v.errors=[];const endpoints=[['universes','/universes?category=index&pageSize=12'],['universeStats','/universes?pageSize=1'],['presets','/research-presets'],['sources','/data-sources'],['projects','/code/projects']];
       const results=await Promise.allSettled(endpoints.map(([,p])=>api(p)));
@@ -111,10 +212,91 @@
     async function selectUniverse(id){return flow.selectUniverse(id);}
     async function addPack(id){const p=v.presets.packs.find(x=>x.id===id);if(!p)throw Error('未找到这个研究模块。');const fs=await resolveFactors(p.factors||p.factorIds||[]);if(!fs.length)throw Error('这个模块没有可执行的因子定义。');addFeatures(fs,itemName(p));}
     function moveFactor(id,groupId){s.strategy.graph.groups ||= [];for(const g of s.strategy.graph.groups)g.factorIds=(g.factorIds||[]).filter(x=>x!==id);if(groupId!=='ungrouped'){const group=s.strategy.graph.groups.find(g=>g.id===groupId);if(group)group.factorIds.push(id);}persistDraft();render();}
-    async function lint(expression){v.lintBusy=true;v.lint=null;render();try{v.lint=await api('/expressions/lint',{method:'POST',body:JSON.stringify({expression,dataSource:s.dataSource,...(s.dataset?{fields:Object.keys(s.dataset.rows[0]||{})}:{})})});return v.lint;}finally{v.lintBusy=false;render();}}
-    async function custom(expression,name){const result=await lint(expression);if(!result.valid)throw Error('请先修正公式中的问题。');if(result.availability&&!canUse(result))throw Error(reason(result)||'表达式所需数据尚未就绪。');const id='custom_'+Date.now().toString(36);addFeatures([{id,name:name||'自定义因子',expression,direction:v.builder.direction,availability:result.availability||{status:'ready'},fields:result.fields}]);}
-    function persistEditor(){try{localStorage.setItem('atlas-quant-editor-v2',JSON.stringify({code:{dsl:v.code.dsl,python:v.code.python}}));}catch{}}
-    async function review(mode){const lang=v.editorLanguage,submittedCode=v.code[lang];if(lang==='json')return;v.reviewBusy=true;v.review=null;v.applied.clear();render();try{const response=await api('/code/review',{method:'POST',timeoutMs:90000,body:JSON.stringify({language:lang,code:submittedCode,strategy:s.strategy,mode})});v.review=response.review||response;v.review.language=lang;v.review.original=submittedCode;}finally{v.reviewBusy=false;render();}}
+    let lintRequest=0;
+    async function lint(expression) {
+      const request = ++lintRequest;
+      v.lintBusy = true;
+      v.lint = null;
+      v.lintError = null;
+      render();
+      try {
+        const answer = await api('/expressions/lint', {
+          method: 'POST',
+          body: JSON.stringify({
+            expression,
+            dataSource: s.dataSource,
+            ...(s.dataset ? { fields: Object.keys(s.dataset.rows[0] || {}) } : {}),
+          }),
+        });
+        if (request === lintRequest) v.lint = { ...answer, expression };
+        return answer;
+      } catch (error) {
+        if (request === lintRequest) v.lintError = { expression, message: error.message };
+        throw error;
+      } finally {
+        if (request === lintRequest) {
+          v.lintBusy = false;
+          render();
+        }
+      }
+    }
+    async function custom(expression, name) {
+      const result = await lint(expression);
+      if (!result.valid) throw Error('请先修正公式中的问题。');
+      if (result.availability && !canUse(result))
+        throw Error(reason(result) || '表达式所需数据尚未就绪。');
+      const id = 'custom_' + Date.now().toString(36);
+      addFeatures([
+        {
+          id,
+          name: name || '自定义因子',
+          expression,
+          direction: v.builder.direction,
+          availability: result.availability || { status: 'ready' },
+          fields: result.fields,
+        },
+      ]);
+    }
+    function persistEditor() {
+      try {
+        localStorage.setItem(
+          'atlas-quant-editor-v2',
+          JSON.stringify({ code: { dsl: v.code.dsl, python: v.code.python } }),
+        );
+      } catch {}
+    }
+    async function review(mode) {
+      const lang = v.editorLanguage,
+        submittedCode = v.code[lang];
+      if (lang === 'json') return;
+      v.reviewBusy = true;
+      v.review = null;
+      v.applied.clear();
+      render();
+      try {
+        const response = await api('/code/review', {
+          method: 'POST',
+          timeoutMs: 90000,
+          body: JSON.stringify({ language: lang, code: submittedCode, strategy: s.strategy, mode }),
+        });
+        v.review = response.review || response;
+        v.review.language = lang;
+        v.review.original = submittedCode;
+        if (lang === 'dsl' && submittedCode === v.code.dsl) {
+          v.lintError = null;
+          // A current successful parse supersedes an old expression's warning.
+          // Do not discard a newer lint result for this same expression.
+          if (
+            v.review.deterministicFacts?.status === 'parsed' &&
+            v.review.deterministicFacts.expression === submittedCode &&
+            v.lint?.expression !== submittedCode
+          ) v.lint = null;
+        }
+      } finally {
+        v.reviewBusy = false;
+        render();
+      }
+    }
     async function pythonRun(){if(!window.AtlasPython?.run)throw Error('Python 运行时尚未加载，请重试页面或稍后再试。');v.pythonBusy=true;v.pythonOutput=null;render();try{v.pythonOutput=await window.AtlasPython.run({code:v.code.python,rows:s.dataset?.rows||[],timeoutMs:120000});}catch(err){v.pythonOutput={error:err.message};}finally{v.pythonBusy=false;render();}}
     function showCatalogDetail(id){const f=C.findFactor(id);if(!f)return;C.openModal(itemName(f),`<div class="tag-row">${chip(f)}${contextualChip(f)}<span class="tag">${e(f.database||f.source?.database||'因子库')}</span><span class="tag">${e(f.category||'其他')}</span></div><p style="margin-top:18px">${e(f.description||f.rationale||'')}</p>${f.expression?`<pre class="code-snippet">${e(f.expression)}</pre>`:''}<dl class="definition-list" style="margin-top:20px"><dt>定义 ID</dt><dd>${e(f.id)}</dd><dt>数据状态</dt><dd>${e(availability(f))}</dd><dt>数据要求</dt><dd>${e(reason(f)||'运行时仍需检查字段与有效样本覆盖。')}</dd><dt>字段</dt><dd>${e((f.fields||f.requiredFields||[]).join(', '))}</dd><dt>作者 / 来源</dt><dd>${e(f.author||f.provenance?.source||'Atlas Quant')}</dd><dt>许可证</dt><dd>${e(f.license||'请查看定义来源')}</dd></dl><div class="form-footer">${f.expression?action('edit-factor','编辑公式','code','ghost',`data-id="${e(id)}"`):''}${f.expression?legacy('fork-factor','Fork / 贡献','fork','ghost',`data-id="${e(id)}"`):''}${action('add-factor','加入研究','plus','primary',`data-id="${e(id)}" ${!canUse(f)||!f.expression?'disabled':''}`)}</div>`,true);}
     async function handle(button){const a=button.dataset.v2,id=button.dataset.id;if(await flow.handle(button))return;
@@ -171,7 +353,7 @@
       if(el.id==='v2-field-search'){v.fieldFilters.q=el.value;v.fieldFilters.page=1;clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadFieldsWithFocus(el.id),300);}
       const builderMap={'v2-builder-name':'name','v2-builder-expression':'expression','v2-builder-window':'window'};if(builderMap[el.id]){v.builder[builderMap[el.id]]=el.type==='number'?Number(el.value):el.value;if(el.id==='v2-builder-expression')v.lint=null;}
       if(el.id==='v2-project-name')v.projectName=el.value;
-      if(el.id==='v2-code-editor'){v.code[v.editorLanguage]=el.value;persistEditor();}
+      if(el.id==='v2-code-editor'){v.code[v.editorLanguage]=el.value;persistEditor();refreshEvidenceState();}
     });
     document.addEventListener('change',event=>{const el=event.target;try{flow.onChange(el);}catch(err){toast(err.message,true);}
       if(el.id==='v2-universe-category'){v.universeCategory=el.value;v.universePage=1;loadUniverses();}
@@ -185,7 +367,7 @@
       if(el.dataset.v2FactorGroup)moveFactor(el.dataset.v2FactorGroup,el.value);
       if(el.dataset.candidate||el.dataset.config){if(isStudio()&&['targets','models','portfolio','validation'].includes(stage()))setTimeout(render,0);}
     });
-    document.addEventListener('keydown',event=>{if(event.target.id==='v2-code-editor'&&event.key==='Tab'){event.preventDefault();const el=event.target,start=el.selectionStart;el.setRangeText('    ',start,el.selectionEnd,'end');v.code[v.editorLanguage]=el.value;persistEditor();}});
+    document.addEventListener('keydown',event=>{if(event.target.id==='v2-code-editor'&&event.key==='Tab'){event.preventDefault();const el=event.target,start=el.selectionStart;el.setRangeText('    ',start,el.selectionEnd,'end');v.code[v.editorLanguage]=el.value;persistEditor();refreshEvidenceState();}});
     function rerenderPreservingFocus(id){const old=document.getElementById(id),pos=old?.selectionStart;render();const input=document.getElementById(id);input?.focus();if(pos!==undefined)input?.setSelectionRange(pos,pos);}
     async function loadFactorsWithFocus(id){const pos=document.getElementById(id)?.selectionStart;await loadFactors();const input=document.getElementById(id);if(input&&document.activeElement===document.body){input.focus();if(pos!==undefined)input.setSelectionRange(pos,pos);}}
     async function loadFieldsWithFocus(id){const pos=document.getElementById(id)?.selectionStart;await loadFields();const input=document.getElementById(id);if(input&&document.activeElement===document.body){input.focus();if(pos!==undefined)input.setSelectionRange(pos,pos);}}
