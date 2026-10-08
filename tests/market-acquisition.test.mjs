@@ -736,6 +736,20 @@ test("admissions require fresh explicit capability and enabled flag; preferred a
       "pooled_asset_1000_auto_candidate_v1",
     );
     assert.deepEqual(ready.researchAdmissions[1].families, ["mean_reversion"]);
+    const trendProfile = "pooled_asset_1000_trend_auto_v1";
+    const trendCap = { ...cap, marketResearchProfiles: [...cap.marketResearchProfiles, trendProfile] };
+    await write(trendCap);
+    const getTrend = async (e) => (await marketResearchAdmissions(e)).researchAdmissions.find(r => r.admissionProfile === trendProfile);
+    assert.equal((await getTrend(env)).reason, "MARKET_TREND_AUTO_DISABLED");
+    assert.equal((await getTrend({...env, MARKET_TREND_AUTO_ENABLED:true})).available, false);
+    const trendEnv = {...env, MARKET_TREND_AUTO_ENABLED:"true"};
+    assert.equal((await getTrend(trendEnv)).available, true);
+    assert.deepEqual((await getTrend(trendEnv)).families, ["trend"]);
+    assert.equal((await marketResearchAdmissions(trendEnv)).preferredResearchAdmission, "pooled_asset_1000_auto_candidate_v1");
+    await write(cap);
+    assert.equal((await getTrend(trendEnv)).reason, "RUNNER_UPGRADE_REQUIRED");
+    await write(trendCap, "2000-01-01T00:00:00Z");
+    assert.equal((await getTrend(trendEnv)).reason, "RUNNER_OFFLINE");
     await write({ ...cap, marketResearchProfiles: ["pooled_asset_1000_v1"] });
     assert.equal(
       (await marketResearchAdmissions(env)).preferredResearchAdmission,
@@ -750,7 +764,9 @@ test("admissions require fresh explicit capability and enabled flag; preferred a
       await x.req("/market-preparation-plans/" + x.pid)
     ).json();
     assert.equal(http.preferredResearchAdmission, null);
-    assert.equal(http.researchAdmissions.length, 2);
+    assert.equal(http.researchAdmissions.length, 3);
+    assert.equal(http.researchAdmissions[2].admissionProfile, "pooled_asset_1000_trend_auto_v1");
+    assert.equal(http.researchAdmissions[2].available, false);
   } finally {
     await x.mf.dispose();
   }

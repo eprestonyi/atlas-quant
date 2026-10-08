@@ -17,7 +17,7 @@ def _error(code, message):
     return RunnerError(code, message)
 
 
-def claim_request(request_id, *, financial_datasets=False, market_datasets=False, financial_graphs=False):
+def claim_request(request_id, *, financial_datasets=False, market_datasets=False, financial_graphs=False, market_trend_auto=False):
     from . import __version__
     request = {"requestId": request_id, "runnerVersion": "atlas-quant-runner/" + __version__,
             "engineVersion": __version__, "transportFormats": ["atlas.quant.bundle/1"]}
@@ -36,6 +36,9 @@ def claim_request(request_id, *, financial_datasets=False, market_datasets=False
     if market_datasets is True:
         from .capacity.profiles import FULL_FILTER_PROFILE_ID,AUTO_FILTER_CANDIDATE_ID
         request['marketResearchProfiles']=[FULL_FILTER_PROFILE_ID,AUTO_FILTER_CANDIDATE_ID]
+        if market_trend_auto is True:
+            from .capacity.profiles import TREND_AUTO_PROFILE_ID
+            request['marketResearchProfiles'].append(TREND_AUTO_PROFILE_ID)
     return request
 
 

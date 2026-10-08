@@ -6,6 +6,9 @@ from datetime import datetime
 PROFILE_ID = "pooled_asset_300_v1"
 FULL_FILTER_PROFILE_ID = "pooled_asset_1000_v1"
 AUTO_FILTER_CANDIDATE_ID = "pooled_asset_1000_auto_candidate_v1"
+TREND_AUTO_PROFILE_ID = "pooled_asset_1000_trend_auto_v1"
+AUTO_FILTER_PROFILES = frozenset({AUTO_FILTER_CANDIDATE_ID, TREND_AUTO_PROFILE_ID})
+FULL_FILTER_PROFILES = AUTO_FILTER_PROFILES | {FULL_FILTER_PROFILE_ID}
 
 
 @dataclass(frozen=True)
@@ -29,12 +32,17 @@ class CapacityProfile:
             datetime.strptime(u["end"], "%Y%m%d")
             - datetime.strptime(u["start"], "%Y%m%d")
         ).days
-        if self.id in {FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID}:
+        automatic = self.id in AUTO_FILTER_PROFILES
+        family = {
+            AUTO_FILTER_CANDIDATE_ID: "mean_reversion",
+            TREND_AUTO_PROFILE_ID: "trend",
+        }.get(self.id)
+        if self.id in FULL_FILTER_PROFILES:
             span += 1  # New source profile explicitly includes both endpoints.
         if (
             s["target"]["kind"] != "asset_price"
             or s["model"]["estimator"]
-            != ("auto" if self.id == AUTO_FILTER_CANDIDATE_ID else "ridge")
+            != ("auto" if automatic else "ridge")
             or s["execution"]["enabled"]
             or len(s["factors"]) > self.max_factors
             or span > self.max_calendar_days
@@ -42,17 +50,14 @@ class CapacityProfile:
             or s["validation"]["innerFolds"] != 2
             or s["validation"]["outerFolds"] != 2
             or (
-                self.id in {FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID}
+                self.id in FULL_FILTER_PROFILES
                 and s["model"]["family"] not in {"mean_reversion", "trend"}
             )
-            or (
-                self.id == AUTO_FILTER_CANDIDATE_ID
-                and s["model"]["family"] != "mean_reversion"
-            )
+            or (family is not None and s["model"]["family"] != family)
         ):
             fail(
                 "CAPACITY_PROFILE",
-                f"{self.id} requires asset_price, {'auto' if self.id == AUTO_FILTER_CANDIDATE_ID else 'Ridge'}, forecast-only, <=16 factors, <= {self.max_calendar_days} calendar days, refit>=20 and exactly 2 inner/outer folds; the candidate auto profile supports mean_reversion only",
+                f"{self.id} requires asset_price, {'auto' if automatic else 'Ridge'}, forecast-only, <=16 factors, <= {self.max_calendar_days} calendar days, refit>=20 and exactly 2 inner/outer folds; registered auto family={family}",
             )
 
     def to_dict(self):
@@ -62,7 +67,7 @@ class CapacityProfile:
 def get_profile(profile_id):
     from ..statistical_quant.schema import fail
 
-    if profile_id in {FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID}:
+    if profile_id in FULL_FILTER_PROFILES:
         return CapacityProfile(
             id=profile_id,
             max_symbols=1000,

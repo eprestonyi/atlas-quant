@@ -11,6 +11,7 @@ import { beginBundle, uploadChunk } from "../edge/bundles/storage.mjs";
 import { validateCapacity } from "../edge/market-preparation/research.mjs";
 import { bindWholeScope } from "../edge/market-preparation/scope.mjs";
 import { marketAssetTargets } from "../edge/market-preparation/hedge-index.mjs";
+import { claimRunnerJob } from "../edge/runner-claims.mjs";
 
 const generated = spawnSync(
   process.env.PYTHON || ".venv/bin/python",
@@ -275,6 +276,52 @@ async function footprint(x) {
     objects: (await x.bucket.list()).objects.map((o) => o.key).sort(),
   };
 }
+
+test("new trend auto profile validates its complete pool and cannot enter either old profile", () => {
+  const strategy = {
+    schemaVersion: 2, name: "Declared trend profile only", research: {mode:"statistical_quant"},
+    universe: {symbols:Array.from({length:1000},(_,i)=>`${100000+i}.SZ`),start:"20240101",end:"20241231"},
+    target: {kind:"asset_price",horizonSessions:5},
+    model: {family:"trend",estimator:"auto",trainWindow:120,refitDays:20},
+    validation:{innerFolds:2,outerFolds:2,minTrainDates:40}, execution:{enabled:false}, factors:[]
+  };
+  const profile="pooled_asset_1000_trend_auto_v1";
+  assert.equal(validateCapacity(strategy,profile).universe.symbols.length,1000);
+  for(const old of ["pooled_asset_1000_v1","pooled_asset_1000_auto_candidate_v1","pooled_asset_1000_trend_auto_v2"])
+    assert.throws(()=>validateCapacity(strategy,old));
+  for(const mutate of [s=>s.model.family="mean_reversion",s=>s.model.family="event",s=>s.model.estimator="ridge",s=>s.execution.enabled=true,s=>s.universe.end="20250101",s=>s.universe.symbols.push("101000.SZ"),s=>s.model.refitDays=19,s=>s.validation.outerFolds=3]){
+    const s=structuredClone(strategy);mutate(s);const before=structuredClone(s);
+    assert.throws(()=>validateCapacity(s,profile));assert.deepEqual(s,before);
+  }
+});
+
+test("trend auto claim needs both flags and exact capability, retaining old immutable dataset identity", async () => {
+  const x=await setup(), profile="pooled_asset_1000_trend_auto_v1";
+  try {
+    const row=await x.db.prepare("SELECT spec FROM jobs WHERE id=?").bind(x.identity.id).first();
+    const strategy=JSON.parse(row.spec);strategy.model.family="trend";strategy.model.estimator="auto";
+    await x.db.batch([
+      x.db.prepare("UPDATE jobs SET status='queued',lease_token=NULL,lease_until=NULL,spec=? WHERE id=?").bind(canonical(strategy),x.identity.id),
+      x.db.prepare("UPDATE quant_run_market_datasets SET profile=? WHERE job_id=?").bind(profile,x.identity.id)
+    ]);
+    const env={...x.env,MARKET_TREND_AUTO_ENABLED:"true"};
+    const cap={engineVersion:"0.8.0",transportFormats:["atlas.quant.bundle/1"],marketResearchProfiles:[profile]};
+    for(const [e,c] of [[x.env,cap],[{...env,MARKET_RESEARCH_ENABLED:"false"},cap],[{...env,MARKET_TREND_AUTO_ENABLED:true},cap],[env,{...cap,marketResearchProfiles:["pooled_asset_1000_auto_candidate_v1"]}],[env,{...cap,transportFormats:[]}]]){
+      const r=await claimRunnerJob(e,{...c,requestId:randomUUID()},new Date().toISOString());
+      assert.equal(r.job,null);
+      assert.equal((await x.db.prepare("SELECT status FROM jobs WHERE id=?").bind(x.identity.id).first()).status,"queued");
+    }
+    const requestId=randomUUID();
+    const r=await claimRunnerJob(env,{...cap,requestId},new Date().toISOString());
+    assert.equal(r.job.id,x.identity.id);assert.equal(r.job.admissionProfile,profile);
+    assert.deepEqual(r.job.marketDatasetRef,x.admission.marketDatasetRef);
+    assert.equal(r.job.strategy.model.family,"trend");assert.equal(r.job.strategy.model.estimator,"auto");
+    assert.equal(r.job.dataset,null);assert.equal(r.job.providerAccess,undefined);
+    await assert.rejects(claimRunnerJob(x.env,{...cap,requestId},new Date().toISOString()),e=>e.code==="RUNNER_UPGRADE_REQUIRED");
+    const durable=await claimRunnerJob(env,{...cap,requestId},new Date().toISOString());
+    assert.equal(durable.job.leaseToken,r.job.leaseToken);
+  } finally {await x.mf.dispose();}
+});
 
 test("flag-off retains identical chunk ACK but rejects every new market chunk before any R2/index write", async () => {
   const x = await setup();

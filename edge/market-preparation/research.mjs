@@ -17,6 +17,7 @@ import {
   MARKET_RESEARCH_PROFILES,
   researchEnabled,
   supportsMarket,
+  profileModel,
 } from "./admissions.mjs";
 export {
   AUTO_PROFILE,
@@ -36,7 +37,7 @@ export function validateCapacity(strategy, profile) {
   const s = validateStoredStatisticalQuant(strategy, {
       scopeSymbolLimit: 1000,
     }),
-    automatic = profile === AUTO_PROFILE;
+    declared = profileModel(profile);
   if (
     !MARKET_RESEARCH_PROFILES.includes(profile) ||
     s.target.kind !== "asset_price" ||
@@ -46,14 +47,12 @@ export function validateCapacity(strategy, profile) {
     s.validation.innerFolds !== 2 ||
     s.validation.outerFolds !== 2 ||
     (date(s.universe.end) - date(s.universe.start)) / 86400000 + 1 > 366 ||
-    s.model.estimator !== (automatic ? "auto" : "ridge") ||
-    !(automatic ? ["mean_reversion"] : ["mean_reversion", "trend"]).includes(
-      s.model.family,
-    )
+    s.model.estimator !== declared?.estimator ||
+    !declared.families.includes(s.model.family)
   )
     fail(
       "MARKET_RESEARCH_PROFILE",
-      "完整池仅支持已验证的目标、机制及模型组合；不会降级或缩池",
+      "完整池仅支持已注册的目标、机制及模型组合；不会降级或缩池",
       409,
     );
   return s;
@@ -83,8 +82,8 @@ export async function readyDataset(env, owner, ref) {
   return { dataset: d, manifest: m, plan };
 }
 export async function admitMarketResearch(env, owner, strategy, input) {
-  if (!researchEnabled(env))
-    fail("MARKET_RESEARCH_DISABLED", "完整市场研究入口尚未启用", 503);
+  if (!researchEnabled(env, input.admissionProfile))
+    fail("MARKET_RESEARCH_DISABLED", "该完整市场研究协议尚未启用", 503);
   if (
     input.datasetRef !== undefined ||
     input.dataset !== undefined ||

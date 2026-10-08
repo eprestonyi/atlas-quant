@@ -103,6 +103,13 @@ def load_config(path):
         raise RunnerError("CONFIG_COMPUTE_SLOT", "财务图研究必须配置共享私有计算锁。")
     if type(config.get("market_dataset_research_enabled", False)) is not bool:
         raise RunnerError("CONFIG_MARKET", "完整市场预测开关必须是布尔值。")
+    if type(config.get("market_trend_auto_research_enabled", False)) is not bool:
+        raise RunnerError("CONFIG_MARKET", "完整池趋势自动研究开关必须是布尔值。")
+    if (
+        config.get("market_trend_auto_research_enabled") is True
+        and config.get("market_dataset_research_enabled") is not True
+    ):
+        raise RunnerError("CONFIG_MARKET", "趋势自动研究还需显式启用完整市场研究。")
     if config.get("market_dataset_research_enabled") is True and not config.get(
         "compute_lock_path"
     ):
@@ -811,6 +818,7 @@ def _serve(config, spool, *, once=False):
                     market_datasets=config.get(
                         "market_dataset_research_enabled", False
                     ),
+                    market_trend_auto=config.get("market_trend_auto_research_enabled", False),
                 ),
             )
             status = validate_receipt(claimed, intent)

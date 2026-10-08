@@ -17,7 +17,7 @@ from ..market_acquisition.protocol import (
     output_collections,
 )
 from ..market_acquisition.reader import MarketSourceReader
-from ..capacity.profiles import FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID
+from ..capacity.profiles import FULL_FILTER_PROFILES, TREND_AUTO_PROFILE_ID
 from .spool import MarketResearchSpool
 
 
@@ -26,6 +26,10 @@ class MarketResearchClient(DatasetClient):
         super().__init__(config, session)
         self.base = config["api_base"].rstrip("/") + "/runner/research-markets"
         self.prefix = urlsplit(self.base).path + "/"
+        self.trend_auto_enabled = (
+            config.get("market_trend_auto_research_enabled") is True
+            and config.get("market_dataset_research_enabled") is True
+        )
 
     def _request(self, method, route, **kwargs):
         require(
@@ -65,9 +69,14 @@ class MarketResearchClient(DatasetClient):
         )
         profile = job.get("admissionProfile")
         require(
-            profile in {FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID},
+            profile in FULL_FILTER_PROFILES,
             "MARKET_RESEARCH_PROFILE",
             "Unknown approved profile",
+        )
+        require(
+            profile != TREND_AUTO_PROFILE_ID or self.trend_auto_enabled,
+            "MARKET_TREND_AUTO_DISABLED",
+            "This runtime has not explicitly enabled whole-pool trend auto research",
         )
         evidence = {
             "marketDatasetRef": ref,

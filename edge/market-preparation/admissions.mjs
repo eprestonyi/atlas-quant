@@ -3,8 +3,22 @@ import { parse } from "../runtime.mjs";
 import { PROFILE } from "./common.mjs";
 
 export const AUTO_PROFILE = "pooled_asset_1000_auto_candidate_v1";
-export const MARKET_RESEARCH_PROFILES = Object.freeze([PROFILE, AUTO_PROFILE]);
-export const researchEnabled = (env) => env.MARKET_RESEARCH_ENABLED === "true";
+export const TREND_AUTO_PROFILE = "pooled_asset_1000_trend_auto_v1";
+export const MARKET_RESEARCH_PROFILES = Object.freeze([
+  PROFILE, AUTO_PROFILE, TREND_AUTO_PROFILE,
+]);
+export function profileModel(profile) {
+  if (profile === PROFILE)
+    return { families: ["mean_reversion", "trend"], estimator: "ridge" };
+  if (profile === AUTO_PROFILE)
+    return { families: ["mean_reversion"], estimator: "auto" };
+  if (profile === TREND_AUTO_PROFILE)
+    return { families: ["trend"], estimator: "auto" };
+  return null;
+}
+export const researchEnabled = (env, profile = null) =>
+  env.MARKET_RESEARCH_ENABLED === "true" &&
+  (profile !== TREND_AUTO_PROFILE || env.MARKET_TREND_AUTO_ENABLED === "true");
 export function supportsMarket(input, profile) {
   return (
     MARKET_RESEARCH_PROFILES.includes(profile) &&
@@ -24,14 +38,15 @@ export async function marketResearchAdmissions(env) {
   const enabled = researchEnabled(env);
   const researchAdmissions = MARKET_RESEARCH_PROFILES.map(
     (admissionProfile) => {
-      const automatic = admissionProfile === AUTO_PROFILE;
+      const declared = profileModel(admissionProfile);
       const available =
-        enabled && online && supportsMarket(capability, admissionProfile);
+        researchEnabled(env, admissionProfile) && online &&
+        supportsMarket(capability, admissionProfile);
       return {
         admissionProfile,
         available,
-        families: automatic ? ["mean_reversion"] : ["mean_reversion", "trend"],
-        estimator: automatic ? "auto" : "ridge",
+        families: declared.families,
+        estimator: declared.estimator,
         targetKind: "asset_price",
         executionEnabled: false,
         maxSymbols: 1000,
@@ -42,11 +57,13 @@ export async function marketResearchAdmissions(env) {
         minRefitDays: 20,
         reason: !enabled
           ? "MARKET_RESEARCH_DISABLED"
-          : !online
-            ? "RUNNER_OFFLINE"
-            : !supportsMarket(capability, admissionProfile)
-              ? "RUNNER_UPGRADE_REQUIRED"
-              : null,
+          : !researchEnabled(env, admissionProfile)
+            ? "MARKET_TREND_AUTO_DISABLED"
+            : !online
+              ? "RUNNER_OFFLINE"
+              : !supportsMarket(capability, admissionProfile)
+                ? "RUNNER_UPGRADE_REQUIRED"
+                : null,
       };
     },
   );

@@ -450,12 +450,17 @@ const evidence={admissionProfile:'pooled_asset_1000_v1',marketDatasetRef:{datase
 if(damage==='different_source')evidence.marketDatasetRef.datasetRoot='8'.repeat(64);
 if(damage==='phantom_profile')evidence.admissionProfile='pooled_asset_999999_v9';
 if(damage==='wrong_auto')evidence.admissionProfile='pooled_asset_1000_auto_candidate_v1';
+if(['trend_auto','trend_auto_wrong_family'].includes(damage))evidence.admissionProfile='pooled_asset_1000_trend_auto_v1';
+if(damage==='mean_auto_wrong_family')evidence.admissionProfile='pooled_asset_1000_auto_candidate_v1';
 if(damage==='unverified_id')evidence.marketDatasetRef.datasetId='33333333-3333-3333-3333-333333333333';
 const fixture=bundleFixture({count:1,rowsPerChunk:100,mutate:({forecast,report,snapshot,coverage})=>{
  const u=forecast.sourceStrategy.universe;
  for(const key of ['symbols','start','end','selection','snapshotHash','resolutionHash'])u[key]=scope[key];
  u.subsetPolicy='all';
  const s=forecast.sourceStrategy, observation=clock==='stride'?7:clock==='nested'?5:1;
+ if(['trend_auto','trend_auto_wrong_family','mean_auto_wrong_family'].includes(damage)){
+  s.model.estimator='auto';s.model.family=damage==='trend_auto_wrong_family'?'mean_reversion':'trend';
+ }
  s.research.observationDays=observation;
  s.factors=[{id:'f1',expression:clock==='nested'?'lag(ts_mean(close,70),3)':'close',direction:1,role:'predictor'}];
  if(clock==='no_factors')s.factors=[];
@@ -604,6 +609,26 @@ def test_paired_complete_result_audit_and_full_source_comparison(
         and paired["datasetIdAuthenticated"] is False
     )
     assert paired["serverAdmissionAuthenticated"] is False
+
+
+def test_trend_auto_pair_preserves_complete_old_source_without_claiming_model_refit(paired_source, tmp_path):
+    dataset = write_dir(tmp_path, paired_source)
+    result = write_result(tmp_path, paired_fixture(paired_source, "trend_auto"))
+    report = audit_market_dataset(dataset, expected_root=sha(encode(paired_source["manifest"])), result_bundle=result)
+    assert report["status"] == "PASS"
+    assert report["pairedResult"]["expectedForecastRows"] == 82
+    assert report["pairedResult"]["fullSnapshotRowsVerified"] is True
+    assert report["pairedResult"]["fullAssetCoverageVerified"] is True
+    assert report["providerCalls"] == 0 and report["modelFitted"] is False
+
+
+@pytest.mark.parametrize("damage", ["trend_auto_wrong_family", "mean_auto_wrong_family"])
+def test_rehashed_result_cannot_swap_registered_auto_mechanism(paired_source, tmp_path, damage):
+    dataset = write_dir(tmp_path, paired_source)
+    result = write_result(tmp_path, paired_fixture(paired_source, damage))
+    with pytest.raises(AuditError) as error:
+        audit_market_dataset(dataset, expected_root=sha(encode(paired_source["manifest"])), result_bundle=result)
+    assert error.value.code == "RESULT_PROFILE"
 
 
 @pytest.mark.parametrize(

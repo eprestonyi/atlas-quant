@@ -87,7 +87,7 @@ export async function claimRunnerJob(env, input, now) {
   );
   const acceptedFinancial = acceptedFinancialProfiles(env, input);
   const acceptedMarket = MARKET_RESEARCH_PROFILES.filter(
-    (p) => marketEnabled(env) && supportsMarket(input, p)
+    (p) => marketEnabled(env, p) && supportsMarket(input, p)
   );
   const marketGuard = `((data_source<>'ready_market' AND NOT EXISTS(SELECT 1 FROM quant_run_market_datasets rm WHERE rm.job_id=jobs.id)) OR (data_source='ready_market' AND EXISTS(SELECT 1 FROM quant_run_market_datasets rm WHERE rm.job_id=jobs.id AND rm.owner=jobs.owner AND rm.profile IN(SELECT value FROM json_each(?)))))`;
   const datasetGuard = `((data_source<>'ready_dataset' AND NOT EXISTS(SELECT 1 FROM quant_run_datasets rd WHERE rd.job_id=jobs.id)) OR (data_source='ready_dataset' AND EXISTS(SELECT 1 FROM quant_run_datasets rd WHERE rd.job_id=jobs.id AND rd.owner=jobs.owner AND rd.profile IN(SELECT value FROM json_each(?)))))`;

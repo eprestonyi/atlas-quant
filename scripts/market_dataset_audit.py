@@ -1123,7 +1123,12 @@ def audit_market_dataset(path, *, expected_root=None, result_bundle=None):
 
 
 RESULT_TAR_MAX = RESULT_TOTAL + RESULT_MANIFEST + 257 * 1023 + 1024
-RESEARCH_PROFILES = {"pooled_asset_1000_v1", "pooled_asset_1000_auto_candidate_v1"}
+RESEARCH_PROFILE_MODELS = {
+    "pooled_asset_1000_v1": ("ridge", {"mean_reversion", "trend"}),
+    "pooled_asset_1000_auto_candidate_v1": ("auto", {"mean_reversion"}),
+    "pooled_asset_1000_trend_auto_v1": ("auto", {"trend"}),
+}
+RESEARCH_PROFILES = set(RESEARCH_PROFILE_MODELS)
 
 
 class ResultArchive(Archive):
@@ -1702,16 +1707,15 @@ def validate_result_binding(audit, manifest, scope, dataset_root, check):
         "Result strategy is not the whole frozen scope",
         "RESULT_PROFILE",
     )
-    automatic = profile == "pooled_asset_1000_auto_candidate_v1"
+    estimator, families = RESEARCH_PROFILE_MODELS[profile]
     model = strategy["model"]
     check.require(
         strategy["target"]["kind"] == "asset_price"
         and strategy["execution"]["enabled"] is False
         and isinstance(strategy["factors"], list)
         and len(strategy["factors"]) <= 16
-        and model["estimator"] == ("auto" if automatic else "ridge")
-        and model["family"]
-        in (["mean_reversion"] if automatic else ["mean_reversion", "trend"])
+        and model["estimator"] == estimator
+        and model["family"] in families
         and type(model["refitDays"]) is int
         and model["refitDays"] >= 20
         and type(strategy["validation"]["innerFolds"]) is int

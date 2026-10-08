@@ -19,6 +19,7 @@ const { values: args } = parseArgs({
     estimator: { type: "string", default: "ridge" },
     output: { type: "string" },
     resume: { type: "boolean", default: false },
+    "enable-trend-auto": { type: "boolean", default: false },
   },
 });
 const port = Number(args.port),
@@ -98,6 +99,7 @@ const mf = new Miniflare({
     MARKET_ACQUISITION_AUTH_SCOPE: previous?.authorizationScope || plan.authorizationScope,
     ALLOW_MARKET_FIXTURES: "true",
     MARKET_RESEARCH_ENABLED: "true",
+    MARKET_TREND_AUTO_ENABLED: args["enable-trend-auto"] ? "true" : "false",
     BUNDLE_SNAPSHOT_SORTED_V1: "true",
   },
 });
@@ -176,6 +178,7 @@ await fs.writeFile(
 await fs.writeFile(path.join(directory, buildId + ".json"), JSON.stringify({
   buildId, workerSha256: createHash("sha256").update(workerSource).digest("hex"),
   resumed: !!previous, port, synthetic: true, providerCalls: 0,
+  trendAutoEnabled: args["enable-trend-auto"],
 }), { mode: 0o600, flag: "wx" });
 console.log(
   JSON.stringify({
@@ -186,6 +189,7 @@ console.log(
     estimator: args.estimator,
     providerCalls: 0,
     resumed: !!previous,
+    trendAutoEnabled: args["enable-trend-auto"],
     sessionPath: path.join(directory, "session.json"),
   }),
 );

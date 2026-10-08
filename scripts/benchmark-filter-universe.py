@@ -30,10 +30,12 @@ def benchmark_strategy():
         trainWindow=120,
         refitDays=20,
     )
-    from atlas_quant.capacity.profiles import AUTO_FILTER_CANDIDATE_ID
-    if os.environ.get("ATLAS_CAPACITY_PROFILE") == AUTO_FILTER_CANDIDATE_ID:
+    from atlas_quant.capacity.profiles import AUTO_FILTER_PROFILES, TREND_AUTO_PROFILE_ID
+    if os.environ.get("ATLAS_CAPACITY_PROFILE") in AUTO_FILTER_PROFILES:
         strategy["name"] = "Predeclared 1000 synthetic whole-filter pooled auto candidate capacity"
         strategy["model"]["estimator"] = "auto"
+        if os.environ.get("ATLAS_CAPACITY_PROFILE") == TREND_AUTO_PROFILE_ID:
+            strategy["name"] = "Predeclared 1000 synthetic whole-filter pooled trend auto capacity"
     strategy["validation"]["minTrainDates"] = 40
     return strategy
 
@@ -168,8 +170,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--plan-only", action="store_true")
-    from atlas_quant.capacity.profiles import FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID
-    parser.add_argument("--profile", choices=[FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID],
+    from atlas_quant.capacity.profiles import FULL_FILTER_PROFILE_ID, AUTO_FILTER_PROFILES, FULL_FILTER_PROFILES
+    parser.add_argument("--profile", choices=sorted(FULL_FILTER_PROFILES),
         default=os.environ.get("ATLAS_CAPACITY_PROFILE", FULL_FILTER_PROFILE_ID))
     parser.add_argument(
         "--family",
@@ -199,7 +201,7 @@ def main():
     estimated_cache = dates * 1000 * 8 * (10 + nodes + 16 + 16 + 9) + 32 * 1024 * 1024
     admission = {
         "profile": PROFILE_ID,
-        "experimentalCandidateNotProductionAdmission": PROFILE_ID == AUTO_FILTER_CANDIDATE_ID,
+        "experimentalCandidateNotProductionAdmission": PROFILE_ID in AUTO_FILTER_PROFILES,
         "candidateSet": candidate_set,
         "candidateConfigurations": len(candidate_set),
         "pooledAllSymbols": True,
