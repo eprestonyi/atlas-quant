@@ -15,28 +15,53 @@ class ComputeSlotError(Exception):
         super().__init__(code)
 
 
+def validate_slot_path(path):
+    """Check an explicit configuration without creating or acquiring its lock."""
+    if not isinstance(path, str) or not path:
+        raise ComputeSlotError("COMPUTE_SLOT_CONFIG")
+    target = Path(path)
+    parent = target.parent
+    try:
+        if (
+            not target.is_absolute()
+            or str(target) != path
+            or parent.resolve() != parent
+        ):
+            raise ComputeSlotError("COMPUTE_SLOT_PATH")
+        directory = parent.stat()
+        if (
+            not stat.S_ISDIR(directory.st_mode)
+            or directory.st_uid != os.getuid()
+            or stat.S_IMODE(directory.st_mode) & 0o077
+        ):
+            raise ComputeSlotError("COMPUTE_SLOT_PATH")
+        try:
+            info = target.lstat()
+        except FileNotFoundError:
+            return path
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o600
+        ):
+            raise ComputeSlotError("COMPUTE_SLOT_PERMISSIONS")
+    except OSError:
+        raise ComputeSlotError("COMPUTE_SLOT_IO") from None
+    return path
+
+
 @contextmanager
 def compute_slot(path, *, deadline, check=None):
     if path is None:
         yield
         return
     if (
-        not isinstance(path, str)
-        or not path
-        or not isinstance(deadline, (int, float))
+        not isinstance(deadline, (int, float))
         or isinstance(deadline, bool)
         or not math.isfinite(deadline)
     ):
         raise ComputeSlotError("COMPUTE_SLOT_CONFIG")
-    target = Path(path)
-    parent = target.parent
-    if (
-        not target.is_absolute()
-        or parent.resolve() != parent
-        or not parent.is_dir()
-        or stat.S_IMODE(parent.stat().st_mode) & 0o077
-    ):
-        raise ComputeSlotError("COMPUTE_SLOT_PATH")
+    target = Path(validate_slot_path(path))
     descriptor = None
     acquired = False
     try:
@@ -53,7 +78,7 @@ def compute_slot(path, *, deadline, check=None):
             if (
                 not stat.S_ISREG(info.st_mode)
                 or info.st_uid != os.getuid()
-                or stat.S_IMODE(info.st_mode) & 0o077
+                or stat.S_IMODE(info.st_mode) != 0o600
             ):
                 raise ComputeSlotError("COMPUTE_SLOT_PERMISSIONS")
             while True:

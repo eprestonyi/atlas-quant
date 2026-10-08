@@ -59,12 +59,13 @@ def load_config(path):
             isinstance(value.get(name), str) and Path(value[name]).is_absolute(),
             "DATASET_CONFIG",
         )
-    if value.get("compute_lock_path") is not None:
-        require(
-            isinstance(value["compute_lock_path"], str)
-            and Path(value["compute_lock_path"]).is_absolute(),
-            "DATASET_CONFIG",
-        )
+    if "compute_lock_path" in value:
+        from ..compute_slot import ComputeSlotError, validate_slot_path
+
+        try:
+            validate_slot_path(value["compute_lock_path"])
+        except ComputeSlotError:
+            require(False, "DATASET_CONFIG")
     poll = value.get("poll_seconds", 10)
     require(type(poll) is int and 3 <= poll <= 60, "DATASET_CONFIG")
     return {**value, "api_base": base.rstrip("/"), "poll_seconds": poll}

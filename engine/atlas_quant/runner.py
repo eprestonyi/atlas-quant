@@ -96,6 +96,12 @@ def load_config(path):
     config["delivery_dir"] = str(delivery)
     if type(config.get("financial_dataset_research_enabled", False)) is not bool:
         raise RunnerError("CONFIG_DATASET", "冻结财务预测开关必须是布尔值。")
+    if "compute_lock_path" in config:
+        from .compute_slot import ComputeSlotError, validate_slot_path
+        try:
+            validate_slot_path(config["compute_lock_path"])
+        except ComputeSlotError:
+            raise RunnerError("CONFIG_COMPUTE_SLOT", "计算锁须为本用户私有目录中的规范绝对路径；现存锁须为0600普通文件。") from None
     try:
         config["job_timeout"] = max(30, min(900, int(config.get("job_timeout", DEFAULT_TIMEOUT))))
         config["poll_seconds"] = max(3, min(60, int(config.get("poll_seconds", 10))))

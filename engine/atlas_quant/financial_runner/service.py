@@ -424,7 +424,11 @@ def run_once(
                 monitor.check()
                 state = spool.save(dict(state, phase="computing"))
                 monitor.phase = "preparing_states"
-                options = {"compute_lock_path": config["compute_lock_path"]} if config.get("compute_lock_path") else {}
+                options = (
+                    {"compute_lock_path": config["compute_lock_path"]}
+                    if config.get("compute_lock_path") is not None
+                    else {}
+                )
                 bounded_compute(spool, job, inputs, monitor, **options)
                 state = spool.save(dict(state, phase="publishing"))
             deliver(client, spool, state, monitor)
