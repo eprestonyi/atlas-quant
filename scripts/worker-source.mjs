@@ -31,8 +31,24 @@ export async function loadWebAssets(directory = path.join(repositoryRoot, 'web')
   }
   await visit(directory);
   if (!assets['index.html']) throw new Error('Frontend index.html missing');
-  // Any graph change invalidates entry URLs. Transitive ES modules retain
-  // native imports and are served no-cache with content ETags by the Worker.
+  // Ship the browser entry's complete dependency graph. Its shared validators
+  // live outside web/ and import JSON contracts; neither /edge URLs nor native
+  // JSON import attributes are part of the public asset API. Bundle the actual
+  // sources here so preview and production enforce exactly the same rules.
+  if (assets['main.js']) {
+    const frontend = await build({
+      entryPoints: [path.join(directory, 'main.js')], bundle: true, write: false,
+      format: 'esm', platform: 'browser', target: 'es2022', legalComments: 'none',
+      logLevel: 'silent', metafile: true,
+    });
+    const output = frontend.outputFiles[0];
+    if (Object.values(frontend.metafile.outputs).some(item => item.imports.length)) {
+      throw new Error('Frontend entry has unresolved browser imports');
+    }
+    assets['main.js'] = {body: output.text, type: textTypes['.js'], sha256: hash(output.contents)};
+  }
+  // Any graph change invalidates entry URLs. Worker/iframe scripts remain
+  // separate resources with their existing sandbox and CSP boundaries.
   const revision = hash(JSON.stringify(assets)).slice(0, 16);
   for (const [name, asset] of Object.entries(assets)) {
     if (name.endsWith('.html')) {
