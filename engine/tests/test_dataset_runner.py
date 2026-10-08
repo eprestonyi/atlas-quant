@@ -466,3 +466,33 @@ def test_terminal_cleanup_handles_interrupted_encrypted_temp_write(prepared, tmp
     )
     spool.cleanup(state)
     assert spool.read() is None and not root.exists()
+
+
+def test_public_long_fixture_has_declared_scope_and_retains_missingness(tmp_path):
+    import runpy
+    from atlas_quant.research_dataset import DirectoryDatasetReader
+
+    module = runpy.run_path(
+        str(Path(__file__).parents[2] / "scripts/make-snapshot-view-fixture.py")
+    )
+    output = tmp_path / "long-fixture"
+    summary = module["generate"](output, long_scope=True)
+    assert (
+        summary["providerCalls"] == summary["modelFits"] == 0
+        and summary["synthetic"] is True
+    )
+    reader = DirectoryDatasetReader(
+        output / "dataset", expected_root=summary["datasetRoot"]
+    )
+    coverage = json.loads(reader.payload("coverage"))["financial"][0]
+    security = coverage["securities"][0]
+    states = {s["stateId"]: s for s in security["states"]}
+    assert security["rows"] == 262
+    assert states["model_fin_operating_margin"]["okRows"] == 262
+    assert states["model_fin_revenue_ttm_yoy"]["missingRows"] == 85
+    assert states["model_fin_revenue_ttm_yoy"]["firstObserved"] == "20240429"
+    assert reader.manifest["scope"] == {
+        "symbols": ["600000.SH"],
+        "start": "20240101",
+        "end": "20241231",
+    }

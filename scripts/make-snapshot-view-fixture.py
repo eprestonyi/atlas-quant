@@ -15,16 +15,20 @@ sys.path[:0] = [str(ROOT / "engine"), str(ROOT / "engine/tests")]
 
 from atlas_quant import bundle
 from atlas_quant.research_dataset.codec import encode, sha
-from test_research_dataset_components import sources
+from test_research_dataset_components import sources, long_sources
 from test_snapshot_market_view import legacy_source, derive, publication
 
 
-def generate(destination):
+def generate(destination, *, long_scope=False):
     destination = Path(destination).absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError("Existing fixture directory is preserved")
     destination.mkdir(mode=0o700, parents=False)
     source = sources.__wrapped__()
+    if long_scope:
+        # A predeclared full 2024 fixture retains all pre-announcement missing
+        # financial observations. No research validation thresholds are changed.
+        source = long_sources.__wrapped__(source)
     original = legacy_source.__wrapped__(source)
     view = derive(original, source["scope"])
     result, parts, _ = publication(view, source)
@@ -61,6 +65,7 @@ def generate(destination):
         "sourceSnapshotSha256": sha(original["raw"]),
         "sourceStrategy": original["strategy"],
         "scope": source["scope"],
+        "scopeFixture": "full_2024" if long_scope else "six_sessions",
         "transform": json.loads(view.origin_bytes)["transform"],
         "financialSource": {
             "preparedRoot": source["source"].prepared_root,
@@ -95,5 +100,10 @@ if __name__ == "__main__":
         required=True,
         help="New directory under an existing private/temp parent",
     )
+    parser.add_argument(
+        "--long-scope",
+        action="store_true",
+        help="Explicit full-2024 synthetic scope; preserves initial financial missingness",
+    )
     args = parser.parse_args()
-    print(json.dumps(generate(args.output), sort_keys=True))
+    print(json.dumps(generate(args.output, long_scope=args.long_scope), sort_keys=True))
