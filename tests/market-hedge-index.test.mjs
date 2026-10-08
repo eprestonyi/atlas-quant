@@ -130,6 +130,7 @@ for (const variant of [
   "foreign",
   "reordered",
   "malicious",
+  "extra-key",
 ]) {
   test(
     "compact index rejects " +
@@ -143,6 +144,7 @@ for (const variant of [
       if (variant === "foreign")
         changed[0].targetIds[999] = "target_" + "a".repeat(24);
       if (variant === "reordered") changed[0].targetIds.reverse();
+      if (variant === "extra-key") changed[0].unexpected = true;
       if (variant === "malicious")
         changed[0].targetIds[0] = { id: changed[0].targetIds[0] };
       assert.equal(

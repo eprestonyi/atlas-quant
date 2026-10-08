@@ -41,6 +41,9 @@ export async function marketAssetTargets(symbols) {
 /** expectedIds is server-derived after owner/lease/source admission, never a DTO. */
 export async function marketHedgeMetadata(row, expectedIds) {
   if (
+    !row ||
+    Object.keys(row).sort().join(",") !==
+      "date,informationCutoff,status,targetIds" ||
     !Array.isArray(expectedIds) ||
     !expectedIds.length ||
     expectedIds.length > 1000 ||
