@@ -72,13 +72,20 @@ export function createModelFunctionEditor(C, F) {
       `<code>${e(result.artifactId)}</code>` + table(['行', '当前 P', '预期入场', '未来 V', 'E = P − V', '预期变化 −E'], (result.levels || []).map((x,n) => `<tr><td>${n + 1}</td>${[input.currentState[n], x.expectedEntry, x.expectedFuture, x.e, x.expectedChange].map(v => `<td class="numeric">${fmt(v, 6)}</td>`).join('')}</tr>`)) +
       F.note('这只是给定数值输入的函数求值，没有调用实时市场数据、重新训练或运行历史回测。新验证状态：未进行。'));
   }
+  function scopeView(artifact) {
+    const symbols = artifact.scope?.symbols;
+    if (!Array.isArray(symbols)) return '未提供';
+    const count = `${symbols.length} 个成员`;
+    if (symbols.length <= 8) return `${e(count)}${symbols.length ? `<small>${e(symbols.join('、'))}</small>` : ''}`;
+    return `<span>${e(count)}</span><details class="mfe-scope"><summary>查看完整证券范围</summary><p class="sq-subtle">这是原函数冻结的完整范围，不能在此选择或修改成员。</p><textarea readonly rows="8" wrap="soft" aria-label="完整证券范围 · ${symbols.length} 个成员">${e(symbols.join('\n'))}</textarea>${F.button('mfe-scope-copy', '复制全部代码', { small: true })}<span class="sq-subtle" data-mfe-scope-status role="status"></span></details>`;
+  }
   function view(state) {
     const a = state.artifact, k = a.estimator.kind, eligible = sourceReady(state.source);
     const formula = k === 'linear' ? 'g_j(X) = b_j + Σ β_jk · T_k(X_k)' : k === 'constant' ? 'g_j(X) = c_j' : 'g_j(X) = baseline_j + Σ tree_jm(T(X))';
     const transformNote = k === 'constant' ? '常量模型忽略 X，不使用训练输入变换。' : 'T 使用本次训练冻结的截尾、缺失填充和标准化。';
     const inputHelp = '初始 null 只是待填结构，不是市场数据。' + (k === 'constant' ? '常量模型忽略 X 的值；保留输入行结构以逐行对应 P 与 scale，不进行缺失填充。' : 'null 会使用训练时冻结的缺失处理。') + '最多 256 行。';
     const pending = [...state.edits].filter(([p,v]) => String(at(a,p)) !== String(v));
-    return `<section class="mfe-editor" data-mfe-key="${state.key}"><h3>可复用的 F 函数</h3><div class="sq-core-equation">${e(formula)}<br><small>V = P + scale · g₁(X)；E = P − V</small></div><p>${e(transformNote)}两个输出分别描述入场与未来状态相对当前已知尺度的变化。</p><p class="sq-subtle">观察收盘后，入场为下一官方交易日开盘，未来为其后 h 个交易日开盘。</p><dl class="sq-key-values"><dt>函数身份</dt><dd><code>${e(a.artifactId)}</code></dd><dt>当前版本来源</dt><dd>${e(a.lineage?.status || '未返回')}</dd><dt>训练截止</dt><dd>${e(a.training?.informationCutoff)}</dd><dt>期限 / 观察间隔</dt><dd>${e(a.scope?.horizonSessions)} / ${e(a.scope?.observationDays)} 交易日</dd><dt>证券范围</dt><dd>${e(a.scope?.symbols?.join('、') || '未提供')}</dd></dl>${F.advanced('输出与期限口径', '<p>当前 schema 1：output[0] 估计下一开盘，output[1] 估计该开盘之后 h 个交易日的开盘。h=1 对应第二个后续交易日开盘，不是下一日收盘。</p><p>观察间隔默认 1 表示每天观察一次，与预测期限 h 分开。具体观察、入场和目标日期见原报告逐条预测；训练截止不是试算输入的观察日期，本页不会推算或补造交易日历。</p>')}${F.note('原研究范围以外的适用性尚未验证。输入须按原特征定义构建，不能把任意股票或任意单位直接代入。')}${state.error ? F.note(state.error, 'error') : ''}${state.notice ? F.note(state.notice) : ''}${parameters(state)}${pending.length ? F.advanced(`待派生参数 · ${pending.length} 项`, table(['路径', '新值', '操作'], pending.map(([path,value]) => `<tr><td><code>${e(path)}</code></td><td>${e(value)}</td><td>${F.button('mfe-remove', '撤销', { id: path, small: true })}</td></tr>`)), true) : ''}<div class="sq-actions">${F.button('mfe-download', '下载当前版本 JSON', { small: true })}${F.button('mfe-resolve', '核验函数来源', { small: true, disabled: !eligible || state.busy })}${F.button('mfe-library', '已保存的函数版本', { small: true })}</div><p class="sq-subtle">下载的是当前已保存版本；未保存的参数修改不包含在 JSON 中。</p>${!eligible ? F.note('当前报告没有完整的私有来源引用；可以读取原函数，在线试算和派生保存尚不可用。') : ''}${F.panel('给 F 提供试算输入', field(state, 'rows', 'X 行数组 · 待填示例', inputHelp, true) + `<div class="sq-form-grid">${field(state, 'currentState', '当前状态 P', '单行填数字；多行填等长数组。')}${field(state, 'scale', '当前已知尺度 scale', '原目标的总绝对腿价值，必须为正；须与 P 和模型保持同一单位。')}</div>${F.button('mfe-evaluate', state.busy === 'evaluate' ? '正在试算…' : '运行 F(X) 试算', { primary: true, disabled: !eligible || !!state.busy })}`)}${resultView(state)}${F.panel('保存独立的派生函数', field(state, 'name', '新函数名称') + F.button('mfe-derive', state.busy === 'derive' ? '正在保存…' : '保存新的函数版本', { primary: true, disabled: !eligible || !!state.busy }) + '<p class="sq-subtle">需要至少一项实际参数修改。保存新函数不会覆盖报告，也不会自动生成新的统计验证。</p>')}${state.saved ? F.panel('已保存派生版本', `<code>${e(state.saved.ref.artifactId)}</code><p>UNVALIDATED_USER_EDIT · 未继承父模型统计检验</p>${F.button('mfe-open-saved', '打开这个函数版本', { id: state.saved.ref.functionId, artifact: state.saved.ref.artifactId, small: true })}`) : ''}${F.advanced('完整输入变换与函数来源', raw({ transforms: a.transforms, featureConstruction: a.featureConstruction, training: a.training, scope: a.scope, provenance: a.provenance, lineage: a.lineage }))}</section>`;
+    return `<section class="mfe-editor" data-mfe-key="${state.key}"><h3>可复用的 F 函数</h3><div class="sq-core-equation">${e(formula)}<br><small>V = P + scale · g₁(X)；E = P − V</small></div><p>${e(transformNote)}两个输出分别描述入场与未来状态相对当前已知尺度的变化。</p><p class="sq-subtle">观察收盘后，入场为下一官方交易日开盘，未来为其后 h 个交易日开盘。</p><dl class="sq-key-values"><dt>函数身份</dt><dd><code>${e(a.artifactId)}</code></dd><dt>当前版本来源</dt><dd>${e(a.lineage?.status || '未返回')}</dd><dt>训练截止</dt><dd>${e(a.training?.informationCutoff)}</dd><dt>期限 / 观察间隔</dt><dd>${e(a.scope?.horizonSessions)} / ${e(a.scope?.observationDays)} 交易日</dd><dt>证券范围</dt><dd>${scopeView(a)}</dd></dl>${F.advanced('输出与期限口径', '<p>当前 schema 1：output[0] 估计下一开盘，output[1] 估计该开盘之后 h 个交易日的开盘。h=1 对应第二个后续交易日开盘，不是下一日收盘。</p><p>观察间隔默认 1 表示每天观察一次，与预测期限 h 分开。具体观察、入场和目标日期见原报告逐条预测；训练截止不是试算输入的观察日期，本页不会推算或补造交易日历。</p>')}${F.note('原研究范围以外的适用性尚未验证。输入须按原特征定义构建，不能把任意股票或任意单位直接代入。')}${state.error ? F.note(state.error, 'error') : ''}${state.notice ? F.note(state.notice) : ''}${parameters(state)}${pending.length ? F.advanced(`待派生参数 · ${pending.length} 项`, table(['路径', '新值', '操作'], pending.map(([path,value]) => `<tr><td><code>${e(path)}</code></td><td>${e(value)}</td><td>${F.button('mfe-remove', '撤销', { id: path, small: true })}</td></tr>`)), true) : ''}<div class="sq-actions">${F.button('mfe-download', '下载当前版本 JSON', { small: true })}${F.button('mfe-resolve', '核验函数来源', { small: true, disabled: !eligible || state.busy })}${F.button('mfe-library', '已保存的函数版本', { small: true })}</div><p class="sq-subtle">下载的是当前已保存版本；未保存的参数修改不包含在 JSON 中。</p>${!eligible ? F.note('当前报告没有完整的私有来源引用；可以读取原函数，在线试算和派生保存尚不可用。') : ''}${F.panel('给 F 提供试算输入', field(state, 'rows', 'X 行数组 · 待填示例', inputHelp, true) + `<div class="sq-form-grid">${field(state, 'currentState', '当前状态 P', '单行填数字；多行填等长数组。')}${field(state, 'scale', '当前已知尺度 scale', '原目标的总绝对腿价值，必须为正；须与 P 和模型保持同一单位。')}</div>${F.button('mfe-evaluate', state.busy === 'evaluate' ? '正在试算…' : '运行 F(X) 试算', { primary: true, disabled: !eligible || !!state.busy })}`)}${resultView(state)}${F.panel('保存独立的派生函数', field(state, 'name', '新函数名称') + F.button('mfe-derive', state.busy === 'derive' ? '正在保存…' : '保存新的函数版本', { primary: true, disabled: !eligible || !!state.busy }) + '<p class="sq-subtle">需要至少一项实际参数修改。保存新函数不会覆盖报告，也不会自动生成新的统计验证。</p>')}${state.saved ? F.panel('已保存派生版本', `<code>${e(state.saved.ref.artifactId)}</code><p>UNVALIDATED_USER_EDIT · 未继承父模型统计检验</p>${F.button('mfe-open-saved', '打开这个函数版本', { id: state.saved.ref.functionId, artifact: state.saved.ref.artifactId, small: true })}`) : ''}${F.advanced('完整输入变换与函数来源', raw({ transforms: a.transforms, featureConstruction: a.featureConstruction, training: a.training, scope: a.scope, provenance: a.provenance, lineage: a.lineage }))}</section>`;
   }
   function render(fit, source) {
     const a = fit?.functionArtifact;
@@ -132,6 +139,22 @@ export function createModelFunctionEditor(C, F) {
     }
     const state = current;
     if (!state || !el.closest?.(`[data-mfe-key="${state.key}"]`)) return true;
+    if (action === 'mfe-scope-copy') {
+      const scope = mounted(state)?.querySelector('.mfe-scope');
+      const textarea = scope?.querySelector('textarea'), status = scope?.querySelector('[data-mfe-scope-status]');
+      if (!textarea) return true;
+      try {
+        if (!globalThis.navigator?.clipboard?.writeText) throw Error('clipboard unavailable');
+        await navigator.clipboard.writeText(state.artifact.scope.symbols.join('\n'));
+        if (current === state && scope.isConnected) status.textContent = `已复制全部 ${state.artifact.scope.symbols.length} 个成员代码。`;
+      } catch {
+        if (current === state && scope.isConnected) {
+          textarea.focus(); textarea.select();
+          status.textContent = '已选中完整列表，请按复制快捷键。';
+        }
+      }
+      return true;
+    }
     if (action === 'mfe-download') { download(`atlas-function-${state.artifact.artifactId}.json`, state.artifact); return true; }
     if (action === 'mfe-remove') { setParameter(state, el.dataset.id, at(state.artifact, el.dataset.id)); state.edits.delete(el.dataset.id); refresh(state); return true; }
     if (state.busy) return true;

@@ -2238,3 +2238,24 @@
 .sq-universe .table-wrap table{width:100%}.sq-universe .table-wrap th,.sq-universe .table-wrap td{text-align:left;padding:12px 10px}
 @media(max-width:760px){.sq-mode-grid,.sq-module-hub{grid-template-columns:1fr;gap:14px}.sq-mode-card,.sq-module-card{padding:22px}.sq-module-card p,.sq-mode-card p{min-height:0}.sq-mode-card h2,.sq-module-card h2{font-size:22px}.sq-core-equation{font-size:23px}.rq-filter-result-count{gap:14px;flex-wrap:wrap}}
 .mfe-editor{margin:24px 0;padding-top:24px;border-top:1px solid var(--border,#2c342c);min-width:0}.mfe-editor textarea{width:100%;min-height:160px;resize:vertical;padding:12px;background:#0b100c;color:inherit;border:1px solid #354031;border-radius:8px;font-family:ui-monospace,monospace;font-size:13px}.mfe-editor .sq-table .sq-field{min-width:150px}.mfe-editor .sq-table input{max-width:240px}.mfe-editor code{overflow-wrap:anywhere}.mfe-editor .sq-core-equation{font-size:21px;overflow-wrap:anywhere}.mfe-editor .sq-key-values dd{overflow-wrap:anywhere}
+
+/* Full model scope stays available without displacing numerical controls. */
+.mfe-editor .sq-key-values dd { min-width: 0; }
+.mfe-scope { min-width: 0; max-width: 100%; margin-top: 8px; }
+.mfe-scope summary { cursor: pointer; overflow-wrap: anywhere; }
+.mfe-editor .mfe-scope textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 12rem;
+  max-height: 14rem;
+  margin-bottom: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mfe-scope [role="status"] { display: block; margin-top: 6px; }
