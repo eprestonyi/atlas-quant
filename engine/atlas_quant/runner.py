@@ -97,6 +97,10 @@ def load_config(path):
     config["delivery_dir"] = str(delivery)
     if type(config.get("financial_dataset_research_enabled", False)) is not bool:
         raise RunnerError("CONFIG_DATASET", "冻结财务预测开关必须是布尔值。")
+    if type(config.get("financial_graph_research_enabled", False)) is not bool:
+        raise RunnerError("CONFIG_DATASET", "冻结财务图预测开关必须是布尔值。")
+    if config.get("financial_graph_research_enabled") is True and not config.get("compute_lock_path"):
+        raise RunnerError("CONFIG_COMPUTE_SLOT", "财务图研究必须配置共享私有计算锁。")
     if type(config.get("market_dataset_research_enabled", False)) is not bool:
         raise RunnerError("CONFIG_MARKET", "完整市场预测开关必须是布尔值。")
     if config.get("market_dataset_research_enabled") is True and not config.get(
@@ -287,7 +291,11 @@ def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture
             if bundle_context is None or token is not None:
                 raise RunnerError("DATASET_INPUT_IDENTITY", "数据集预测须使用隔离冻结输入。")
             os.environ.pop("TUSHARE_TOKEN", None)
-            from .research_dataset_runner.compute import compute
+            from .graph_research_runner.protocol import requested as graph_requested
+            if graph_requested(job):
+                from .graph_research_runner.compute import compute
+            else:
+                from .research_dataset_runner.compute import compute
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 answer = compute(job, bundle_context, slot_path=compute_lock_path, deadline=deadline)
             connection.send(answer)
@@ -339,6 +347,10 @@ def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture
 def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None, allowed_proxy_hosts=None, heartbeat=None, stop_requested=None, capture_snapshot=False, bundle_context=None, compute_lock_path=None):
     """Hard wall-clock process bound, with optional lease/cancellation callback."""
     market_budget = None
+    from .graph_research_runner.protocol import requested as graph_requested
+    if graph_requested(job) and bundle_context is not None:
+        from .graph_research_runner.limits import GraphProcessBudget
+        market_budget = GraphProcessBudget(bundle_context)
     if job.get("dataSource") == "ready_market" and bundle_context is not None:
         from .market_research_runner.limits import MarketProcessBudget
         market_budget = MarketProcessBudget(bundle_context)
@@ -420,7 +432,7 @@ class QueueClient:
         self.session = session or requests.Session()
 
     def post(self, route, payload, *, deadline=None):
-        if route not in ("claim", "heartbeat", "complete", "snapshot", "replay", "bundles/begin", "bundles/finalize", "financial-bundles/begin", "financial-bundles/finalize", "financial-bundles/complete"):
+        if route not in ("claim", "heartbeat", "complete", "snapshot", "replay", "bundles/begin", "bundles/finalize", "financial-bundles/begin", "financial-bundles/finalize", "financial-bundles/complete", "financial-graph-bundles/begin", "financial-graph-bundles/finalize", "financial-graph-bundles/complete"):
             raise RunnerError("QUEUE_ROUTE", "队列接口无效。")
         deadline = min(deadline, time.monotonic()+60) if deadline is not None else time.monotonic()+60
         try:
@@ -456,7 +468,10 @@ class QueueClient:
 
     def bundle_chunk(self, method, bundle_id, collection, ordinal, identity, *, raw=None, stage_id=None, deadline=None, namespace="bundles"):
         from .bundle import HASH, COLLECTIONS, CHUNK_LIMIT
-        if (namespace not in ("bundles", "financial-bundles") or method not in ("GET", "PUT") or not isinstance(bundle_id, str) or not HASH.fullmatch(bundle_id)
+        if namespace == "financial-graph-bundles":
+            from .financial_bundle_v2 import COLLECTIONS
+        if (namespace not in ("bundles", "financial-bundles", "financial-graph-bundles") or method not in ("GET", "PUT")
+                or namespace == "financial-graph-bundles" and method != "PUT" or not isinstance(bundle_id, str) or not HASH.fullmatch(bundle_id)
                 or collection not in COLLECTIONS or not isinstance(ordinal, int) or isinstance(ordinal, bool) or not 0 <= ordinal < 256):
             raise RunnerError("QUEUE_ROUTE", "分片接口身份无效。")
         if method == "PUT" and (not isinstance(raw, bytes) or len(raw) > CHUNK_LIMIT or not stage_id):
@@ -574,7 +589,7 @@ def flush_completions(client, spool):
         if payload.get("_quarantined") and quarantine is None:
             raise RunnerError("DELIVERY_QUARANTINE", "缺少原始拒绝证据；停止清理。")
         bundle_format = payload.get("_bundleFormat", "atlas.quant.bundle/1")
-        if bundle_format not in {"atlas.quant.bundle/1", "atlas.quant.financial_bundle/1"}:
+        if bundle_format not in {"atlas.quant.bundle/1", "atlas.quant.financial_bundle/1", "atlas.quant.financial_bundle/2"}:
             raise RunnerError("DELIVERY_INTEGRITY", "未知的持久结果格式；保留原件。")
         store_class, deliver = BundleSpool, deliver_bundle
         complete_route = "complete"
@@ -582,13 +597,21 @@ def flush_completions(client, spool):
             from .financial_bundle_spool import FinancialBundleSpool, deliver_financial_bundle
             store_class, deliver = FinancialBundleSpool, deliver_financial_bundle
             complete_route = "financial-bundles/complete"
+        if bundle_format == "atlas.quant.financial_bundle/2":
+            from .financial_graph_bundle_spool import FinancialGraphBundleSpool, deliver_graph_bundle
+            store_class, deliver = FinancialGraphBundleSpool, deliver_graph_bundle
+            complete_route = "financial-graph-bundles/complete"
         request_id = payload.get("_claimRequestId")
         intent = {"requestId": request_id, "jobId": payload["id"], "leaseToken": payload["leaseToken"]}
         snapshot_key = payload.get("_snapshotKey")
         snapshot_store = bundle_store = dataset_store = None
         if payload.get("_datasetKey") is not None:
             from .research_dataset_runner.spool import ResearchDatasetSpool
-            dataset_store = ResearchDatasetSpool.from_spool(spool, payload)
+            if bundle_format == "atlas.quant.financial_bundle/2":
+                from .graph_research_runner.spool import GraphResearchSpool
+                dataset_store = GraphResearchSpool.from_spool(spool, payload)
+            else:
+                dataset_store = ResearchDatasetSpool.from_spool(spool, payload)
             if dataset_store.key != payload["_datasetKey"]:
                 raise RunnerError("DELIVERY_INTEGRITY", "冻结数据集与待回传任务身份不一致。")
         if payload.get("_marketKey") is not None:
@@ -754,6 +777,7 @@ def _serve(config, spool, *, once=False):
                     financial_datasets=config.get(
                         "financial_dataset_research_enabled", False
                     ),
+                    financial_graphs=config.get("financial_graph_research_enabled", False),
                     market_datasets=config.get(
                         "market_dataset_research_enabled", False
                     ),
@@ -785,6 +809,14 @@ def _serve(config, spool, *, once=False):
                             "_marketKey": MarketResearchSpool.from_spool(
                                 spool, identity
                             ).key,
+                        }
+                    elif intent.get("sourceFormat") == "atlas.quant.research_dataset/3":
+                        from .graph_research_runner.spool import GraphResearchSpool
+                        from .financial_graph_bundle_spool import FinancialGraphBundleSpool
+                        closure = {
+                            "_bundleFormat": "atlas.quant.financial_bundle/2",
+                            "_bundleKey": FinancialGraphBundleSpool.from_spool(spool, identity).key,
+                            "_datasetKey": GraphResearchSpool.from_spool(spool, identity).key,
                         }
                     else:
                         closure = {
@@ -821,12 +853,22 @@ def _serve(config, spool, *, once=False):
                 raise RunnerError("QUEUE_JOB", "队列任务格式无效。")
             identity = {"id": job["id"], "leaseToken": job["leaseToken"]}
             financial = job.get("dataSource") == "ready_dataset"
+            from .graph_research_runner.protocol import requested as graph_requested
+            graph = graph_requested(job)
             market = job.get("dataSource") == "ready_market"
             from .bundle_spool import BundleSpool
 
             store_class = BundleSpool
             private_format = {}
-            if financial:
+            if graph:
+                from .financial_graph_bundle_spool import FinancialGraphBundleSpool
+                from .graph_research_runner.spool import GraphResearchSpool
+                store_class = FinancialGraphBundleSpool
+                private_format = {
+                    "_bundleFormat": "atlas.quant.financial_bundle/2",
+                    "_datasetKey": GraphResearchSpool.from_spool(spool, identity).key,
+                }
+            elif financial:
                 from .financial_bundle_spool import FinancialBundleSpool
                 from .research_dataset_runner.spool import ResearchDatasetSpool
 
@@ -883,11 +925,11 @@ def _serve(config, spool, *, once=False):
                 continue
             claims.executing(intent, job)
             job_deadline = time.monotonic() + config.get("job_timeout", DEFAULT_TIMEOUT)
-            if financial:
+            if financial and not graph:
                 job_deadline = min(job_deadline, time.monotonic() + 600)
             bundle_context = None
             if (isinstance(job.get("strategy"), dict) and job["strategy"].get("schemaVersion") == 2
-                    and job.get("resultTransport") == {"format": "atlas.quant.financial_bundle" if financial else "atlas.quant.bundle", "version": 1}):
+                    and job.get("resultTransport") == {"format": "atlas.quant.financial_bundle" if financial else "atlas.quant.bundle", "version": 2 if graph else 1}):
                 bundle_context = store_class.context_for(spool, identity)
             input_error = None
             last_input_heartbeat = 0.
@@ -902,10 +944,14 @@ def _serve(config, spool, *, once=False):
                     last_input_heartbeat = time.monotonic()
             if financial:
                 try:
-                    if config.get("financial_dataset_research_enabled") is not True or bundle_context is None:
-                        raise RunnerError("DATASET_RESEARCH_DISABLED", "此运行端未启用冻结财务数据集预测。")
-                    from .research_dataset_runner.client import ResearchDatasetClient
-                    job = ResearchDatasetClient(config).prepare(job, spool, deadline=job_deadline, check=check_dataset_input)
+                    enabled = config.get("financial_graph_research_enabled" if graph else "financial_dataset_research_enabled")
+                    if enabled is not True or bundle_context is None:
+                        raise RunnerError("DATASET_RESEARCH_DISABLED", "此运行端未启用相应版本的冻结财务预测。")
+                    if graph:
+                        from .graph_research_runner.client import GraphResearchClient as InputClient
+                    else:
+                        from .research_dataset_runner.client import ResearchDatasetClient as InputClient
+                    job = InputClient(config).prepare(job, spool, deadline=job_deadline, check=check_dataset_input)
                 except Exception as exc:
                     input_error = {"error": _safe_error(exc)}
             elif market:

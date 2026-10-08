@@ -30,7 +30,8 @@ def compute(job, context, *, slot_path, deadline):
     with compute_slot(slot_path, deadline=deadline):
         require(time.monotonic() < deadline, "CAPACITY_TIMEOUT")
         run_graph_research(job["strategy"], source, registry, job["datasetRef"],
-            research_profile=job["admissionProfile"], work_dir=inputs.root, finalize=finalize, deadline=deadline)
+            research_profile=job["admissionProfile"], work_dir=inputs.root, finalize=finalize, deadline=deadline,
+            progress=lambda event: inputs.write("progress", encode(event)))
         require(len(completed) == 1, "DATASET_COVERAGE")
         require(time.monotonic() < deadline, "CAPACITY_TIMEOUT")
     return completed[0]

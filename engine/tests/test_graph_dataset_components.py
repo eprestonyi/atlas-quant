@@ -10,7 +10,7 @@ from atlas_quant.dataset_runner.spool import DatasetSpool
 from atlas_quant.graph_dataset_runner.client import GraphDatasetClient
 from atlas_quant.graph_dataset_runner.spool import GraphDatasetSpool
 from atlas_quant.graph_dataset_runner.publication import compute_publication
-from atlas_quant.graph_dataset_runner.protocol import PROFILE
+from atlas_quant.graph_dataset_runner.protocol import PROFILE,JOB_KIND
 from atlas_quant.dataset_runner.protocol import encode
 from atlas_quant.research_dataset.graph_v3.dataset import GraphDatasetReader,restore_graph_dataset
 from atlas_quant.research_dataset.graph_v3.manifest import validate_manifest
@@ -36,7 +36,7 @@ def graph_inputs(sources,legacy_source,task):
 
 
 def test_graph_composition_publication_is_new_format_and_exact_fresh_source(tmp_path,sources,legacy_source):
-    task=job();data=graph_inputs(sources,legacy_source,task);settings=configuration(tmp_path)
+    task={**job(),'kind':JOB_KIND};data=graph_inputs(sources,legacy_source,task);settings=configuration(tmp_path)
     client=GraphDatasetClient(settings)
     assert client.source_plan(data[0],task)
     spool=GraphDatasetSpool(settings);publication=spool.publication(task)
@@ -55,7 +55,7 @@ def test_graph_composition_publication_is_new_format_and_exact_fresh_source(tmp_
 
 @pytest.mark.parametrize('attack',['legacy_profile','unknown_profile','calendar_days','component','ordinal','overlap','nested'])
 def test_graph_compose_adapters_fail_closed_without_source_or_result_mutation(tmp_path,sources,legacy_source,attack):
-    task=job();data=list(graph_inputs(sources,legacy_source,task));settings=configuration(tmp_path)
+    task={**job(),'kind':JOB_KIND};data=list(graph_inputs(sources,legacy_source,task));settings=configuration(tmp_path)
     if attack in ('legacy_profile','unknown_profile','calendar_days'):
         data[0]=deepcopy(data[0])
         if attack=='legacy_profile':data[0]['plan']['profile']='financial_snapshot_view_50_v1'

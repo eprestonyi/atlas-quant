@@ -2,7 +2,7 @@
 from urllib.parse import urlsplit
 from ..dataset_runner.client import DatasetClient
 from ..research_dataset.graph_v3.manifest import scope
-from .protocol import PROFILE,COMPONENT,NAMESPACE
+from .protocol import PROFILE,COMPONENT,NAMESPACE,JOB_KIND
 
 
 class GraphDatasetClient(DatasetClient):
@@ -15,6 +15,8 @@ class GraphDatasetClient(DatasetClient):
         self.prefix = urlsplit(self.base).path + "/"
 
     def source_plan(self, meta, job):
+        from ..dataset_runner.protocol import require
+        require(job.get("kind") == JOB_KIND, "DATASET_INPUT_IDENTITY")
         refs = super().source_plan(meta, job)
         scope(meta["plan"]["scope"])
         return refs
