@@ -32,6 +32,7 @@ jobs:
       - run: node web/tests/factor-workbench-dom.mjs
       - run: node web/tests/market-preparation-dom.mjs
       - run: node web/tests/market-admission-adversarial-dom.mjs
+      - run: node web/tests/market-trend-admission-dom.mjs
       - run: node web/tests/factor-diagnostics-dom.mjs
       - run: node web/tests/model-function-editor-dom.mjs
       - run: node web/tests/financial-workspace-dom.mjs

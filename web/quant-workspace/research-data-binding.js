@@ -14,8 +14,17 @@ export function matchesMarketScope(binding, universe) {
 export function marketAdmission(strategy) {
   if (strategy.target.kind !== 'asset_price' || strategy.execution.enabled) return null;
   if (strategy.model.estimator === 'auto' && strategy.model.family === 'mean_reversion') return 'pooled_asset_1000_auto_candidate_v1';
+  if (strategy.model.estimator === 'auto' && strategy.model.family === 'trend') return 'pooled_asset_1000_trend_auto_v1';
   if (strategy.model.estimator === 'ridge' && ['mean_reversion', 'trend'].includes(strategy.model.family)) return 'pooled_asset_1000_v1';
   return null;
+}
+export const marketProfileLabel = profile => ({
+  pooled_asset_1000_auto_candidate_v1: '状态均值回归 · 自动选择',
+  pooled_asset_1000_trend_auto_v1: '趋势条件预测 · 自动选择',
+})[profile] || 'Studio 声明的拟合协议';
+export function marketDeclaration(strategy, admissions) {
+  const profile = marketAdmission(strategy);
+  return Array.isArray(admissions) ? admissions.find(x => x.admissionProfile === profile && Array.isArray(x.families) && x.families.includes(strategy.model.family) && x.estimator === strategy.model.estimator && x.targetKind === strategy.target.kind && x.executionEnabled === false) : null;
 }
 export function marketBindingErrors(s, { run = false } = {}) {
   if (s.dataSource !== 'ready_market') return [];

@@ -66,7 +66,7 @@ assert(!w.document.querySelector('[data-sq-config="model.estimator"]'));
 for (const family of ['trend', 'pair_reversion', 'event', 'fundamental']) {
   const card = w.document.querySelector(`[data-sq="family"][data-id="${family}"]`);
   assert(card.disabled, family + ' does not imply a thousand-member auto pipeline');
-  assert.equal(card.querySelector('[data-mechanism-status]').dataset.mechanismStatus, 'blocked');
+  assert.equal(card.querySelector('[data-mechanism-status]').dataset.mechanismStatus, family === 'trend' ? 'pending' : 'blocked');
 }
 assert(!w.document.querySelector('[data-sq="family"][data-id="mean_reversion"]').disabled);
 const fullUniverse = structuredClone(s.strategy.universe);
