@@ -51,6 +51,8 @@ const root = 'a'.repeat(64),
   };
 const calls = [];
 let planFailures = 1,
+  startFailures = 1,
+  compositionOnline = false,
   lastPlan = null,
   releaseInitial;
 const initialGate = new Promise((r) => (releaseInitial = r));
@@ -64,7 +66,7 @@ w.fetch = async (url, opts = {}) => {
     value = {
       enabled: true,
       profile: 'financial_snapshot_view_50_v1',
-      composition: { online: true },
+      composition: { online: compositionOnline },
       researchBindingEnabled: true,
     };
   } else if (path === '/financial/definitions')
@@ -106,9 +108,10 @@ w.fetch = async (url, opts = {}) => {
     lastPlan = data;
     if (planFailures-- > 0) throw Error('明确网络失败，选择保留');
     value = { plan: { id: datasetId, planRoot: root, knownSourceBytes: 2048 } };
-  } else if (path.includes('/start'))
+  } else if (path.includes('/start')) {
+    if (startFailures-- > 0) throw Error('启动响应未知，保留原请求标识');
     value = { preparation: { id: datasetId, status: 'queued' } };
-  else if (path.startsWith('/dataset-preparations/'))
+  } else if (path.startsWith('/dataset-preparations/'))
     value = {
       preparation: { id: datasetId, status: 'completed' },
       datasetRef: ref,
@@ -215,10 +218,62 @@ await tick();
 assert.equal(lastPlan.requestId, firstRequest);
 assert.equal(lastPlan.marketSource.transform.mode, 'exact');
 assert(!Object.hasOwn(lastPlan, 'marketCalendarRef'));
+assert.equal(w.document.querySelector('[data-ds="start"]').disabled, true);
+const frozenPlan = JSON.stringify(q.workspace.datasets.state.plan),
+  frozenSelection = JSON.stringify({
+    name: q.workspace.datasets.state.name,
+    symbols: q.workspace.datasets.state.symbols,
+    start: q.workspace.datasets.state.start,
+    end: q.workspace.datasets.state.end,
+    selected: q.workspace.datasets.state.selected,
+  });
+async function refreshNode(online) {
+  compositionOnline = online;
+  const before = calls.length;
+  click('refresh-capabilities');
+  assert(
+    w.document
+      .querySelector('main')
+      .textContent.includes('正在读取准备节点状态'),
+  );
+  await tick();
+  assert.deepEqual(
+    calls.slice(before).map((x) => x.path),
+    ['/dataset-capabilities'],
+  );
+  assert.equal(JSON.stringify(q.workspace.datasets.state.plan), frozenPlan);
+  assert.equal(
+    JSON.stringify({
+      name: q.workspace.datasets.state.name,
+      symbols: q.workspace.datasets.state.symbols,
+      start: q.workspace.datasets.state.start,
+      end: q.workspace.datasets.state.end,
+      selected: q.workspace.datasets.state.selected,
+    }),
+    frozenSelection,
+  );
+  assert.equal(w.document.querySelector('[data-ds="start"]').disabled, !online);
+}
+await refreshNode(true);
+click('start');
+await tick();
+assert(w.document.querySelector('main').textContent.includes('启动响应未知'));
+const firstStartRequest = calls.find((x) => x.path.includes('/start')).data
+  .requestId;
+await refreshNode(false);
+await refreshNode(true);
+// Re-check after a heartbeat refresh keeps the original plan idempotency key.
+click('plan');
+await tick();
+assert.equal(lastPlan.requestId, firstRequest);
 click('start');
 await tick();
 await tick();
 assert(w.document.querySelector('main').textContent.includes('已生成数据集'));
+assert.equal(
+  calls.filter((x) => x.path.includes('/start')).at(-1).data.requestId,
+  firstStartRequest,
+);
 click('open-job-dataset');
 await tick();
 await tick();
@@ -273,6 +328,7 @@ console.log(
     independentSteps: 4,
     idempotentPlanRetry: true,
     inputRetention: true,
+    heartbeatRefreshRetainsPlanAndBothRequestIds: true,
     coverageObservedDates: true,
     explicitForecastOnlyBinding: true,
     browserVisualAcceptance: false,

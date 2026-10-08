@@ -4,6 +4,8 @@ export function createDatasetWorkspace(C, F, { onBind }) {
     { panel, note, empty, advanced } = F;
   const s = {
     cap: null,
+    capRefreshing: false,
+    capError: '',
     markets: [],
     marketTotal: 0,
     marketPage: 1,
@@ -129,7 +131,7 @@ export function createDatasetWorkspace(C, F, { onBind }) {
   function review() {
     return panel(
       '明确冻结这次组成',
-      `${field('ds-name', '数据集名称', `<input id="ds-name" data-ds-input="name" maxlength="80" value="${e(s.name)}">`)}<dl class="fin-summary"><dt>行情来源</dt><dd>${e(s.market?.name || '尚未选择')}</dd><dt>新范围</dt><dd>${e(s.symbols.join('、'))} · ${e(date(s.start))}–${e(date(s.end))}</dd><dt>财务输入</dt><dd>${s.selected.length} 项不可变准备版本</dd><dt>数据请求</dt><dd>0 次新供应商请求</dd><dt>证据边界</dt><dd>供应商历史原始版本和修订时点尚未核实；单位假设不升级为已核验。</dd></dl>${s.plan ? note(`来源引用已核对。将处理约 ${(s.plan.knownSourceBytes / 1024 / 1024).toFixed(2)} MiB 来源；实际组成、日历一致性与缺失覆盖仍需计算服务验证。`) : note('核对会固定来源版本和明确子范围。准备完成后，才可查看真实覆盖。')}<div class="sq-actions">${btn('plan', s.busy ? '正在核对…' : '核对来源与预算', { disabled: s.busy || !s.cap?.enabled, primary: !s.plan })}${btn('start', s.busy ? '处理中…' : '明确开始准备', { disabled: s.busy || !s.plan || !s.cap?.composition.online, primary: true })}</div>${s.cap && !s.cap.composition.online ? note('数据集准备节点当前不在线；已选范围和输入保持不变。', 'warning') : ''}`,
+      `${field('ds-name', '数据集名称', `<input id="ds-name" data-ds-input="name" maxlength="80" value="${e(s.name)}">`)}<dl class="fin-summary"><dt>行情来源</dt><dd>${e(s.market?.name || '尚未选择')}</dd><dt>新范围</dt><dd>${e(s.symbols.join('、'))} · ${e(date(s.start))}–${e(date(s.end))}</dd><dt>财务输入</dt><dd>${s.selected.length} 项不可变准备版本</dd><dt>数据请求</dt><dd>0 次新供应商请求</dd><dt>证据边界</dt><dd>供应商历史原始版本和修订时点尚未核实；单位假设不升级为已核验。</dd></dl>${s.plan ? note(`来源引用已核对。将处理约 ${(s.plan.knownSourceBytes / 1024 / 1024).toFixed(2)} MiB 来源；实际组成、日历一致性与缺失覆盖仍需计算服务验证。`) : note('核对会固定来源版本和明确子范围。准备完成后，才可查看真实覆盖。')}<div class="sq-actions">${btn('plan', s.busy ? '正在核对…' : '核对来源与预算', { disabled: s.busy || !s.cap?.enabled, primary: !s.plan })}${btn('start', s.busy ? '处理中…' : '明确开始准备', { disabled: s.busy || s.capRefreshing || !s.plan || !s.cap?.enabled || !s.cap?.composition.online, primary: true })}${btn('refresh-capabilities', s.capRefreshing ? '正在刷新节点状态…' : '刷新节点状态', { disabled: s.busy || s.capRefreshing })}</div><div role="status" aria-live="polite">${s.capRefreshing ? '<p>正在读取准备节点状态，已核对的计划保持不变…</p>' : s.capError ? note(s.capError, 'warning') : s.cap?.composition.online ? note('数据集准备节点在线。') : s.cap ? note('数据集准备节点当前不在线；可刷新状态，已选范围和输入保持不变。', 'warning') : ''}</div>`,
     );
   }
   function job() {
@@ -306,6 +308,23 @@ export function createDatasetWorkspace(C, F, { onBind }) {
     if (action === 'review') {
       scopeCheck();
       go('review');
+      return;
+    }
+    if (action === 'refresh-capabilities') {
+      if (s.capRefreshing) return;
+      s.capRefreshing = true;
+      s.capError = '';
+      present();
+      try {
+        // Advisory service status only: never invalidate the frozen plan or
+        // either idempotency key when a worker heartbeat changes.
+        s.cap = await api('/dataset-capabilities');
+      } catch (err) {
+        s.capError = '节点状态读取失败：' + err.message;
+      } finally {
+        s.capRefreshing = false;
+        present();
+      }
       return;
     }
     if (action === 'retry') {
