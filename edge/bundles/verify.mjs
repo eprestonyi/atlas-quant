@@ -95,6 +95,16 @@ export async function verifyRecords(env, stage, parsed) {
     [stage.id],
     '成交或决策引用其他预测'
   );
+  if (!storedMarketAdmission(stage)) {
+    await rejectIfRows(
+      env,
+      `SELECT ordinal FROM quant_bundle_records WHERE stage_id=? AND collection='hedgeFits'
+       AND (json_type(metadata,'$.targetIds') IS NOT 'array' OR json_array_length(metadata,'$.targetIds')>50
+         OR json_type(metadata,'$.targetIndexPolicy') IS NOT NULL)`,
+      [stage.id],
+      '普通报告不能使用完整市场拟合索引'
+    );
+  }
   await rejectIfRows(
     env,
     `SELECT h.ordinal FROM quant_bundle_records h,json_each(h.metadata,'$.targetIds') ids

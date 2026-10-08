@@ -29,6 +29,7 @@ async function makeFixture({
     universe: { symbols, start: calendar[0], end: calendar.at(-1) },
     research: { mode: "statistical_quant", observationDays },
     target: { kind: "asset_price", horizonSessions: 5 },
+    model: { refitDays: 20 },
     validation: { holdoutFraction: 0.2 },
     factors: predictors ? [{ id: "f", expression, role: "predictor" }] : [],
   };
@@ -41,6 +42,11 @@ async function makeFixture({
       forecast.sourceStrategy = report.strategy = strategy;
       forecast.targetDefinitions = structuredClone(domain.targets);
       forecast.modelFits = [];
+      forecast.hedgeFits = domain.hedgeFits.map((clock) => ({
+        ...clock,
+        targetIds: domain.targets.map((t) => t.id),
+        status: "valid",
+      }));
       forecast.rows = domain.origins.flatMap((origin, i) =>
         domain.targets.map((target, j) => ({
           ...origin,

@@ -1,7 +1,8 @@
 /** Whole-asset forecast domain derived from frozen scope/calendar, never output rows. */
 import { validateExpression } from "../factor-language.mjs";
 import { validateChunk } from "../bundles/manifest.mjs";
-import { canonical, digest, fail } from "./common.mjs";
+import { canonical, fail } from "./common.mjs";
+import { marketAssetTargets, marketHedgeMetadata } from "./hedge-index.mjs";
 
 const reject = (message) => fail("MARKET_FORECAST_COVERAGE", message, 409);
 
@@ -33,25 +34,22 @@ export async function marketOriginDomain(strategy, calendar, symbols) {
   }
   if (!origins.length || origins.length * symbols.length > 80000)
     reject("完整资产预测范围超过注册预算");
-  const targets = [];
-  for (const symbol of [...symbols].sort()) {
-    const content = {
-      kind: "asset_price",
-      symbols: [symbol],
-      quantities: [1],
-      unit: "CNY_adjusted_research_price",
-      construction: "single_asset",
-      formationStart: null,
-      formationEnd: null,
-      hedgeAudit: {},
-    };
-    targets.push({
-      id: "target_" + (await digest(content)).slice(0, 24),
-      ...content,
-    });
+  const targets = await marketAssetTargets(symbols);
+  const hedgeFits = [];
+  let lastFit = -100000;
+  for (
+    let i = start;
+    i < calendar.length;
+    i += strategy.research.observationDays
+  ) {
+    if (i - lastFit >= strategy.model.refitDays) {
+      hedgeFits.push({ date: calendar[i], informationCutoff: calendar[i - 1] });
+      lastFit = i;
+    }
   }
   return {
     holdoutStart,
+    hedgeFits,
     holdoutEnd: calendar.at(-1),
     sampleRows:
       Math.ceil((calendar.length - start) / strategy.research.observationDays) *
@@ -161,5 +159,57 @@ export async function verifyMarketCoverage(
       .first();
     if (mismatch) reject("完整资产预测顺序、证券、日期或尾部端点不一致");
   }
+  await verifyMarketHedgeFits(env, stage, parsed, domain, read);
   return domain;
+}
+
+/** Compact indexes never replace validation of the complete immutable raw rows. */
+export async function verifyMarketHedgeFits(env, stage, parsed, domain, read) {
+  const collection = parsed.collections.get("hedgeFits");
+  if (!collection || collection.rowCount !== domain.hedgeFits.length)
+    reject("完整资产构造拟合时钟缺失或重复");
+  const indexed = await env.DB.prepare(
+    "SELECT ordinal,date,metadata FROM quant_bundle_records WHERE stage_id=? AND collection='hedgeFits' ORDER BY ordinal",
+  )
+    .bind(stage.id)
+    .all();
+  if (indexed.results.length !== domain.hedgeFits.length)
+    reject("完整资产构造拟合索引不完整");
+  const ids = domain.targets.map((t) => t.id);
+  let count = 0;
+  for (const descriptor of collection.chunks) {
+    const raw = await read("hedgeFits", descriptor);
+    const rows = await validateChunk(
+      typeof raw === "string"
+        ? raw
+        : new TextDecoder("utf-8", { fatal: true }).decode(raw),
+      descriptor,
+    );
+    for (const row of rows) {
+      const expected = domain.hedgeFits[count];
+      if (
+        !expected ||
+        row.date !== expected.date ||
+        row.informationCutoff !== expected.informationCutoff ||
+        row.status !== "valid"
+      )
+        reject("资产构造拟合时钟或状态与冻结来源不一致");
+      const metadata = await marketHedgeMetadata(row, ids);
+      const index = indexed.results[count];
+      // Both old full metadata and the new compact metadata remain readable.
+      // Neither representation authorizes a subset: raw IDs were checked above.
+      const legacy = { targetIds: ids };
+      if (
+        index.ordinal !== count ||
+        index.date !== row.date ||
+        ![canonical(metadata), canonical(legacy)].includes(
+          canonical(JSON.parse(index.metadata)),
+        )
+      )
+        reject("资产构造拟合索引与完整原始引用不同");
+      count++;
+    }
+  }
+  if (count !== domain.hedgeFits.length)
+    reject("资产构造拟合分片未覆盖来源时钟");
 }

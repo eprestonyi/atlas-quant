@@ -11,6 +11,7 @@ import {
   validateMarketBundle
 } from '../market-preparation/bundle.mjs';
 import { assertRunMarket } from '../market-preparation/research.mjs';
+import { marketAssetTargets } from '../market-preparation/hedge-index.mjs';
 import { indexStatements, recordIndex } from './records.mjs';
 import {
   INDEXED_SNAPSHOT,
@@ -390,11 +391,20 @@ export async function uploadChunk(
   // market writes require the current server-side scope and feature gate.
   if (job.data_source === 'ready_market')
     await assertMarketBundle(env, job, parsed, storedMarketAdmission(stage));
+  // The strategy was just compared to the owner-scoped immutable source above.
+  // Only this admitted market route can use compact all-asset hedge references.
+  const marketHedgeTargets =
+    job.data_source === 'ready_market' && collectionId === 'hedgeFits'
+      ? (await marketAssetTargets(parsed.metadata.report.strategy.universe.symbols)).map(t => t.id)
+      : null;
   const indexes = [];
   if (!sortedSnapshot)
     for (let index = 0; index < rows.length; index++)
       indexes.push(
-        await recordIndex(collectionId, rows[index], descriptor.start + index, ordinal, index)
+        await recordIndex(
+          collectionId, rows[index], descriptor.start + index, ordinal, index,
+          { marketHedgeTargets }
+        )
       );
   const key = `bundle/${job.owner}/${stage.id}/${collectionId}/${ordinal}-${descriptor.sha256}.json`;
   await env.ARTIFACTS.put(key, text, {
