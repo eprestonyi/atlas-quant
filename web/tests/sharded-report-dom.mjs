@@ -400,6 +400,24 @@ assert(!document.querySelector('[data-sq="forecast-execute"]'));
 assert(document.querySelector('main').textContent.includes('交易执行与执行重放尚未开放'));
 await click('[data-sq="forecast-tab"][data-id="provenance"]');
 assert(document.querySelector('a[href^="#quant/studio/datasets/dataset/"]'));
+// Market F remains bundle/1, with a separate immutable source archive reference
+// in the REPORT provenance. An unrelated current draft must never change it.
+const marketRef={datasetId:'22222222-2222-4222-8222-222222222222',datasetRoot:'f'.repeat(64),format:'atlas.quant.market_dataset',version:1};
+const marketSource={marketDatasetRef:marketRef,universeScopeRef:{scopeId:'33333333-3333-4333-8333-333333333333',scopeRoot:'a'.repeat(64),format:'atlas.quant.universe_scope',version:1},admissionProfile:'pooled_asset_1000_auto_candidate_v1',rowValueRoot:'9'.repeat(64)};
+C.state.reportTransport={...transport};C.state.marketDatasetBinding={marketDatasetRef:{...marketRef,datasetRoot:'d'.repeat(64)}};
+activeReport={...report,provenance:{...report.provenance,marketSource}};
+const marketBefore=JSON.stringify(activeReport);C.render();await tick();
+const marketAttachments=[...document.querySelectorAll('a[download]')];
+assert(marketAttachments.some(x=>x.textContent==='下载市场预测结果包'));
+assert(marketAttachments.some(x=>x.textContent==='下载完整行情来源包'&&x.getAttribute('href')===`/quant/api/market-datasets/${marketRef.datasetId}/download?datasetRoot=${marketRef.datasetRoot}`));
+assert(!marketAttachments.some(x=>x.href.includes('datasetRoot='+'d'.repeat(64))),'draft reference never substitutes for the report source');
+assert(document.querySelector('main').textContent.includes('同时保留市场预测结果包与完整行情来源包'));
+await click('[data-sq="forecast-tab"][data-id="execution"]');assert(document.querySelector('main').textContent.includes('仅预测的市场研究'));
+await click('[data-sq="forecast-tab"][data-id="provenance"]');assert(document.querySelector('main').textContent.includes('本报告保存的行情来源身份'));
+assert.equal(JSON.stringify(activeReport),marketBefore);
+activeReport={...activeReport,provenance:{...activeReport.provenance,marketSource:{...marketSource,marketDatasetRef:{...marketRef,datasetRoot:'invalid'}}}};C.render();
+assert(![...document.querySelectorAll('a[download]')].some(x=>x.getAttribute('href').startsWith('/quant/api/market-datasets/')));
+assert(document.querySelector('main').textContent.includes('不能补猜来源包'));
 console.log(
   JSON.stringify({
     remotePagination: true,
@@ -410,6 +428,9 @@ console.log(
     directDownload: true,
     financialTwoArchiveClosure: true,
     financialExecutionDisabled: true,
+    marketReportProvenancePinned: true,
+    marketSeparateSourceArchive: true,
+    missingMarketSourceNotGuessed: true,
     riskEvents: true,
     reportImmutable: true,
     apiDoubles: true,

@@ -1,4 +1,5 @@
 import { reportFeatureLabeler, createFeatureLabeler } from './feature-labels.js';
+import { marketDatasetDownload } from './source-downloads.js';
 import { createModelFunctionEditor } from './model-function-editor.js';
 import { createFactorDiagnostics } from './factor-diagnostics.js';
 // Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
@@ -27,6 +28,7 @@ export function createForecastReports(C, F) {
   const remote = createReportSource(C);
   const functionEditor = createModelFunctionEditor(C, F);
   const financialReport = () => remote.transport?.format === 'atlas.quant.financial_bundle';
+  const marketReport = r => !!r.provenance?.marketSource;
   function financialSourceRef() {
     const ref = remote.transport?.sourceEvidence?.datasetRef;
     return ref?.format === 'atlas.quant.research_dataset' &&
@@ -196,23 +198,25 @@ export function createForecastReports(C, F) {
     const sourceRef = financialSourceRef();
     const datasetArchiveUrl = sourceRef
       ? `/quant/api/datasets/${sourceRef.datasetId}/archive?datasetRoot=${sourceRef.datasetRoot}`
-      : null;
+      : marketDatasetDownload(r.provenance?.marketSource?.marketDatasetRef);
     const packLabel = financialReport()
       ? '下载财务预测结果包'
+      : marketReport(r) ? '下载市场预测结果包'
       : remote.transport?.hasFrozenInputs === true
         ? '下载私有复现包'
         : '下载私有执行记录包';
     const packNote = financialReport()
       ? '完整来源核验需要同时保留预测结果包与数据集闭包包；当前不支持交易执行或执行重放。'
+      : marketReport(r) ? '完整来源核验需要同时保留市场预测结果包与完整行情来源包；当前不支持交易执行或执行重放。'
       : remote.transport?.hasFrozenInputs === true
         ? '包含冻结行情、预测与来源；保存在你的设备，不会公开分享。'
         : '包含执行与冻结预测；重放还需要来源预测包中的原始行情。';
-    const downloads = `<div class="sq-report-downloads"><a class="sq-button small" href="${e(downloadUrl)}" download>${remote.enabled() ? '流式下载完整私有报告' : '下载完整私有产物'}</a>${bundleUrl ? `<a class="sq-button small" href="${e(bundleUrl)}" download>${packLabel}</a><small>${packNote}</small>` : ''}${datasetArchiveUrl ? `<a class="sq-button small" href="${e(datasetArchiveUrl)}" download>下载数据集完整闭包</a>` : financialReport() ? F.note('未返回完整数据集引用，不能宣称来源闭包已齐备。', 'warning') : ''}</div>`;
+    const downloads = `<div class="sq-report-downloads"><a class="sq-button small" href="${e(downloadUrl)}" download>${remote.enabled() ? '流式下载完整私有报告' : '下载完整私有产物'}</a>${bundleUrl ? `<a class="sq-button small" href="${e(bundleUrl)}" download>${packLabel}</a><small>${packNote}</small>` : ''}${datasetArchiveUrl ? `<a class="sq-button small" href="${e(datasetArchiveUrl)}" download>${financialReport() ? '下载数据集完整闭包' : '下载完整行情来源包'}</a>` : financialReport() || marketReport(r) ? F.note('未返回完整数据集引用，不能宣称来源闭包已齐备。', 'warning') : ''}</div>`;
     return `${r.provenance?.synthetic || r.provenance?.dataSource === 'demo' ? F.note('这份报告来自合成教学数据，不构成真实市场证据。', 'warning') : ''}<div class="sq-forecast-identity"><div><span class="sq-kicker">IMMUTABLE FORECAST ARTIFACT</span><code>${e(f.artifactId)}</code><small>${fmt(f.totalRows, 0)} 条预测 · ${fmt(targetCount, 0)} 个冻结目标定义 · ${r.research?.executionOnly ? '复用既有预测，未重新拟合' : '独立生成与保存预测'}</small>${remote.enabled() ? `<small>${remote.transport.complete === true ? '完整产物已提交；当前只读取页面所需记录' : '产物完整度尚未确认'}</small>` : ''}</div>${downloads}</div><div class="sq-report-stats">${stat('成熟预测观测', fmt(m.observations, 0), '未成熟、失效、未交易记录仍保留')}${stat('归一化联合 RMSE', fmt(m.rmse, 6), '预期入场与未来目标共同误差')}${stat('相对无变化 MSE 改善', pct(m.relativeMseImprovement), '负值表示比无变化基准更差')}${stat('剩余变化 RMSE', fmt(m.remainingChangeRmse, 6), '入场到未来目标的变化误差')}</div>${F.note(`${evidence}。${d(v.holdoutStart)} — ${d(v.holdoutEnd)} 为顺序样本外报告期。模型滚动重拟合可使用此前已成熟的报告期标签，重叠标签不视为独立样本。`)}<div class="sq-report-tabs" role="group" aria-label="预测报告章节">${Object.entries(
       tags
     )
       .map(([id, label]) =>
-        F.button('forecast-tab', financialReport() && id === 'execution' ? '研究边界' : label, {
+        F.button('forecast-tab', (financialReport() || marketReport(r)) && id === 'execution' ? '研究边界' : label, {
           id,
           primary: ui.tab === id,
           pressed: ui.tab === id,
@@ -664,11 +668,11 @@ export function createForecastReports(C, F) {
     );
   }
   function execution(r) {
-    if (financialReport())
+    if (financialReport() || marketReport(r))
       return F.panel(
-        '仅预测的财务研究',
+        financialReport() ? '仅预测的财务研究' : '仅预测的市场研究',
         F.note(
-          '此产物检验财务状态对未来价格的预测，没有生成仓位、交易或净值。交易执行与执行重放尚未开放。'
+          (financialReport() ? '此产物检验财务状态对未来价格的预测' : '此产物检验完整冻结票池的未来状态') + '，没有生成仓位、交易或净值。交易执行与执行重放尚未开放。'
         ) + '<p>预测误差与历史损失改善不等于可交易收益。</p>'
       );
     const x = r.execution || {},
@@ -711,12 +715,16 @@ export function createForecastReports(C, F) {
   }
   function provenance(r) {
     const ref = financialSourceRef();
+    const marketSource = r.provenance?.marketSource, marketDownload = marketDatasetDownload(marketSource?.marketDatasetRef);
     const source = ref
       ? F.panel(
           '冻结数据集来源',
           `<p>原始行情快照、明确子范围、财务输入与准备、日历授权均由独立数据集闭包保存。用户声明单位仍未核验，供应商原始发布版本和修订时点未认证。</p><a class="sq-button" href="#quant/studio/datasets/dataset/${e(ref.datasetId)}?root=${e(ref.datasetRoot)}">查看来源与实际覆盖</a>${F.advanced('数据集身份', `<code>${e(ref.datasetRoot)}</code>`)}`
         )
-      : '';
+      : marketSource ? F.panel('冻结行情来源',
+          '<p>本报告固定引用独立保存的行情输入与来源证据。完整核验需同时保留市场预测结果包和行情来源包。</p>' +
+          (marketDownload ? `<a class="sq-button" href="${e(marketDownload)}" download>下载完整行情来源包</a>` : F.note('未返回有效的完整行情来源引用，不能补猜来源包。', 'warning')) +
+          F.advanced('本报告保存的行情来源身份', JSONView(marketSource))) : '';
     return (
       source +
       F.panel(
