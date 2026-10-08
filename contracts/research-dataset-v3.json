@@ -3,7 +3,10 @@
   "format": "atlas.quant.research_dataset",
   "version": 3,
   "profile": "financial_snapshot_graph_50_v1",
-  "legacyInterpretationUnchanged": ["atlas.quant.research_dataset/1", "atlas.quant.research_dataset/2"],
+  "legacyInterpretationUnchanged": [
+    "atlas.quant.research_dataset/1",
+    "atlas.quant.research_dataset/2"
+  ],
   "physicalLimits": {
     "closureBytes": 67108864,
     "manifestBytes": 262144,
@@ -31,45 +34,163 @@
     "format": "atlas.quant.financial_prepared_graph",
     "version": 1,
     "encoding": "financial_json_v1",
-    "keys": ["format", "version", "logicalPrepared", "dependencies", "calendars", "events", "assignments", "panel", "provenance", "coverage"],
-    "logicalPrepared": {"keys":["sha256", "byteLength", "preparedRoot"],"codec":"financial_json_v1"},
-    "dependencies": {"rowKeys":["id", "value"],"id":"sha256(financial_json_v1(value))","order":"strictly ascending id"},
-    "calendars": {"rowKeys":["id", "value"],"id":"sha256(financial_json_v1(value))","order":"strictly ascending id"},
+    "keys": [
+      "format",
+      "version",
+      "logicalPrepared",
+      "dependencies",
+      "calendars",
+      "events",
+      "assignments",
+      "panel",
+      "selection",
+      "provenance",
+      "coverage"
+    ],
+    "logicalPrepared": {
+      "keys": [
+        "sha256",
+        "byteLength",
+        "preparedRoot"
+      ],
+      "codec": "financial_json_v1"
+    },
+    "dependencies": {
+      "rowKeys": [
+        "id",
+        "value"
+      ],
+      "id": "sha256(financial_json_v1(value))",
+      "order": "strictly ascending id"
+    },
+    "calendars": {
+      "rowKeys": [
+        "id",
+        "value"
+      ],
+      "id": "sha256(financial_json_v1(value))",
+      "order": "strictly ascending id"
+    },
     "events": {
-      "rowKeys":["id", "symbol", "stateId", "computedAsOf", "result", "dependencyRefs", "calendarRef"],
-      "result":"original result object excluding dependencies and calendar; retains original lineageHash",
-      "order":"original exact state-event order",
-      "id":"original canonical event hash after reference expansion",
-      "dependencyRefs":"ordered original dependencies, no new sorting",
-      "calendarRef":"registered dictionary id or null"
+      "rowKeys": [
+        "id",
+        "symbol",
+        "stateId",
+        "computedAsOf",
+        "result",
+        "dependencyRefs",
+        "calendarRef"
+      ],
+      "result": "original result object excluding dependencies and calendar; retains original lineageHash",
+      "order": "original exact state-event order",
+      "id": "original canonical event hash after reference expansion",
+      "dependencyRefs": "ordered original dependencies, no new sorting",
+      "calendarRef": "registered dictionary id or null"
     },
-    "assignments":"exact original ordered symbol/from/through/states interval assignments",
+    "assignments": "exact original ordered symbol/from/through/states interval assignments",
     "panel": {
-      "keys":["symbols", "sessions", "stateIds", "rowCount", "columnNames"],
-      "order":"symbol then session; only exact original declared columns",
-      "derivation":"float(decimalValue) and availableDate when state status ok; else null; preserve signed zero and reject overflow/underflow"
+      "keys": [
+        "symbols",
+        "sessions",
+        "stateIds",
+        "rowCount",
+        "columnNames"
+      ],
+      "order": "symbol then session; only exact original declared columns",
+      "derivation": "float(decimalValue) and availableDate when state status ok; else null; preserve signed zero and reject overflow/underflow"
     },
-    "provenance":"exact legacy prepared provenance including preparedRoot",
-    "coverage":"exact legacy prepared coverage",
-    "limits": {"events":10000,"dependencyObjects":20000,"calendarObjects":8,"dependencyRefsPerEvent":128,"assignments":10000,"panelRows":110000,"referenceDepth":1},
-    "validation": ["exact closed keys", "unique ids", "no dangling or unused dictionary entries", "no recursive references", "original event/lineage hash matches", "assignment coverage unique and complete", "availability never after assigned observation", "stream exact prepared payload hash", "registry independently authorized before recomposition"]
+    "provenance": "exact legacy prepared provenance including preparedRoot",
+    "coverage": "exact legacy prepared coverage",
+    "limits": {
+      "events": 10000,
+      "dependencyObjects": 20000,
+      "calendarObjects": 8,
+      "dependencyRefsPerEvent": 128,
+      "assignments": 10000,
+      "panelRows": 110000,
+      "referenceDepth": 1,
+      "panelSessions": 366
+    },
+    "validation": [
+      "exact closed keys",
+      "unique ids",
+      "no dangling or unused dictionary entries",
+      "no recursive references",
+      "original event/lineage hash matches",
+      "assignment coverage unique and complete",
+      "availability never after assigned observation",
+      "stream exact prepared payload hash",
+      "registry independently authorized before recomposition"
+    ],
+    "selection": "exact original input package selection; used to reconstruct the original preparedRoot body"
   },
   "numericComponent": {
-    "format":"atlas.quant.exact_column_table",
-    "version":1,
-    "keys":["format","version","rowCount","columns","logicalRows"],
-    "columnKeys":{"number":["name","kind","values"],"dictionary":["name","kind","dictionary","indices"]},
-    "logicalRows":{"keys":["sha256","byteLength"],"codec":"financial_json_v1"},
-    "numbers":"finite JSON tokens preserving integer versus float and negative floating zero; null represents missing only",
-    "dictionary":"string/null values in first-occurrence order with bounded integer indices; no recursive values",
-    "rows":"all columns have exact rowCount; original row order preserved",
-    "limits":{"rows":110000,"columns":128,"columnNameBytes":96,"dictionaryEntries":110000,"stringCellBytes":256,"physicalBytes":25165824,"logicalRowsBytes":25165824}
+    "format": "atlas.quant.exact_column_table",
+    "version": 1,
+    "keys": [
+      "format",
+      "version",
+      "rowCount",
+      "columns",
+      "logicalRows"
+    ],
+    "columnKeys": {
+      "number": [
+        "name",
+        "kind",
+        "values"
+      ],
+      "dictionary": [
+        "name",
+        "kind",
+        "dictionary",
+        "indices"
+      ]
+    },
+    "logicalRows": {
+      "keys": [
+        "sha256",
+        "byteLength"
+      ],
+      "codec": "financial_json_v1"
+    },
+    "numbers": "finite JSON tokens preserving integer versus float and negative floating zero; null represents missing only",
+    "dictionary": "string/null values in first-occurrence order with bounded integer indices; no recursive values",
+    "rows": "all columns have exact rowCount; original row order preserved",
+    "limits": {
+      "rows": 110000,
+      "columns": 128,
+      "columnNameBytes": 96,
+      "dictionaryEntries": 110000,
+      "stringCellBytes": 256,
+      "physicalBytes": 25165824,
+      "logicalRowsBytes": 25165824
+    }
   },
   "rootPolicy": {
-    "originalRootsPreserved":["sourceSnapshotSha256","sourceBundleId","inputRoot","packRoot","preparedRoot","calendarRoot","marketRoot","financialDatasetRoot"],
-    "newIdentities":["datasetRoot","componentRoot","graphPayloadSha256","numericColumnPayloadSha256"],
-    "sourceBytes":"original financial packages, source snapshot and independently authorized registry records retained exactly",
-    "noTrustFromSelfDeclaredRoots":true
+    "originalRootsPreserved": [
+      "sourceSnapshotSha256",
+      "sourceBundleId",
+      "inputRoot",
+      "packRoot",
+      "preparedRoot",
+      "calendarRoot",
+      "marketRoot",
+      "financialDatasetRoot"
+    ],
+    "newIdentities": [
+      "datasetRoot",
+      "componentRoot",
+      "graphPayloadSha256",
+      "numericColumnPayloadSha256"
+    ],
+    "sourceBytes": "original financial packages, source snapshot and independently authorized registry records retained exactly",
+    "noTrustFromSelfDeclaredRoots": true
   },
-  "admission": {"hosted":false,"production":false,"legacyRunnerMayClaim":false,"modelFitRequiredForSourceCreation":false}
+  "admission": {
+    "hosted": false,
+    "production": false,
+    "legacyRunnerMayClaim": false,
+    "modelFitRequiredForSourceCreation": false
+  }
 }
