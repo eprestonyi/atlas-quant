@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from ..factors import evaluate_expression, validate_expression
+from ..financial_statements.admission import is_fundamental_field
 from .schema import digest, fail, MAX_SAMPLES
 
 
@@ -103,9 +104,8 @@ def build_samples(panel, dates, strategy):
     opens = panel.open.unstack("ts_code").reindex(index=dates, columns=symbols)
     factor_values = {f["id"]: (evaluate_expression(f["expression"], panel)*f["direction"]).unstack("ts_code").reindex(index=dates, columns=symbols)
                      for f in strategy["factors"]}
-    financial_fields = {"pb", "pe", "pe_ttm", "ps", "ps_ttm", "dv_ratio", "dv_ttm", "total_mv", "circ_mv"}
     financial_predictors = [f["id"] for f in strategy["factors"] if f["role"] == "predictor" and
-                            any(x.startswith(("fd_", "pcd_")) or x in financial_fields
+                            any(is_fundamental_field(x)
                                 for x in validate_expression(f["expression"])["fields"])]
     warmup = max((validate_expression(f["expression"])["lookback"] for f in strategy["factors"]), default=0)
     formation = strategy["target"].get("basket", {}).get("formationDays", 0)

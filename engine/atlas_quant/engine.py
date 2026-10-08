@@ -175,6 +175,9 @@ def _prepare_data(data, strategy, provenance):
     if len(data) > MAX_DATA_ROWS:
         raise ResearchError("DATA_LIMIT", f"单次最多 {MAX_DATA_ROWS} 行行情")
     df = data.copy()
+    factor_fields = set().union(*(set(validate_expression(f["expression"])["fields"]) for f in strategy["factors"]))
+    from .financial_statements.admission import assert_composed
+    financial_commitment = assert_composed(data, df, provenance, factor_fields, strategy)
     df["trade_date"] = df["trade_date"].astype(str)
     for dt in df["trade_date"].unique():
         _date(dt)
@@ -184,7 +187,6 @@ def _prepare_data(data, strategy, provenance):
     df = df[df.ts_code.isin(u["symbols"]) & df.trade_date.between(u["start"], u["end"])].copy()
     if df.empty:
         raise ResearchError("NO_DATA", "所选区间与股票池没有行情")
-    factor_fields = set().union(*(set(validate_expression(f["expression"])["fields"]) for f in strategy["factors"]))
     if factor_fields - set(df.columns):
         raise ResearchError("MISSING_FACTOR_DATA", "缺少所选因子数据：" + ", ".join(sorted(factor_fields - set(df.columns))))
     external_audit, availability_columns = [], []
@@ -217,7 +219,10 @@ def _prepare_data(data, strategy, provenance):
         df[companion] = df[companion].where(df[companion].notna(), "").astype(str)
         availability_columns.append(companion)
         external_audit.append({"field": field, "source": meta["source"], "path": meta["path"], "observedValues": int(observed.sum()), "availableDateColumn": companion, "availabilityPolicy": "point_in_time_asof", "latestAvailableDate": availability.max() if len(availability) else None, "independentSourcePublicationVerified": False})
-        if field.startswith("model_"):
+        if field.startswith("model_fin_"):
+            external_audit[-1]["semanticKind"] = "native_statement_state"
+            external_audit[-1]["sourceCheck"] = "process_local_recomposition_not_document_authentication"
+        elif field.startswith("model_"):
             external_audit[-1]["independentTrainingHistoryVerified"] = False
     numeric = sorted((required | factor_fields) - {"ts_code", "trade_date"})
     for field in numeric:
@@ -248,10 +253,18 @@ def _prepare_data(data, strategy, provenance):
     df = df.sort_values(["trade_date", "ts_code"])
     row_bytes = df[["trade_date", "ts_code"] + numeric + availability_columns].to_csv(index=False, float_format="%.17g").encode()
     calendar_bytes = json.dumps(dates, separators=(",", ":")).encode()
-    digest = hashlib.sha256(row_bytes + b"\ncalendar:" + calendar_bytes).hexdigest()
+    fingerprint_bytes = row_bytes + b"\ncalendar:" + calendar_bytes
+    if financial_commitment is not None:
+        fingerprint_bytes += b"\nfinancial:" + json.dumps(
+            financial_commitment, sort_keys=True, ensure_ascii=False,
+            separators=(",", ":"), allow_nan=False).encode()
+    digest = hashlib.sha256(fingerprint_bytes).hexdigest()
     idx = pd.MultiIndex.from_product([dates, sorted(u["symbols"])], names=["trade_date", "ts_code"])
     panel = df.set_index(["trade_date", "ts_code"])[numeric].reindex(idx)
-    return panel, dates, {"dataSha256": digest, "calendarSha256": hashlib.sha256(calendar_bytes).hexdigest(), "observedRows": len(df), "expectedRows": len(panel), "calendarProvided": calendar_verified, "externalFieldAudit": external_audit}
+    audit = {"dataSha256": digest, "calendarSha256": hashlib.sha256(calendar_bytes).hexdigest(), "observedRows": len(df), "expectedRows": len(panel), "calendarProvided": calendar_verified, "externalFieldAudit": external_audit}
+    if financial_commitment is not None:
+        audit["financialSourceCommitment"] = financial_commitment
+    return panel, dates, audit
 
 
 def _build_samples(panel, dates, factors, horizon, target="forward_return"):

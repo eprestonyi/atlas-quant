@@ -98,6 +98,26 @@ def execute_forecasts(strategy, data, artifact, provenance=None):
     """
     from ..engine import _prepare_data
     s = validate(strategy)
+    from ..factors import validate_expression
+    financial_factors = any(
+        field.startswith("model_fin_")
+        for factor in s["factors"]
+        for field in validate_expression(factor["expression"])["fields"]
+    )
+    financial_rows = any(
+        str(column).startswith("model_fin_")
+        for column in getattr(data, "columns", ())
+    )
+    financial_roots = isinstance(provenance, dict) and any(
+        key in provenance for key in (
+            "financialInputs", "financialDatasetRoot", "financialCompositionVersion",
+        )
+    )
+    if financial_factors or financial_rows or financial_roots:
+        fail(
+            "FINANCIAL_REPLAY_NOT_AVAILABLE",
+            "财务预测的执行重放尚未接入完整输入证据闭包；进程内来源登记不能替代归档复现。",
+        )
     if not isinstance(artifact, dict) or artifact.get("schemaVersion") != 1 or artifact.get("truncated") is not False:
         fail("FORECAST_ARTIFACT_MISMATCH", "需要完整版本化预测产物")
     a = copy.deepcopy(artifact)

@@ -1,4 +1,4 @@
-"""Auditable native-statement state core. No provider, catalog or engine wiring."""
+"""Auditable native-statement preparation and offline forecast composition."""
 
 from .contracts import (
     FIELDS,
@@ -29,6 +29,7 @@ from .package import (
     raw_input,
 )
 from .unit_bindings import DeclaredUnitBinding, DocumentUnitBinding
+from .dataset import compose_financial_dataset, FinancialDatasetResult, DatasetBudget
 
 __all__ = [
     "FIELDS",
@@ -60,4 +61,7 @@ __all__ = [
     "raw_input",
     "DeclaredUnitBinding",
     "DocumentUnitBinding",
+    "compose_financial_dataset",
+    "FinancialDatasetResult",
+    "DatasetBudget",
 ]
