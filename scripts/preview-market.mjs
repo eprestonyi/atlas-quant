@@ -1,7 +1,7 @@
 /** Isolated loopback SYNTHETIC source queue. No provider configuration or credentials. */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { Miniflare } from "miniflare";
@@ -18,6 +18,7 @@ const { values: args } = parseArgs({
     symbols: { type: "string", default: "2" },
     estimator: { type: "string", default: "ridge" },
     output: { type: "string" },
+    resume: { type: "boolean", default: false },
   },
 });
 const port = Number(args.port),
@@ -39,13 +40,27 @@ if (!directory.startsWith(path.join(repositoryRoot, "private") + path.sep))
   throw Error("Private repository output required");
 await fs.mkdir(directory, { recursive: true, mode: 0o700 });
 await fs.chmod(directory, 0o700);
+const sessionPath = path.join(directory, "session.json");
+let previous = null;
 try {
-  await fs.access(path.join(directory, "session.json"));
-  throw Error("Existing session: choose a new output directory");
+  const info = await fs.lstat(sessionPath);
+  if (!args.resume) throw Error("Existing session: choose a new output directory or explicitly resume");
+  if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077))
+    throw Error("Resume requires a private regular session file");
+  previous = JSON.parse(await fs.readFile(sessionPath, "utf8"));
+  if (previous.synthetic !== true || previous.providerCalls !== 0 ||
+      previous.baseUrl !== `http://localhost:${port}/quant/api` ||
+      previous.scope?.symbolCount !== count || previous.strategy?.model?.estimator !== args.estimator ||
+      typeof previous.runnerSecret !== "string" || !/^[a-f0-9]{64}$/.test(previous.runnerSecret))
+    throw Error("Resume parameters must match the original synthetic session");
+  for (const name of ["d1", "r2"]) {
+    const saved = await fs.lstat(path.join(directory, name));
+    if (!saved.isDirectory() || saved.isSymbolicLink()) throw Error("Saved private storage required");
+  }
 } catch (e) {
-  if (e.code !== "ENOENT") throw e;
+  if (e.code !== "ENOENT" || args.resume) throw e;
 }
-const fixture = spawnSync(
+const fixture = previous ? null : spawnSync(
   process.env.PYTHON || ".venv/bin/python",
   [
     "scripts/fixtures/market_source.py",
@@ -61,15 +76,16 @@ const fixture = spawnSync(
     maxBuffer: 8 * 1024 * 1024,
   },
 );
-if (fixture.status !== 0) throw Error(fixture.stderr);
-const { scope, plan, strategy } = JSON.parse(fixture.stdout),
-  secret = randomBytes(32).toString("hex");
+if (fixture && fixture.status !== 0) throw Error(fixture.stderr);
+const { scope, plan, strategy } = previous || JSON.parse(fixture.stdout),
+  secret = previous?.runnerSecret || randomBytes(32).toString("hex");
 const buildId = "SYNTHETIC-market-http-" + Date.now();
+const workerSource = await buildWorkerSource({ assets: await loadWebAssets(), buildId });
 const mf = new Miniflare({
   host: "127.0.0.1",
   port,
   modules: true,
-  script: await buildWorkerSource({ assets: await loadWebAssets(), buildId }),
+  script: workerSource,
   compatibilityDate: "2026-08-01",
   d1Databases: ["DB"],
   r2Buckets: ["ARTIFACTS"],
@@ -79,7 +95,7 @@ const mf = new Miniflare({
     RUNNER_SECRET: secret,
     MARKET_ACQUISITION_ENABLED: "true",
     TUSHARE_PUBLIC_AUTHORIZED: "true",
-    MARKET_ACQUISITION_AUTH_SCOPE: plan.authorizationScope,
+    MARKET_ACQUISITION_AUTH_SCOPE: previous?.authorizationScope || plan.authorizationScope,
     ALLOW_MARKET_FIXTURES: "true",
     MARKET_RESEARCH_ENABLED: "true",
     BUNDLE_SNAPSHOT_SORTED_V1: "true",
@@ -87,6 +103,13 @@ const mf = new Miniflare({
 });
 await mf.ready;
 const db = await mf.getD1Database("DB");
+if (previous) {
+  const existing = await db.prepare("SELECT id,owner,plan_root FROM quant_market_plans WHERE id=?").bind(previous.planId).first();
+  if (!existing || existing.owner !== previous.owner || existing.plan_root !== previous.planRoot) {
+    await mf.dispose();
+    throw Error("Saved session and persistent plan identity differ");
+  }
+} else {
 await db.exec(
   (
     await fs.readFile(path.join(repositoryRoot, "edge/schema.sql"), "utf8")
@@ -149,6 +172,11 @@ await fs.writeFile(
   ),
   { mode: 0o600, flag: "wx" },
 );
+}
+await fs.writeFile(path.join(directory, buildId + ".json"), JSON.stringify({
+  buildId, workerSha256: createHash("sha256").update(workerSource).digest("hex"),
+  resumed: !!previous, port, synthetic: true, providerCalls: 0,
+}), { mode: 0o600, flag: "wx" });
 console.log(
   JSON.stringify({
     status: "ready",
@@ -157,6 +185,7 @@ console.log(
     symbols: count,
     estimator: args.estimator,
     providerCalls: 0,
+    resumed: !!previous,
     sessionPath: path.join(directory, "session.json"),
   }),
 );
