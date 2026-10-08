@@ -40,7 +40,7 @@ export function createMarketPreparation(C, F, { freezeScope, onBind }) {
   const admission = () => s.verified && s.admissions?.find(x => x.admissionProfile === marketAdmission(app.strategy) && x.families?.includes(app.strategy.model.family) && x.estimator === app.strategy.model.estimator && x.targetKind === app.strategy.target.kind && x.executionEnabled === false);
   function researchAdmission(strategy = app.strategy) {
     const validOwner = syncOwner();
-    return marketPreparationAdmission(strategy, { verified: !!validOwner && s.verified, scopeMatches: same(), admissions: s.admissions });
+    return marketPreparationAdmission(strategy, { verified: !!validOwner && s.verified, scopeMatches: same(), admissions: s.admissions, fields: s.plan?.fields });
   }
   const running = () => ['queued', 'running', 'cancel_requested'].includes(s.job?.status);
   const hash = x => /^[a-f0-9]{64}$/.test(x || '');
@@ -104,7 +104,7 @@ export function createMarketPreparation(C, F, { freezeScope, onBind }) {
   }
   async function refresh() {
     const expectedOwner = syncOwner();
-    if (!expectedOwner || !s.plan) return;
+    if (!expectedOwner || !s.plan) return null;
     const token = ++readSequence, planId = s.plan.planRef.planId, expected = s.plan;
     const p = await ownerApi(expectedOwner, '/market-preparation-plans/' + encodeURIComponent(planId));
     validatePlan(p, expected.scope, expected.universeScopeRef);
@@ -115,13 +115,14 @@ export function createMarketPreparation(C, F, { freezeScope, onBind }) {
       if (result.job?.id !== job.id || result.job?.planId !== planId) throw Error('任务不属于当前准备计划。');
       job = result.job; admissions = result.researchAdmissions;
     }
-    if (token !== readSequence || s.plan?.planRef.planId !== planId) return;
+    if (token !== readSequence || s.plan?.planRef.planId !== planId) return null;
     if (job?.status === 'completed') {
       const result = completion(job);
       await readSource(expectedOwner, result.marketDatasetRef, result.universeScopeRef, p.scope);
     }
-    if (token !== readSequence || s.plan?.planRef.planId !== planId) return;
+    if (token !== readSequence || s.plan?.planRef.planId !== planId) return null;
     s.plan = p; s.job = job; s.admissions = Array.isArray(admissions) ? admissions : null; s.verified = true; save(); present();
+    return { token, owner: expectedOwner, planId, planRoot: p.planRef.planRoot };
   }
   function schedule() {
     clearTimeout(timer);
@@ -159,7 +160,8 @@ export function createMarketPreparation(C, F, { freezeScope, onBind }) {
           // A new provider intent needs fresh compute admission. Unknown prior
           // intents bypass this gate only to read back their exact same request.
           const protocol = JSON.stringify(app.strategy), key = selectionKey(), planId = s.plan.planRef.planId;
-          await refresh();
+          const fresh = await refresh();
+          if (!fresh || fresh.token !== readSequence || fresh.owner !== syncOwner() || fresh.planId !== planId || fresh.planRoot !== s.plan?.planRef.planRoot) throw Error('本次准入核对被更新的读取替代，尚未确认最新结果；未开始数据准备。');
           if (protocol !== JSON.stringify(app.strategy) || key !== selectionKey() || planId !== s.plan?.planRef.planId || !same() || !s.plan.canStart || s.job) throw Error('研究配置或计划在核对时变化，未开始数据准备。');
           const readiness = researchAdmission();
           if (readiness.status !== 'ready') throw Error(readiness.message);

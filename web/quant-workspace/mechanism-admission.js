@@ -1,12 +1,14 @@
 import { marketAdmission } from './research-data-binding.js';
 import { financialBindingErrors } from './financial/research-binding.js';
+import { validateStoredStatisticalQuant } from '../../edge/statistical-quant/validation.mjs';
+import { validateExpression } from '../../edge/factor-language.mjs';
 
 const result = (status, message, selectable = true) => ({ status, message, selectable });
 const day = text => /^\d{8}$/.test(text || '') ? Date.UTC(+text.slice(0, 4), +text.slice(4, 6) - 1, +text.slice(6, 8)) / 86400000 : NaN;
 export const admissionLabel = status => ({ blocked: '当前不可用', pending: '待核对', ready: '可准备数据', declared: '配置入口可用' })[status] || '待核对';
 
 // This is a UI preflight, never an alternative to the server's exact admission.
-export function marketPreparationAdmission(strategy, { verified = false, scopeMatches = false, admissions } = {}) {
+export function marketPreparationAdmission(strategy, { verified = false, scopeMatches = false, admissions, fields } = {}) {
   const profile = marketAdmission(strategy), u = strategy.universe, n = u.symbols.length;
   if (!profile) return result('blocked', ({
     trend: strategy.model.estimator === 'auto' ? '当前完整池尚未开放趋势自动拟合；不会自动更换拟合方法或截取成员。' : null,
@@ -15,12 +17,24 @@ export function marketPreparationAdmission(strategy, { verified = false, scopeMa
     event: '当前事件研究最多 50 个完整成员，需要带可用时点的事件输入；完整池行情尚未接通事件协议。',
   })[strategy.model.family] || '当前完整池计算仅支持单资产价格目标及已声明机制；不会自动更换模型或截取成员。', false);
   if (!n) return result('pending', '先解析完整筛选集合。');
+  let validated;
+  try {
+    // Use exactly the full static validator used by market validateCapacity.
+    // It clones stored candidates; this check never repairs the user's draft.
+    validated = validateStoredStatisticalQuant(strategy, { scopeSymbolLimit: 1000 });
+  } catch (error) {
+    return result('blocked', `研究配置未通过校验：${error.code ? error.message : '配置结构无效，请检查研究设置。'}`);
+  }
   if (n > 1000 || u.symbols.some(x => !/\.(SH|SZ)$/.test(x))) return result('blocked', '完整池行情协议支持最多 1000 个沪深成员；请调整筛选条件，系统不会取样。');
   const span = day(u.end) - day(u.start) + 1;
   if (!Number.isFinite(span) || span < 1 || span > 366) return result('blocked', '此完整池协议要求研究窗口不超过 366 个自然日（含首尾）；请在研究设置调整日期。');
   if (strategy.factors.length > 16 || strategy.model.refitDays < 20 || strategy.validation.innerFolds !== 2 || strategy.validation.outerFolds !== 2)
     return result('blocked', '当前配置超出完整池拟合预算：最多 16 因子、重拟合至少 20 日、2×2 时间检验。');
   if (!verified || !scopeMatches) return result('pending', '核对当前完整范围与请求预算后，读取服务器的实际计算准入；尚未开始供应商请求。');
+  if (!Array.isArray(fields) || !fields.every(x => typeof x === 'string')) return result('pending', '准备计划尚未返回可核对的行情字段，不能开始数据准备。');
+  const required = new Set(validated.factors.flatMap(f => validateExpression(f.expression).fields));
+  const missing = [...required].filter(field => !fields.includes(field));
+  if (missing.length) return result('blocked', `准备计划未包含因子所需字段：${missing.join('、')}。请选择实际包含这些字段的数据来源；不会补取或伪造。`);
   const a = admissions?.find(x => x.admissionProfile === profile && Array.isArray(x.families) && x.families.includes(strategy.model.family) && x.estimator === strategy.model.estimator && x.targetKind === strategy.target.kind && x.executionEnabled === false);
   if (!a) return result('blocked', '服务器没有返回此机制的计算准入；暂不能为本次研究开始数据准备。');
   if (a.available !== true) return result('blocked', ({ MARKET_RESEARCH_DISABLED: '服务器尚未开放完整池模型计算。', RUNNER_OFFLINE: '完整池计算节点当前离线。', RUNNER_UPGRADE_REQUIRED: '计算节点尚未声明支持此机制的拟合协议。' })[a.reason] || '服务器尚未确认此机制可计算。');

@@ -101,9 +101,12 @@ await click('market-start'); assert(w.document.querySelector('main').textContent
 const initialStart = calls.filter(x=>x.path.endsWith('/start')).at(-1).data;
 const stored = JSON.parse(w.localStorage.getItem('atlas-quant-market-preparation-v1:owner_a')); assert.equal(stored.startRequestId,initialStart.requestId); assert.equal(stored.startUnknown,true);
 // A changed mechanism or unavailable compute must not strand a submitted unknown intent.
-s.strategy.model.family = 'trend'; admissions[0].available = false; q.render();
+s.strategy.model.family = 'trend'; s.strategy.model.refitDays = 127;
+s.strategy.factors = [{ id: 'unknown_recovery_only', expression: 'ext_custom', direction: 1, role: 'hedge' }];
+admissions[0].available = false; q.render();
 await click('market-start'); assert.deepEqual(calls.filter(x=>x.path.endsWith('/start')).at(-1).data,initialStart,'unknown control response retries same request, not a new provider intent');
-s.strategy.model.family = 'mean_reversion'; admissions[0].available = true; q.render();
+s.strategy.model.family = 'mean_reversion'; s.strategy.model.refitDays = 20; s.strategy.factors = [];
+admissions[0].available = true; q.render();
 assert(!w.document.querySelector('[data-sq="market-bind"]'));
 assert(!w.document.querySelector('a[download]'),'queued preparation is not a downloadable complete source');
 assert(!w.document.querySelector('[data-market-source-progress]'),'missing progress never invents counts');
