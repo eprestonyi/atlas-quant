@@ -1,5 +1,5 @@
 import { ApiError } from '../errors.mjs';
-import { validateManifest } from './manifest.mjs';
+import { parsedStage } from './storage.mjs';
 
 /** Remove only abandoned terminal uploads. Committed research is never TTL'd. */
 export async function cleanupAbandonedBundles(env, cutoff) {
@@ -22,7 +22,7 @@ export async function cleanupAbandonedBundles(env, cutoff) {
         AND status IN ('failed','cancelled') AND updated_at<?)
       AND NOT EXISTS(SELECT 1 FROM quant_bundle_runs r WHERE r.stage_id=quant_bundle_stages.id)
       AND NOT EXISTS(SELECT 1 FROM quant_bundle_forecasts f WHERE f.stage_id=quant_bundle_stages.id OR f.dataset_stage_id=quant_bundle_stages.id)
-      RETURNING id,owner,manifest_key,manifest_text,bundle_id`
+      RETURNING id,owner,manifest_key,manifest_text,bundle_id,metadata`
     )
       .bind(candidate.id, cutoff)
       .first();
@@ -35,7 +35,7 @@ export async function cleanupAbandonedBundles(env, cutoff) {
     ) {
       throw new ApiError('BUNDLE_INTEGRITY', '清理对象前缀与任务身份不一致', 503);
     }
-    const parsed = await validateManifest(stage.manifest_text, stage.bundle_id);
+    const parsed = await parsedStage(stage);
     // R2 put precedes the receipt transaction. A failed transaction can leave
     // an unreceipted object, so the immutable manifest is the cleanup authority.
     // Every key is reconstructed under this owner/stage, never accepted from a

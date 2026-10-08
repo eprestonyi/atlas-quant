@@ -6,9 +6,13 @@ Integrity and normalization do not establish vendor authority or historical memb
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 import json
 import math
+import os
+import sqlite3
+import tempfile
 from pathlib import Path
 import re
 import tarfile
@@ -42,6 +46,21 @@ except ImportError:
         sha,
         tar_header,
         without,
+    )
+
+try:
+    from .bundle_audit import (
+        BundleAudit,
+        LIMIT_MANIFEST as RESULT_MANIFEST,
+        LIMIT_CHUNK as RESULT_CHUNK,
+        LIMIT_TOTAL as RESULT_TOTAL,
+    )
+except ImportError:
+    from bundle_audit import (
+        BundleAudit,
+        LIMIT_MANIFEST as RESULT_MANIFEST,
+        LIMIT_CHUNK as RESULT_CHUNK,
+        LIMIT_TOTAL as RESULT_TOTAL,
     )
 
 MIB = 1024 * 1024
@@ -602,12 +621,20 @@ def number(value, check, *, positive=False, nullable=False):
         "Nonfinite or invalid numeric field",
         "NUMBER",
     )
-    return result
+    # Never hide a changed integer behind binary64 rounding. Signed zero is the
+    # same numerical value in the registered legacy forecast codec.
+    check.require(
+        type(value) is not int or result == value,
+        "Integer loses precision as a normalized numeric value",
+        "NUMBER",
+    )
+    return 0.0 if result == 0 else result
 
 
 class Semantics:
-    def __init__(self, m, p, check):
+    def __init__(self, m, p, check, paired_rows=None):
         self.m, self.p, self.check = m, p, check
+        self.paired_rows = paired_rows
         self.rows, self.receipts, self.provenance = {}, [], []
         self.previous = ""
         self.current_symbol, self.tables = None, {}
@@ -668,9 +695,31 @@ class Semantics:
                     "ROWS",
                 )
                 self.rows[sym, day] = encode(value)
+                if self.paired_rows is not None:
+                    other = next(self.paired_rows, None)
+                    c.keys(other, {"ts_code", "trade_date", *self.m["fields"]})
+                    compared = {
+                        "ts_code": other["ts_code"],
+                        "trade_date": other["trade_date"],
+                    }
+                    for field in self.m["fields"]:
+                        compared[field] = number(
+                            other[field], c, nullable=field in BASIC_FIELDS
+                        )
+                    c.require(
+                        encode(value) == encode(compared),
+                        "Result snapshot order/value/null differs from independently reconstructed source",
+                        "RESULT_SOURCE_ROWS",
+                    )
 
     def before_raw(self):
         c, m = self.check, self.m
+        if self.paired_rows is not None:
+            c.require(
+                next(self.paired_rows, None) is None,
+                "Result snapshot has extra rows",
+                "RESULT_SOURCE_ROWS",
+            )
         c.require(
             len(self.rows) == m["rowCount"]
             and len(self.receipts) == len(self.p["requests"])
@@ -936,7 +985,9 @@ class Semantics:
         )
 
 
-def _audit_market_dataset(path, *, expected_root=None):
+def _audit_market_dataset(
+    path, *, expected_root=None, result_audit=None, result_report=None
+):
     """Audit a strict market USTAR or equivalent directory, without extracting it."""
     c = Checks()
     path = Path(path)
@@ -945,7 +996,7 @@ def _audit_market_dataset(path, *, expected_root=None):
     def process(read, directory=None):
         raw = read("manifest.json", MANIFEST_BYTES)
         m = validate_manifest(raw, c, expected_root)
-        p, _ = validate_documents(
+        p, scope = validate_documents(
             read("plan.json", PLAN_BYTES), read("scope.json", SCOPE_BYTES), m, c
         )
         if directory is not None:
@@ -974,7 +1025,12 @@ def _audit_market_dataset(path, *, expected_root=None):
                     "Missing/extra collection parts",
                     "DIRECTORY",
                 )
-        audit = Semantics(m, p, c)
+        pair = (
+            validate_result_binding(result_audit, m, scope, sha(raw), c)
+            if result_audit is not None
+            else None
+        )
+        audit = Semantics(m, p, c, result_audit.rows("snapshotRows") if pair else None)
         for name in sorted(m["collections"]):
             for d in m["collections"][name]["chunks"]:
                 audit.normalized(
@@ -993,6 +1049,7 @@ def _audit_market_dataset(path, *, expected_root=None):
         audit.finish()
         return dict(
             status="PASS",
+            pairedResult=({**pair, "bundleAudit": result_report} if pair else None),
             auditor="atlas.market_dataset.stdlib_audit/1",
             checks=c.count,
             marketDatasetRoot=sha(raw),
@@ -1038,9 +1095,17 @@ def _audit_market_dataset(path, *, expected_root=None):
     return report
 
 
-def audit_market_dataset(path, *, expected_root=None):
+def audit_market_dataset(path, *, expected_root=None, result_bundle=None):
     """Reject malformed external shapes uniformly, without exposing internals."""
     try:
+        if result_bundle is not None:
+            with open_result_bundle(result_bundle) as (audit, result_report):
+                return _audit_market_dataset(
+                    path,
+                    expected_root=expected_root,
+                    result_audit=audit,
+                    result_report=result_report,
+                )
         return _audit_market_dataset(path, expected_root=expected_root)
     except AuditError:
         raise
@@ -1051,5 +1116,247 @@ def audit_market_dataset(path, *, expected_root=None):
         OverflowError,
         UnicodeError,
         RecursionError,
+        sqlite3.DatabaseError,
     ) as exc:
         raise AuditError("SHAPE", "Invalid bounded source-closure structure") from exc
+
+
+RESULT_TAR_MAX = RESULT_TOTAL + RESULT_MANIFEST + 257 * 1023 + 1024
+RESEARCH_PROFILES = {"pooled_asset_1000_v1", "pooled_asset_1000_auto_candidate_v1"}
+
+
+class ResultArchive(Archive):
+    def exact(self, n):
+        self.check.require(
+            0 <= n <= RESULT_CHUNK and self.consumed + n <= RESULT_TAR_MAX,
+            "Result archive byte budget",
+            "BUDGET",
+        )
+        raw = self.stream.read(n)
+        self.consumed += len(raw)
+        self.check.require(len(raw) == n, "Truncated result archive", "TAR_TRUNCATED")
+        return raw
+
+
+@contextmanager
+def open_result_bundle(path):
+    """Copy only bounded registered files to private scratch, then run the full auditor.
+
+    No general tar extractor or source-controlled path is used. The immutable
+    scratch copy also prevents a changed source directory between audit/compare.
+    """
+    c, path = Checks(), Path(path)
+    c.require(not path.is_symlink(), "Result input symlink forbidden", "FILE")
+    with tempfile.TemporaryDirectory(prefix="atlas-market-pair-audit-") as temporary:
+        directory = Path(temporary) / "result"
+        directory.mkdir(mode=0o700)
+
+        def save(name, raw):
+            target = directory / name
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(raw)
+
+        with sqlite3.connect(str(Path(temporary) / "audit.sqlite")) as database:
+
+            def copy(read, source_dir=None):
+                save("manifest.json", read("manifest.json", RESULT_MANIFEST))
+                audit = BundleAudit(directory, database)
+                c.require(
+                    audit.manifest["kind"] == "forecast",
+                    "Paired market result must be forecast-only",
+                    "RESULT_KIND",
+                )
+                if source_dir is not None:
+                    c.require(
+                        {x.name for x in source_dir.iterdir()}
+                        == {"manifest.json", "chunks"},
+                        "Unexpected result directory files",
+                        "DIRECTORY",
+                    )
+                    chunks = source_dir / "chunks"
+                    c.require(
+                        not chunks.is_symlink() and chunks.is_dir(),
+                        "Result chunks must be a directory",
+                        "DIRECTORY",
+                    )
+                    existing = {x.name for x in chunks.iterdir()}
+                    declared = set(audit.collections)
+                    required = {
+                        name
+                        for name, collection in audit.collections.items()
+                        if collection["chunks"]
+                    }
+                    c.require(
+                        required <= existing <= declared,
+                        "Missing/extra result chunk directory",
+                        "DIRECTORY",
+                    )
+                    for name in existing:
+                        folder = chunks / name
+                        c.require(
+                            not folder.is_symlink()
+                            and folder.is_dir()
+                            and {x.name for x in folder.iterdir()}
+                            == {
+                                str(d["ordinal"]) + ".json"
+                                for d in audit.collections[name]["chunks"]
+                            },
+                            "Result part directory differs",
+                            "DIRECTORY",
+                        )
+                for name, collection in audit.collections.items():
+                    for d in collection["chunks"]:
+                        target = f"chunks/{name}/{d['ordinal']}.json"
+                        raw = read(target, RESULT_CHUNK, d["byteLength"])
+                        c.require(
+                            len(raw) == d["byteLength"] and sha(raw) == d["sha256"],
+                            "Result part hash differs",
+                            "RESULT_HASH",
+                        )
+                        save(target, raw)
+                return audit
+
+            if path.is_dir():
+
+                def read(name, ceiling, size=None):
+                    raw = read_file(path / name, ceiling)
+                    c.require(
+                        size is None or len(raw) == size,
+                        "Result part length differs",
+                        "RESULT_HASH",
+                    )
+                    return raw
+
+                audit = copy(read, path)
+            else:
+                with regular(path, RESULT_TAR_MAX) as stream:
+                    archive = ResultArchive(stream, c)
+                    audit = copy(archive.member)
+                    archive.finish()
+            report = audit.run()
+            yield audit, report
+
+
+def validate_result_binding(audit, manifest, scope, dataset_root, check):
+    """Bind content independently; server ownership and admission are not authenticated."""
+    report, snapshot, forecast = (
+        audit.documents[k] for k in ("report", "snapshot", "forecast")
+    )
+    evidence = report["provenance"].get("marketSource")
+    check.keys(
+        evidence,
+        {"marketDatasetRef", "universeScopeRef", "admissionProfile", "rowValueRoot"},
+    )
+    check.equal(
+        snapshot["provenance"].get("marketSource"),
+        evidence,
+        "Report/snapshot marketSource assertions differ",
+    )
+    identity(evidence["rowValueRoot"], check)
+    ref = evidence["marketDatasetRef"]
+    check.keys(ref, {"datasetId", "datasetRoot", "format", "version"})
+    identity(ref["datasetId"], check, True)
+    check.require(
+        ref["datasetRoot"] == dataset_root
+        and ref["format"] == "atlas.quant.market_dataset"
+        and type(ref["version"]) is int
+        and ref["version"] == 1,
+        "Result refers to a different market source root",
+        "RESULT_SOURCE_ROOT",
+    )
+    check.equal(
+        evidence["universeScopeRef"],
+        manifest["universeScopeRef"],
+        "Result full-scope reference differs",
+    )
+    profile = evidence["admissionProfile"]
+    check.require(
+        isinstance(profile, str) and profile in RESEARCH_PROFILES,
+        "Unregistered research admission assertion",
+        "RESULT_PROFILE",
+    )
+    strategy = forecast["sourceStrategy"]
+    check.equal(
+        report["strategy"], strategy, "Result report and forecast strategies differ"
+    )
+    universe = strategy["universe"]
+    for key in (
+        "symbols",
+        "start",
+        "end",
+        "selection",
+        "snapshotHash",
+        "resolutionHash",
+    ):
+        check.equal(
+            universe.get(key),
+            scope[key],
+            "Result strategy changed complete frozen scope evidence",
+        )
+    check.require(
+        universe.get("subsetPolicy") == "all",
+        "Result strategy is not the whole frozen scope",
+        "RESULT_PROFILE",
+    )
+    automatic = profile == "pooled_asset_1000_auto_candidate_v1"
+    model = strategy["model"]
+    check.require(
+        strategy["target"]["kind"] == "asset_price"
+        and strategy["execution"]["enabled"] is False
+        and isinstance(strategy["factors"], list)
+        and len(strategy["factors"]) <= 16
+        and model["estimator"] == ("auto" if automatic else "ridge")
+        and model["family"]
+        in (["mean_reversion"] if automatic else ["mean_reversion", "trend"])
+        and type(model["refitDays"]) is int
+        and model["refitDays"] >= 20
+        and type(strategy["validation"]["innerFolds"]) is int
+        and strategy["validation"]["innerFolds"] == 2
+        and type(strategy["validation"]["outerFolds"]) is int
+        and strategy["validation"]["outerFolds"] == 2,
+        "Result strategy does not meet registered market profile",
+        "RESULT_PROFILE",
+    )
+    check.require(
+        audit.count("forecasts") <= 80000
+        and audit.count("targets") <= 300000
+        and audit.count("modelFits") <= 300000
+        and audit.count("snapshotRows") == manifest["rowCount"],
+        "Result numerical limits or complete snapshot count differ",
+        "RESULT_PROFILE",
+    )
+    for provenance in (report["provenance"], snapshot["provenance"]):
+        check.require(
+            provenance.get("synthetic") is (manifest["sourceKind"] == "fixture")
+            and provenance.get("source")
+            == (
+                "SYNTHETIC_MARKET_FIXTURE"
+                if manifest["sourceKind"] == "fixture"
+                else "TUSHARE_PRO"
+            ),
+            "Result source kind assertion differs",
+            "RESULT_SOURCE_KIND",
+        )
+    check.equal(
+        snapshot["provenance"].get("tradingDates"),
+        manifest["calendar"],
+        "Result trading calendar differs",
+    )
+    return dict(
+        bundleId=audit.bundle_id,
+        sourceContentRootVerified=True,
+        universeScopeVerified=True,
+        registeredProfileVerified=True,
+        admissionProfile=profile,
+        fullSnapshotRowsVerified=True,
+        snapshotRows=manifest["rowCount"],
+        rowValueRootInternallyConsistent=True,
+        rowValueRootRecomputed=False,
+        marketDatasetId=ref["datasetId"],
+        datasetIdAuthenticated=False,
+        ownershipVerified=False,
+        serverAdmissionAuthenticated=False,
+        comparison="all ordered source fields; exact finite numeric values and nulls",
+    )

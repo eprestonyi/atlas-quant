@@ -29,9 +29,12 @@ class CapacityProfile:
             datetime.strptime(u["end"], "%Y%m%d")
             - datetime.strptime(u["start"], "%Y%m%d")
         ).days
+        if self.id in {FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID}:
+            span += 1  # New source profile explicitly includes both endpoints.
         if (
             s["target"]["kind"] != "asset_price"
-            or s["model"]["estimator"] != ("auto" if self.id == AUTO_FILTER_CANDIDATE_ID else "ridge")
+            or s["model"]["estimator"]
+            != ("auto" if self.id == AUTO_FILTER_CANDIDATE_ID else "ridge")
             or s["execution"]["enabled"]
             or len(s["factors"]) > self.max_factors
             or span > self.max_calendar_days
@@ -42,7 +45,10 @@ class CapacityProfile:
                 self.id in {FULL_FILTER_PROFILE_ID, AUTO_FILTER_CANDIDATE_ID}
                 and s["model"]["family"] not in {"mean_reversion", "trend"}
             )
-            or (self.id == AUTO_FILTER_CANDIDATE_ID and s["model"]["family"] != "mean_reversion")
+            or (
+                self.id == AUTO_FILTER_CANDIDATE_ID
+                and s["model"]["family"] != "mean_reversion"
+            )
         ):
             fail(
                 "CAPACITY_PROFILE",

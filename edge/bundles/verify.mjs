@@ -10,6 +10,11 @@ import {
 } from './storage.mjs';
 import { verifyDocuments } from './streams.mjs';
 import { SORTED_SNAPSHOT, snapshotValidation, verifySnapshotReceipts } from './snapshot-index.mjs';
+import {
+  assertMarketBundle,
+  storedMarketAdmission,
+  verifyMarketSnapshot
+} from '../market-preparation/bundle.mjs';
 
 const invalid = (message) => {
   throw new ApiError('BUNDLE_INCOMPLETE', message, 409);
@@ -138,6 +143,8 @@ export async function finalizeBundle(
     };
   if (stage.status === 'aborted' || job.status !== 'running') invalid('终态任务不能验证新增产物');
   if (authorize) await authorize(env, job, parsed);
+  const marketAdmission = storedMarketAdmission(stage);
+  if (marketAdmission) await assertMarketBundle(env, job, parsed, marketAdmission);
   const receipts = await env.DB.prepare(
     'SELECT collection,ordinal,sha256,byte_length,row_count,start_row,object_key FROM quant_bundle_chunks WHERE stage_id=?'
   )
@@ -159,6 +166,9 @@ export async function finalizeBundle(
     }
   await verifyRecords(env, stage, parsed);
   await verifyDocuments(parsed, (collection, descriptor) =>
+    readChunk(env, stage, collection, descriptor, byKey)
+  );
+  await verifyMarketSnapshot(stage, parsed, (collection, descriptor) =>
     readChunk(env, stage, collection, descriptor, byKey)
   );
   if (verifySource)

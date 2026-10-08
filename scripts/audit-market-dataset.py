@@ -17,9 +17,17 @@ def main():
     parser.add_argument(
         "--output", help="Optional new JSON result; never overwrites a file"
     )
+    parser.add_argument(
+        "--result-bundle",
+        help="Pair with a full forecast bundle directory or strict USTAR",
+    )
     args = parser.parse_args()
     try:
-        report = audit_market_dataset(args.input, expected_root=args.expected_root)
+        report = audit_market_dataset(
+            args.input,
+            expected_root=args.expected_root,
+            result_bundle=args.result_bundle,
+        )
         code = 0
     except (AuditError, OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
         report = dict(

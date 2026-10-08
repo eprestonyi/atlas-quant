@@ -10,6 +10,9 @@ import { buildWorkerSource } from "../scripts/worker-source.mjs";
 import { canonical, digest } from "../edge/market-preparation/common.mjs";
 import { createMarketPlan } from "../edge/market-preparation/planner.mjs";
 import { marketTarHeader } from "../edge/market-preparation/archive.mjs";
+import { bundleFixture } from "./fixtures/bundle-fixture.mjs";
+import { beginBundle } from "../edge/bundles/storage.mjs";
+import { completeBundle } from "../edge/bundles/publication.mjs";
 import {
   begin as beginRequest,
   getReceipt,
@@ -214,6 +217,156 @@ async function stage(x, transform) {
     }
   return { root: manifestSha256, manifest: m, chunks };
 }
+
+async function marketForecastJob(x) {
+  const p = await stage(x);
+  const done = await (
+    await x.req(`/runner/market-acquire/jobs/${x.job.id}/complete`, "POST", {
+      leaseToken: x.job.leaseToken,
+      manifestSha256: p.root,
+    })
+  ).json();
+  const binding = {
+    marketDatasetRef: done.result.marketDatasetRef,
+    universeScopeRef: fixture.plan.universeScopeRef,
+    admissionProfile: "pooled_asset_1000_v1",
+  };
+  const strategy = {
+    schemaVersion: 2,
+    name: "SYNTHETIC market transport fixture; no fitted model",
+    research: { mode: "statistical_quant" },
+    universe: {
+      symbols: fixture.plan.scope.symbols,
+      start: fixture.plan.scope.start,
+      end: fixture.plan.scope.end,
+    },
+    target: { kind: "asset_price", horizonSessions: 5 },
+    model: {
+      family: "mean_reversion",
+      estimator: "ridge",
+      trainWindow: 120,
+      refitDays: 20,
+    },
+    validation: { innerFolds: 2, outerFolds: 2, minTrainDates: 40 },
+    execution: { enabled: false },
+    factors: [],
+  };
+  const e = await (
+    await x.req("/statistical-quant/experiments", "POST", {
+      strategy,
+      ...binding,
+    })
+  ).json();
+  const queued = await x.req(
+    `/statistical-quant/experiments/${e.experiment.id}/run`,
+    "POST",
+    { version: 1, dataSource: "ready_market", ...binding },
+  );
+  assert.equal(queued.status, 202, await queued.clone().text());
+  const claim = await x.req("/runner/claim", "POST", {
+    requestId: randomUUID(),
+    engineVersion: "0.8.0",
+    transportFormats: ["atlas.quant.bundle/1"],
+    marketResearchProfiles: ["pooled_asset_1000_v1"],
+  });
+  assert.equal(claim.status, 200, await claim.clone().text());
+  return { p, job: (await claim.json()).job };
+}
+
+test("server-bound market bundle pins complete rows; ordinary profile claims and rehashed changed snapshots cannot replace it", async () => {
+  for (const variant of ["valid", "changed-row", "forged-source"]) {
+    const x = await setup({
+      MARKET_RESEARCH_ENABLED: "true",
+      BUNDLE_SNAPSHOT_SORTED_V1: "true",
+    });
+    try {
+      const { p, job } = await marketForecastJob(x);
+      const f = bundleFixture({
+        count: 1,
+        rowsPerChunk: 100,
+        mutate({ forecast, report, snapshot }) {
+          forecast.sourceStrategy = job.strategy;
+          report.strategy = job.strategy;
+          report.provenance = {...JSON.parse(p.chunks.provenance[0])[0], marketSource: job.sourceEvidence};
+          snapshot.provenance = {
+            ...JSON.parse(p.chunks.provenance[0])[0],
+            marketSource: job.sourceEvidence,
+          };
+          snapshot.rows = JSON.parse(p.chunks.rows[0]);
+          if (variant === "changed-row") snapshot.rows[0].raw_close += 1;
+          if (variant === "forged-source")
+            snapshot.provenance.marketSource = {
+              ...job.sourceEvidence,
+              rowValueRoot: "0".repeat(64),
+            };
+        },
+      });
+      const identity = {
+        id: job.id,
+        leaseToken: job.leaseToken,
+        bundleId: f.bundleId,
+      };
+      const begin = await x.req("/runner/bundles/begin", "POST", {
+        ...identity,
+        manifestText: f.manifestText,
+      });
+      if (variant === "forged-source") {
+        assert.equal(begin.status, 409, await begin.clone().text());
+        assert.equal((await begin.json()).error.code, "MARKET_BUNDLE_SOURCE");
+        continue;
+      }
+      assert.equal(begin.status, 200, await begin.clone().text());
+      const staged = await begin.json();
+      for (const [key, raw] of f.chunks) {
+        const [name, i] = key.split(":");
+        const put = await x.req(
+          `/runner/bundles/${f.bundleId}/chunks/${name}/${i}`,
+          "PUT",
+          raw,
+          {
+            "X-Quant-Job": job.id,
+            "X-Quant-Lease": job.leaseToken,
+            "X-Quant-Stage": staged.stageId,
+          },
+        );
+        assert.equal(put.status, 200, await put.clone().text());
+      }
+      const packet = { ...identity, stageId: staged.stageId };
+      const verify = await x.req("/runner/bundles/finalize", "POST", packet);
+      if (variant === "changed-row") {
+        assert.equal(verify.status, 409, await verify.clone().text());
+        assert.equal(
+          (await verify.json()).error.code,
+          "MARKET_SNAPSHOT_SOURCE",
+        );
+        continue;
+      }
+      assert.equal(verify.status, 200, await verify.clone().text());
+      const completed = await x.req("/runner/complete", "POST", packet);
+      assert.equal(completed.status, 200, await completed.clone().text());
+      const off = { ...x.env, MARKET_RESEARCH_ENABLED: "false" };
+      assert.equal(
+        (await beginBundle(off, { ...identity, manifestText: f.manifestText }))
+          .status,
+        "committed",
+      );
+      assert.equal((await completeBundle(off, packet)).idempotent, true);
+      assert.equal(
+        (
+          await x.db
+            .prepare(
+              "SELECT count(*) n FROM quant_bundle_records WHERE stage_id=? AND collection='snapshotRows'",
+            )
+            .bind(staged.stageId)
+            .first()
+        ).n,
+        0,
+      );
+    } finally {
+      await x.mf.dispose();
+    }
+  }
+});
 
 test("real offline normalized two-security source publishes atomically; raw and complete ACK retries preserve identity", async () => {
   const x = await setup();

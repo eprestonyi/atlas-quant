@@ -256,9 +256,9 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
   )
     fail('预测身份或完整记录数不匹配');
   if (
-    forecast.totalRows > 25000 ||
-    collections.get('targets').rowCount > 110000 ||
-    collections.get('modelFits').rowCount > 110000
+    forecast.totalRows > (protocol.maxForecastRows ?? 25000) ||
+    collections.get('targets').rowCount > (protocol.maxInputRows ?? 110000) ||
+    collections.get('modelFits').rowCount > (protocol.maxInputRows ?? 110000)
   )
     fail('未扩容的数值维度超过上限', 'BUNDLE_BUDGET', 413);
   const report = metadata.report;
@@ -288,7 +288,7 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
     (metadata.snapshot.schemaVersion !== protocol.snapshotVersion ||
       metadata.snapshot.dataFingerprint !== manifest.dataFingerprint ||
       !object(metadata.snapshot.provenance) ||
-      collections.get('snapshotRows').rowCount > 110000 ||
+      collections.get('snapshotRows').rowCount > (protocol.maxInputRows ?? 110000) ||
       collections.get('snapshotRows').rowCount < 1)
   )
     fail('冻结数据格式或指纹无效');

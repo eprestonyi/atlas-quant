@@ -1,6 +1,6 @@
 # Whole-filter market preparation (candidate; all production flags off)
 
-This slice implements the independent `market-acquire/1` queue and consumer. It does not enable hosted pooled research or increase the legacy research limits. A complete filtered SH/SZ scope is prepared as one immutable market dataset; there is no stock truncation. BJ scopes are rejected in full. Current membership is not historical constituent membership.
+This slice implements the independent `market-acquire/1` queue, frozen-source consumer and explicitly gated pooled research path. Production flags remain off; legacy research limits are unchanged. A complete filtered SH/SZ scope is prepared as one immutable market dataset; there is no stock truncation. BJ scopes are rejected in full. Current membership is not historical constituent membership.
 
 The profile `pooled_asset_1000_v1` admits at most 1,000 securities, 366 natural days, 300,000 calendar-grid rows, 3,002 predeclared provider requests, 512 MiB raw receipts and 128 MiB normalized output. Each stock requires `daily` and `adj_factor`; requested daily-basic columns add `daily_basic`. Each represented venue has a separate `trade_cal` request. Both calendars must agree exactly. The initial normalized source supports later registered computation profiles without another provider read; the data profile does not silently choose a model.
 
@@ -29,15 +29,15 @@ The adapter verifies explicit response fields, finite numeric data, symbol/date 
 
 The output manifest contains separate `rows`, `provenance` and `receipts` collections: at most 320 chunks, each at most 512 KiB; the manifest is at most 256 KiB. Rows are date/security ordered. D1 stores descriptors and identities; price rows remain in private R2. Completion rechecks all hashes, complete symbol coverage, raw calendar receipts, source metadata and the exact plan; it independently derives a normalized row-value root. Dataset creation, completed job state and committed publication are one D1 transaction. A cancelled or expired lease cannot publish.
 
-This commit's tests use explicit synthetic responses, real spawned child/fsync/AES primitives and isolated Miniflare D1/R2. They perform zero provider calls and do not establish live data entitlement, production enablement or a hosted whole-pool forecast. The ready-market F consumer, server-bound larger bundle admission and independent source-archive audit are separate follow-up integration gates.
+This commit's tests use explicit synthetic responses, real spawned child/fsync/AES primitives and isolated Miniflare D1/R2. They perform zero provider calls and do not establish live data entitlement, production enablement or a hosted whole-pool forecast. A two-security synthetic source-to-F HTTP acceptance now covers the complete queue, frozen source, pooled child, publication and paired archives. The separate 1,000-security full transport acceptance is still pending; component benchmarks are not that evidence.
 
 ## Saved source and research admission
 
-The next integration slice saves `marketDatasetBinding` on every immutable experiment revision, including full scope and explicit computation profile. GET/list/export/copy retain this record; omitted fields on an update inherit it. Scope/date changes must match another explicitly supplied ready source, and financial/market sources cannot be combined. A lost concurrent update cannot add its source to the winning revision, even when strategy bytes are equal.
+The integration saves `marketDatasetBinding` on every immutable experiment revision, including full scope and explicit computation profile. GET/list/export/copy retain this record; omitted fields on an update inherit it. Scope/date changes must match another explicitly supplied ready source, and financial/market sources cannot be combined. A lost concurrent update cannot add its source to the winning revision, even when strategy bytes are equal.
 
 `GET /market-datasets` and its root-pinned detail route allow the same owner to reopen ready sources across browsers. Research jobs use `dataSource:ready_market`; old runners skip them. Matching runners must declare an exact `marketResearchProfiles` value and bundle/1 capability. The source input route `/runner/research-markets/:jobId/input` supplies bounded content-addressed manifest/plan/scope/part descriptors only to the active exact lease. Legacy upload, unsharded completion and execution-replay paths reject this source.
 
-The API/source-binding slice is verified with synthetic D1/R2 data. It remains disabled by default pending complete raw-archive, F-consumer and result-publication acceptance; enabling the flag is not part of these commits.
+The API/source-binding slice is verified with synthetic D1/R2 data. It remains disabled by default; enabling the flag is not part of these commits.
 
 ## Exact source closure and download
 
@@ -84,6 +84,72 @@ It verifies the exact source closure and independently recalculates normalizatio
 A PASS means integrity and reconstruction succeeded; it does not verify vendor
 licensing, original wire bytes behind a proxy, or historical index membership.
 A research result still requires its separate result bundle plus this source
-archive for an independent full source check. The hosted F consumer and larger
-server-bound numerical admission are being integrated; no production readiness
-is inferred from the source archive alone.
+archive for an independent full source check. The hosted consumer and server-bound numerical admission preserve the old bundle/1 byte format. No production readiness is inferred from source integrity alone.
+
+
+## Frozen-source pooled research
+
+The ordinary research runner only claims this route when explicitly configured
+with `market_dataset_research_enabled:true` and a valid `compute_lock_path`.
+Research, financial preparation, dataset composition and market normalization
+must use the same private lock path in the deployment configuration. A claim
+must advertise an exact registered `marketResearchProfiles` entry. No provider
+or PCD credentials are placed in the market child; that child reconstructs
+normalization from all frozen raw receipts before fitting one pooled model.
+Encrypted source parts are written separately, so only a small per-lease
+reference crosses spawn IPC. An interrupted calculation is not silently rerun;
+a fully committed local manifest resumes delivery, while incomplete computation
+becomes a retained terminal error. Local inputs are deleted only after the exact
+terminal receipt is confirmed.
+
+The parent enforces the 900-second total computation deadline, a 3 GiB RSS
+ceiling, 300 seconds per fit and a 400 MiB temporary feature/sample cache. This
+includes waiting for the shared compute lock. Memory-monitor failures stop a
+still-running child. Neither supported estimator nor dates are substituted on
+failure. Result transport keeps the existing 256 MiB / 256 chunk / 8 MiB hard
+chunk budget. Registered server-side `ready_market` admission allows at most
+80,000 forecast rows and 300,000 frozen input rows; a runner-supplied profile
+cannot unlock these counts. Every snapshot row must match the source's server
+row-value root. Source identity lives in
+`report.provenance.marketSource`, independent of the currently edited draft.
+
+A full source audit and result audit can be bound together:
+
+```sh
+python scripts/audit-market-dataset.py market-source.tar \
+  --expected-root <HTTP-pinned-datasetRoot> \
+  --result-bundle forecast-bundle.tar --output new-audit.json
+```
+
+This checks every original response slice, independently rebuilds normalized
+rows, runs the existing numerical result auditor and compares every frozen
+snapshot field and missing value. It authenticates content, not owner identity,
+a vendor license, catalog membership or the server's private authorization.
+The JS row-value digest is checked for internal agreement; complete numerical
+row comparison is the independent cross-language proof, not a claim of identical
+Python/JS floating-point JSON serialization.
+
+## Reproducible loopback acceptance (zero provider)
+
+The public harness contains explicit synthetic numeric responses and invented
+security codes. Weekday sessions are fixture sessions, not an official exchange
+calendar. `ALLOW_MARKET_FIXTURES=true` is confined to the isolated loopback Worker;
+production continues to reject fixture receipts, including cache hits.
+
+```sh
+node scripts/preview-market.mjs --port 8938 --symbols 1000 --estimator auto \
+  --output private/market-http-1000-auto
+PYTHONPATH=engine .venv/bin/python scripts/market-http-acceptance.py \
+  private/market-http-1000-auto/session.json --phase source
+PYTHONPATH=engine .venv/bin/python scripts/market-http-acceptance.py \
+  private/market-http-1000-auto/session.json --phase forecast
+```
+
+Source and research IDs are persisted separately; rerunning the harness reads a
+completed result rather than fitting again. The 2,001 synthetic request attempts
+retain the production one-second serial scheduling guard, approximately 33
+minutes before publication. This measures durable scheduling and transport, not
+real Tushare latency or availability. Session credentials remain in a 0600 file;
+no installed service or production configuration is read. Use a new output path
+for each predeclared independent case. Downloaded archives and failures remain
+in that directory for independent auditing.

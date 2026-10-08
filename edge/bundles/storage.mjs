@@ -5,6 +5,12 @@ import { BUNDLE_PROFILE, HASH } from './profile.mjs';
 import { byteLength } from './json.mjs';
 import { validateManifest, validateChunk } from './manifest.mjs';
 import { FINANCIAL_FORMAT, validateFinancialManifest } from '../financial-bundles/manifest.mjs';
+import {
+  assertMarketBundle,
+  storedMarketAdmission,
+  validateMarketBundle
+} from '../market-preparation/bundle.mjs';
+import { assertRunMarket } from '../market-preparation/research.mjs';
 import { indexStatements, recordIndex } from './records.mjs';
 import {
   INDEXED_SNAPSHOT,
@@ -92,6 +98,8 @@ export async function loadStage(env, stageId, job = null) {
   return stage;
 }
 export async function parsedStage(stage) {
+  if (storedMarketAdmission(stage))
+    return validateMarketBundle(stage.manifest_text, stage.bundle_id);
   const format = parse(stage.manifest_text)?.format;
   if (format === FINANCIAL_FORMAT)
     return validateFinancialManifest(stage.manifest_text, stage.bundle_id);
@@ -109,6 +117,8 @@ export async function sourceStage(env, job) {
     .first();
   if (!source) throw new ApiError('BUNDLE_SOURCE_UNAVAILABLE', '来源不是已提交的分片产物', 409);
   const stage = await loadStage(env, source.stage_id);
+  if (storedMarketAdmission(stage))
+    throw new ApiError('MARKET_EXECUTION_DISABLED', '完整市场研究目前仅支持预测', 409);
   if ((await parsedStage(stage)).manifest.format !== 'atlas.quant.bundle')
     throw new ApiError('FINANCIAL_EXECUTION_DISABLED', '金融来源尚不支持独立执行', 409);
   return stage;
@@ -127,9 +137,10 @@ export async function ownedStageForRun(env, owner, jobId) {
 async function assertJobContent(env, job, link, parsed) {
   const { manifest, metadata } = parsed;
   if (manifest.kind !== link.kind) conflict('研究任务与传输种类不一致');
-  const strategy = validateStoredStatisticalQuant(parse(job.spec));
-  const reported = validateStoredStatisticalQuant(metadata.report.strategy);
-  const source = validateStoredStatisticalQuant(metadata.forecast.sourceStrategy);
+  const options = job.data_source === 'ready_market' ? { scopeSymbolLimit: 1000 } : {};
+  const strategy = validateStoredStatisticalQuant(parse(job.spec), options);
+  const reported = validateStoredStatisticalQuant(metadata.report.strategy, options);
+  const source = validateStoredStatisticalQuant(metadata.forecast.sourceStrategy, options);
   if (!same(strategy, reported) || !same(prediction(strategy), prediction(source)))
     conflict('报告配置或预测来源与领取任务不一致');
   if (metadata.report.execution?.forecastArtifactId !== manifest.forecastArtifactId)
@@ -191,11 +202,26 @@ export async function beginBundle(
   const job = await leasedJob(env, input),
     link = await researchLink(env, job);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
-  const parsed = await validate(input.manifestText, input.bundleId);
-  await assertJobContent(env, job, link, parsed);
   let stage = await env.DB.prepare('SELECT * FROM quant_bundle_stages WHERE job_id=?')
     .bind(job.id)
     .first();
+  // Only the persisted owner/job binding may select the larger numerical gate.
+  const market = job.data_source === 'ready_market';
+  if (market && job.status === 'running') await assertRunMarket(env, job);
+  const parsed = await (market ? validateMarketBundle : validate)(
+    input.manifestText,
+    input.bundleId
+  );
+  const marketAdmission = market
+    ? job.status === 'running'
+      ? await assertMarketBundle(env, job, parsed)
+      : stage?.status === 'committed'
+        ? storedMarketAdmission(stage)
+        : null
+    : null;
+  if (market && !marketAdmission) conflict('终态市场任务没有已提交的来源准入');
+  if (marketAdmission) parsed.metadata._marketAdmission = marketAdmission;
+  await assertJobContent(env, job, link, parsed);
   if (
     stage &&
     requestedStrategy !== null &&
@@ -216,7 +242,8 @@ export async function beginBundle(
     const id = random(),
       now = NOW(),
       key = `bundle/${job.owner}/${id}/manifest.json`;
-    const strategy = requestedStrategy ?? INDEXED_SNAPSHOT;
+    const strategy = requestedStrategy ?? (market ? SORTED_SNAPSHOT : INDEXED_SNAPSHOT);
+    if (market && strategy !== SORTED_SNAPSHOT) conflict('完整市场研究必须使用有序行情校验');
     if (strategy === SORTED_SNAPSHOT && env.BUNDLE_SNAPSHOT_SORTED_V1 !== 'true')
       throw new ApiError('BUNDLE_POLICY_UNAVAILABLE', '服务端尚未启用有序行情索引策略', 409);
     const metadata = stageMetadata(parsed, strategy);

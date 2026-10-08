@@ -3,6 +3,7 @@ import { NOW, sha } from '../runtime.mjs';
 import { diagnosticSummary, universeSummary } from '../statistical-quant/summaries.mjs';
 import { BUNDLE_PROFILE } from './profile.mjs';
 import { byteLength } from './json.mjs';
+import { assertMarketBundle, storedMarketAdmission } from '../market-preparation/bundle.mjs';
 import {
   leasedJob,
   loadStage,
@@ -61,6 +62,8 @@ export async function completeBundle(
   if (stage.status !== 'verified' || job.status !== 'running')
     throw new ApiError('BUNDLE_NOT_VERIFIED', '完整验证后才能发布研究', 409);
   if (authorize) await authorize(env, job, parsed);
+  const marketAdmission = storedMarketAdmission(stage);
+  if (marketAdmission) await assertMarketBundle(env, job, parsed, marketAdmission);
   const link = await researchLink(env, job);
   const report = reportSummary(parsed),
     forecast = parsed.metadata.forecast,
@@ -93,6 +96,13 @@ export async function completeBundle(
       ...(manifest.sourceEvidence
         ? {
             sourceEvidence: manifest.sourceEvidence,
+            transportFormat: manifest.format,
+            executionEligible: false
+          }
+        : {}),
+      ...(marketAdmission
+        ? {
+            sourceEvidence: marketAdmission,
             transportFormat: manifest.format,
             executionEligible: false
           }
