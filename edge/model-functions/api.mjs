@@ -2,6 +2,7 @@ import {ApiError} from '../errors.mjs';
 import {body,json,NOW,random,rate,sha} from '../runtime.mjs';
 import {ownedStageForRun,parsedStage} from '../bundles/storage.mjs';
 import {detailRecord} from '../bundles/pages.mjs';
+import {assertFunctionSource} from './source.mjs';
 import {validateFunction,evaluateFunction,deriveFunction,ModelFunctionError,FUNCTION_LIMITS} from '../../web/model-function-runtime.js';
 
 const HASH = /^[a-f0-9]{64}$/, ID = /^[a-f0-9-]{36}$/;
@@ -40,10 +41,12 @@ export async function resolveFunction(env,owner,source) {
   const stage = await ownedStageForRun(env,owner,ref.runId);
   if (!stage) fail('冻结研究函数不存在','NOT_FOUND',404);
   if (stage.bundle_id !== ref.bundleId) fail('报告版本不匹配，请重新打开报告','BUNDLE_VERSION_CHANGED',409);
-  const fit = (await detailRecord(env,stage,await parsedStage(stage),new URLSearchParams({collection:'modelFits',id:ref.modelFitId}))).item;
+  const parsed = await parsedStage(stage);
+  const fit = (await detailRecord(env,stage,parsed,new URLSearchParams({collection:'modelFits',id:ref.modelFitId}))).item;
   if (!fit.functionArtifact) fail('该历史拟合没有保存可移植函数，请保留原报告','FUNCTION_NOT_EXPORTED',409);
   const artifact = await validateFunction(fit.functionArtifact);
   if (artifact.lineage.status !== 'fitted') fail('研究拟合函数的来源状态无效','FUNCTION_INTEGRITY',503);
+  assertFunctionSource(artifact,fit,parsed.metadata.forecast.sourceStrategy);
   return {ref,artifact};
 }
 async function derive(env,owner,input) {
