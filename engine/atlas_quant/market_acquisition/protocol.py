@@ -19,6 +19,8 @@ META_BYTES = 2 * 1024 * 1024
 CHUNK_BYTES = 512 * 1024
 MANIFEST_BYTES = 256 * 1024
 RAW_BYTES = 512 * 1024 * 1024
+RAW_CHUNK_BYTES = 4 * 1024 * 1024
+RAW_CHUNKS = 256
 DATA_BYTES = 128 * 1024 * 1024
 MAX_CHUNKS = 320
 BASE_FIELDS = "open high low close raw_close vol amount adj_factor".split()
@@ -156,7 +158,29 @@ def validate_plan(meta, job, scope):
         "Input belongs to another claim",
     )
     p = meta["plan"]
-    require(isinstance(p, dict), "MARKET_PLAN", "Plan required")
+    require(
+        isinstance(p, dict)
+        and set(p)
+        == {
+            "format",
+            "version",
+            "profile",
+            "universeScopeRef",
+            "membershipPolicy",
+            "scope",
+            "catalog",
+            "fields",
+            "authorizationScope",
+            "requests",
+            "blockedReasons",
+            "budget",
+            "completeness",
+            "sourcePolicy",
+            "planRoot",
+        },
+        "MARKET_PLAN",
+        "Closed plan required",
+    )
     require(
         sha(encode({k: v for k, v in p.items() if k != "planRoot"}))
         == digest(p.get("planRoot"))
@@ -166,6 +190,7 @@ def validate_plan(meta, job, scope):
     )
     require(
         p.get("format") == "atlas.quant.market_acquisition_plan"
+        and type(p.get("version")) is int
         and p.get("version") == 1
         and p.get("profile") == PROFILE
         and p.get("authorizationScope") == scope
@@ -175,6 +200,13 @@ def validate_plan(meta, job, scope):
         "Unsupported or blocked acquisition plan",
     )
     s = p["scope"]
+    require(
+        isinstance(s, dict)
+        and set(s) == {"symbols", "start", "end", "symbolCount", "scopeRoot"}
+        and s["scopeRoot"] == p["universeScopeRef"]["scopeRoot"],
+        "MARKET_PLAN",
+        "Scope identity differs",
+    )
     symbols = s["symbols"]
     require(
         isinstance(symbols, list)
@@ -262,8 +294,21 @@ def validate_plan(meta, job, scope):
         "Declared parent budget differs",
     )
     require(
-        p["sourcePolicy"]["adjustment"]
-        == "adj_factor_divided_by_first_observed_factor_per_symbol",
+        p["sourcePolicy"]
+        == {
+            "responseBytes": "exact_delivered_endpoint_bytes",
+            "originalProviderWireAvailable": False,
+            "adjustment": "adj_factor_divided_by_first_observed_factor_per_symbol",
+            "volumeUnit": "hands",
+            "amountUnit": "CNY_thousands",
+        }
+        and p["completeness"]
+        == {
+            "zeroRowsForAnySymbol": "reject_entire_scope",
+            "missingSessions": "preserve_missing_mask",
+            "crossExchangeCalendars": "require_exact_session_equality",
+            "unknownRequest": "sticky_manual_review_no_retry",
+        },
         "MARKET_PLAN",
         "Unrecognized normalization policy",
     )
@@ -274,8 +319,15 @@ def validate_plan(meta, job, scope):
             "chunkBytes": CHUNK_BYTES,
             "chunks": MAX_CHUNKS,
             "totalBytes": DATA_BYTES,
+            "rawChunkBytes": RAW_CHUNK_BYTES,
+            "rawChunks": RAW_CHUNKS,
+            "rawBytes": RAW_BYTES,
         },
         "MARKET_PLAN",
         "Publication limits differ",
     )
     return p
+
+
+def output_collections(manifest):
+    return {**manifest["collections"], "raw": manifest["rawArchive"]}

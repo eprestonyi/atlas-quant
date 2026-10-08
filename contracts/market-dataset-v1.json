@@ -59,7 +59,9 @@
     "normalizedBytes": 134217728,
     "chunkBytes": 524288,
     "chunks": 320,
-    "manifestBytes": 262144
+    "manifestBytes": 262144,
+    "rawChunkBytes": 4194304,
+    "rawChunks": 256
   },
   "network": {
     "actualAttemptsPerRequest": 1,
@@ -125,7 +127,8 @@
       "createdAt",
       "researchAdmissions",
       "preferredResearchAdmission"
-    ]
+    ],
+    "download": "GET /quant/api/market-datasets/:datasetId/download?datasetRoot=:datasetRoot"
   },
   "researchRunner": {
     "capabilityKey": "marketResearchProfiles",
@@ -141,5 +144,23 @@
     "input": "GET /quant/api/runner/research-markets/:jobId/input",
     "header": "X-Dataset-Lease",
     "pinnedReads": "Every document/part requires exact datasetRoot query; input returns descriptors and paths; no provider access is injected."
+  },
+  "sourceArchive": {
+    "format": "atlas-market-ustar-v1",
+    "documents": [
+      "manifest.json",
+      "plan.json",
+      "scope.json"
+    ],
+    "parts": "parts/{rows|receipts|provenance|raw}/{ordinal}.bin",
+    "rawLocation": {
+      "ordinal": "bounded raw chunk ordinal",
+      "offset": "exact byte offset",
+      "byteLength": "exact saved receipt length"
+    },
+    "maxReadRequests": 576,
+    "completeMaxR2Reads": 578,
+    "auditor": "scripts/audit-market-dataset.py",
+    "authority": "Integrity and normalized value recomputation only; delivered endpoint bytes, not independently verified upstream wire or vendor entitlement"
   }
 }

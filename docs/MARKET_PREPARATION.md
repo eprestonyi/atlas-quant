@@ -38,3 +38,52 @@ The next integration slice saves `marketDatasetBinding` on every immutable exper
 `GET /market-datasets` and its root-pinned detail route allow the same owner to reopen ready sources across browsers. Research jobs use `dataSource:ready_market`; old runners skip them. Matching runners must declare an exact `marketResearchProfiles` value and bundle/1 capability. The source input route `/runner/research-markets/:jobId/input` supplies bounded content-addressed manifest/plan/scope/part descriptors only to the active exact lease. Legacy upload, unsharded completion and execution-replay paths reject this source.
 
 The API/source-binding slice is verified with synthetic D1/R2 data. It remains disabled by default pending complete raw-archive, F-consumer and result-publication acceptance; enabling the flag is not part of these commits.
+
+## Exact source closure and download
+
+The new, not-yet-deployed market dataset format includes `rawArchive` alongside
+`rows`, `receipts` and `provenance`. It retains the exact bytes delivered by the
+configured authorized endpoint. When that endpoint is the private portal proxy,
+these are **not** asserted to be the original upstream Tushare wire bytes.
+
+Raw responses remain whole and are concatenated without separators into at most
+256 chunks of at most 4 MiB, with a 512 MiB aggregate limit. Each ordered receipt
+has `rawLocation: {ordinal, offset, byteLength}`. Offsets must cover every chunk
+exactly, with no gaps, overlap or unreferenced bytes. Every slice must match its
+immutable, owner-authorized D1 receipt SHA and length. Normalized collections
+keep their separate 128 MiB / 320 chunks / 512 KiB limits. The manifest remains
+256 KiB and contains chunk descriptors rather than thousands of raw descriptors.
+Only the raw publication PUT route accepts 4 MiB; other API limits are unchanged.
+
+Complete reads all receipt metadata in one D1 query. Its maximum R2 read count
+is 320 normalized chunks + 256 raw chunks + 2 calendar responses = 578, plus a
+fixed number of D1 operations. The source download uses at most 576 R2 reads,
+with one chunk in memory at a time and downstream cancellation propagation.
+
+`GET /quant/api/market-datasets/:datasetId/download?datasetRoot=:exactRoot`
+returns a private deterministic `atlas-market-<datasetId>.tar`, with exact
+`manifest.json`, `plan.json`, `scope.json` and every normalized/raw part. It is
+owner isolated and bound to the already committed root; downloading does not
+fetch market data or run a model. It uses identity transfer with no-transform.
+
+`MarketSourceReader(manifest_bytes, plan_bytes, scope_bytes, read_part,
+expected_root=...)` provides the pure Python source path. `verify_integrity()`
+recomputes all normalized prices, first-observed adjustment anchors, nullable
+basic fields, calendars and missing sessions from the retained response bytes.
+It does not grant provider authority. Public manifest/plan/scope properties are
+copies; they cannot alter the internal pinned descriptors.
+
+The independent standard-library CLI does not import the provider or research
+engine:
+
+```sh
+python scripts/audit-market-dataset.py source.tar --expected-root <datasetRoot>
+```
+
+It verifies the exact source closure and independently recalculates normalization.
+A PASS means integrity and reconstruction succeeded; it does not verify vendor
+licensing, original wire bytes behind a proxy, or historical index membership.
+A research result still requires its separate result bundle plus this source
+archive for an independent full source check. The hosted F consumer and larger
+server-bound numerical admission are being integrated; no production readiness
+is inferred from the source archive alone.

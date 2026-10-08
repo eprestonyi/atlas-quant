@@ -3,7 +3,7 @@ import { json, NOW } from "../runtime.mjs";
 import { id, hash, fail, canonical } from "./common.mjs";
 import { hashBytes } from "../financial/common.mjs";
 import { assertRunMarket } from "./research.mjs";
-import { readPart } from "./publication.mjs";
+import { readPart, outputCollections } from "./publication.mjs";
 
 const bytes = (value) => new TextEncoder().encode(value);
 export function sourceResponse(raw, root) {
@@ -23,7 +23,7 @@ export async function marketResearchApi(req, env, path) {
   if (!path.startsWith("/runner/research-markets/")) return null;
   if (req.method !== "GET") fail("METHOD", "冻结市场仅支持GET", 405);
   const match =
-    /^\/runner\/research-markets\/([a-f0-9-]{36})\/(input|manifest|plan|scope|parts)(?:\/(rows|receipts|provenance)\/(\d{1,3}))?$/.exec(
+    /^\/runner\/research-markets\/([a-f0-9-]{36})\/(input|manifest|plan|scope|parts)(?:\/(rows|receipts|provenance|raw)\/(\d{1,3}))?$/.exec(
       path,
     );
   if (!match) fail("NOT_FOUND", "市场来源接口不存在", 404);
@@ -83,8 +83,9 @@ export async function marketResearchApi(req, env, path) {
     return sourceResponse(raw, await hashBytes(raw));
   }
   if (action === "parts" && name) {
-    const descriptor =
-      admitted.manifest.collections[name]?.chunks[Number(ordinal)];
+    const descriptor = outputCollections(admitted.manifest)[name]?.chunks[
+      Number(ordinal)
+    ];
     if (!descriptor || descriptor.ordinal !== Number(ordinal))
       fail("NOT_FOUND", "市场片段不存在", 404);
     const sourceJob = await env.DB.prepare(

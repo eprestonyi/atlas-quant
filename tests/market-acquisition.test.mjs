@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import os from "node:os";
+import fsPath from "node:path";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { Miniflare } from "miniflare";
 import { buildWorkerSource } from "../scripts/worker-source.mjs";
 import { canonical, digest } from "../edge/market-preparation/common.mjs";
 import { createMarketPlan } from "../edge/market-preparation/planner.mjs";
+import { marketTarHeader } from "../edge/market-preparation/archive.mjs";
 import {
   begin as beginRequest,
   getReceipt,
@@ -172,18 +175,22 @@ async function receipt(x, r, { lostBegin = false } = {}) {
   assert.equal(put.status, 200, await put.clone().text());
   return put.json();
 }
-async function stage(x) {
+async function stage(x, transform) {
   const receipts = [];
   for (const r of fixture.plan.requests) receipts.push(await receipt(x, r));
   const m = structuredClone(fixture.manifest),
     chunks = structuredClone(fixture.chunks);
-  chunks.receipts["0"] = canonical(receipts);
+  const oldReceipts = JSON.parse(chunks.receipts["0"]);
+  chunks.receipts["0"] = canonical(
+    receipts.map((r, i) => ({ ...r, rawLocation: oldReceipts[i].rawLocation })),
+  );
   const b = new TextEncoder().encode(chunks.receipts["0"]);
   m.collections.receipts.chunks[0].sha256 = await crypto.subtle
     .digest("SHA-256", b)
     .then((v) => Buffer.from(v).toString("hex"));
   m.collections.receipts.chunks[0].byteLength = b.length;
   m.collections.receipts.byteLength = b.length;
+  if (transform) await transform(m, chunks);
   const response = await x.req(
     `/runner/market-acquire/jobs/${x.job.id}/publication`,
     "POST",
@@ -191,7 +198,10 @@ async function stage(x) {
   );
   assert.equal(response.status, 200, await response.clone().text());
   const { manifestSha256 } = await response.json();
-  for (const [name, c] of Object.entries(m.collections))
+  for (const [name, c] of Object.entries({
+    ...m.collections,
+    raw: m.rawArchive,
+  }))
     for (const p of c.chunks) {
       const put = await x.req(
         `/runner/market-acquire/jobs/${x.job.id}/publication/${name}/${p.ordinal}?manifestSha256=${manifestSha256}`,
@@ -225,6 +235,94 @@ test("real offline normalized two-security source publishes atomically; raw and 
     assert.equal(a.result.rowCount, 15);
     assert.equal(a.result.symbolCount, 2);
     assert.equal(a.result.marketDatasetRef.datasetRoot, p.root);
+    const archivePath = `/market-datasets/${a.result.marketDatasetRef.datasetId}/download?datasetRoot=${p.root}`;
+    const archive = await fetch(
+      new URL("/quant/api" + archivePath, await x.mf.ready),
+      { headers: { cookie: x.cookie, "accept-encoding": "identity" } },
+    );
+    assert.equal(archive.status, 200, await archive.clone().text());
+    assert.equal(archive.headers.get("x-atlas-market-root"), p.root);
+    assert.equal(archive.headers.get("content-encoding"), "identity");
+    assert.match(archive.headers.get("cache-control"), /no-transform/);
+    const tar = new Uint8Array(await archive.arrayBuffer());
+    const expected = [
+      ["manifest.json", canonical(p.manifest)],
+      ["plan.json", canonical(fixture.plan)],
+      [
+        "scope.json",
+        canonical(
+          JSON.parse(
+            await fs.readFile(
+              new URL(
+                "../contracts/fixtures/market-scope-v1.json",
+                import.meta.url,
+              ),
+              "utf8",
+            ),
+          ),
+        ),
+      ],
+      ...Object.keys(p.manifest.collections)
+        .sort()
+        .flatMap((name) =>
+          p.manifest.collections[name].chunks.map((c) => [
+            `parts/${name}/${c.ordinal}.bin`,
+            p.chunks[name][c.ordinal],
+          ]),
+        ),
+      ...p.manifest.rawArchive.chunks.map((c) => [
+        `parts/raw/${c.ordinal}.bin`,
+        p.chunks.raw[c.ordinal],
+      ]),
+    ];
+    let at = 0;
+    for (const [name, text] of expected) {
+      const raw = new TextEncoder().encode(text);
+      assert.deepEqual(
+        tar.slice(at, at + 512),
+        marketTarHeader(name, raw.length),
+      );
+      at += 512;
+      assert.deepEqual(tar.slice(at, at + raw.length), raw);
+      at += raw.length;
+      const padding = (512 - (raw.length % 512)) % 512;
+      assert.deepEqual(tar.slice(at, at + padding), new Uint8Array(padding));
+      at += padding;
+    }
+    assert.deepEqual(tar.slice(at), new Uint8Array(1024));
+    const temporary = await fs.mkdtemp(
+      fsPath.join(os.tmpdir(), "atlas-market-http-audit-"),
+    );
+    try {
+      const archiveFile = fsPath.join(temporary, "source.tar");
+      await fs.writeFile(archiveFile, tar, { mode: 0o600 });
+      const audited = spawnSync(
+        process.env.PYTHON || ".venv/bin/python",
+        [
+          "scripts/audit-market-dataset.py",
+          archiveFile,
+          "--expected-root",
+          p.root,
+        ],
+        { encoding: "utf8", maxBuffer: 256 * 1024 },
+      );
+      assert.equal(audited.status, 0, audited.stdout + audited.stderr);
+      const report = JSON.parse(audited.stdout);
+      assert.equal(report.status, "PASS");
+      assert.equal(report.normalizationVerified, true);
+      assert.equal(report.sourceAuthorityVerified, false);
+      assert.equal(report.providerCalls, 0);
+    } finally {
+      await fs.rm(temporary, { recursive: true, force: true });
+    }
+    assert.equal(
+      (
+        await x.req(archivePath, "GET", undefined, {
+          cookie: "aq_session=other-owner",
+        })
+      ).status,
+      401,
+    );
     assert.deepEqual(await (await x.req(path, "POST", payload)).json(), a);
     const again = await (
       await x.req("/runner/market-acquire/claim", "POST", x.claim)
@@ -249,6 +347,50 @@ test("real offline normalized two-security source publishes atomically; raw and 
     );
   } finally {
     await x.mf.dispose();
+  }
+});
+
+test("a rehashed raw group or raw offset cannot change the exact saved response", async () => {
+  for (const kind of ["body", "offset", "tail"]) {
+    const x = await setup();
+    try {
+      const p = await stage(x, async (m, chunks) => {
+        let name = "raw";
+        if (kind === "body")
+          chunks.raw["0"] = chunks.raw["0"].replace('"code":0', '"code":1');
+        if (kind === "tail") chunks.raw["0"] += " ";
+        if (kind === "offset") {
+          name = "receipts";
+          const rows = JSON.parse(chunks.receipts["0"]);
+          rows[0].rawLocation.offset = 1;
+          chunks.receipts["0"] = canonical(rows);
+        }
+        const raw = new TextEncoder().encode(chunks[name]["0"]),
+          c = name === "raw" ? m.rawArchive : m.collections.receipts;
+        c.chunks[0].sha256 = Buffer.from(
+          await crypto.subtle.digest("SHA-256", raw),
+        ).toString("hex");
+        c.chunks[0].byteLength = raw.length;
+        c.byteLength = raw.length;
+      });
+      const response = await x.req(
+        `/runner/market-acquire/jobs/${x.job.id}/complete`,
+        "POST",
+        { leaseToken: x.job.leaseToken, manifestSha256: p.root },
+      );
+      assert.equal(response.status, 409, await response.clone().text());
+      assert.equal((await response.json()).error.code, "MARKET_RAW_ARCHIVE");
+      assert.equal(
+        (
+          await x.db
+            .prepare("SELECT count(*) n FROM quant_market_datasets")
+            .first()
+        ).n,
+        0,
+      );
+    } finally {
+      await x.mf.dispose();
+    }
   }
 });
 test("unknown outcome remains sticky across claim retry", async () => {

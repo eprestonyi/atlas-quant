@@ -38,6 +38,7 @@ def metadata():
             "chunkBytes": CHUNK_BYTES,
             "chunks": MAX_CHUNKS,
             "totalBytes": DATA_BYTES,
+            "rawChunkBytes":RAW_CHUNK_BYTES,"rawChunks":RAW_CHUNKS,"rawBytes":RAW_BYTES,
         },
     }
 
@@ -315,7 +316,7 @@ class Client:
                 "manifestSha256": sha(encode(m)),
                 "missing": {
                     n: list(range(len(c["chunks"])))
-                    for n, c in m["collections"].items()
+                    for n, c in output_collections(m).items()
                 },
             }
         if path.endswith("/complete"):

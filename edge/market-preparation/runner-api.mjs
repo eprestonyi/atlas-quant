@@ -121,7 +121,12 @@ export async function marketRunnerApi(req, env, path) {
           root,
           key,
           Number(op),
-          await readBytes(req, PUBLICATION_LIMITS.chunkBytes),
+          await readBytes(
+            req,
+            key === "raw"
+              ? PUBLICATION_LIMITS.rawChunkBytes
+              : PUBLICATION_LIMITS.chunkBytes,
+          ),
         ),
       );
   }

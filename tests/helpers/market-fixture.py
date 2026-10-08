@@ -33,7 +33,7 @@ print(
             },
             "chunks": {
                 n: {str(i): raw.decode() for (c, i), raw in chunks.items() if c == n}
-                for n in manifest["collections"]
+                for n in m.output_collections(manifest)
             },
         }
     )

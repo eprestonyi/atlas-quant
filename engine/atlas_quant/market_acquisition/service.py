@@ -186,11 +186,11 @@ class MarketConsumer(AcquisitionConsumer):
         require(
             ack.get("manifestSha256") == root
             and isinstance(ack.get("missing"), dict)
-            and set(ack["missing"]) == set(m["collections"]),
+            and set(ack["missing"]) == set(output_collections(m)),
             "MARKET_PUBLICATION",
             "Publication identity differs",
         )
-        for name, c in m["collections"].items():
+        for name, c in output_collections(m).items():
             missing = ack["missing"][name]
             require(
                 isinstance(missing, list)
