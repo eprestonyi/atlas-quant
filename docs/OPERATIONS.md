@@ -15,6 +15,8 @@ The public site combines the embedded browser app, a Cloudflare Worker with D1/R
 9. Save the private runner config below outside the checkout as an absolute, non-symlink file with mode `0600`. Start `python -m atlas_quant.runner --config /private/path/config.json` with `PYTHONPATH` pointing to the engine directory. Configure restart-on-failure and host startup appropriately.
 10. Read back build version, capabilities and heartbeat, then submit and retrieve a complete experiment in a fresh workspace. Test an actual AI request separately when enabled. A configured binding or online heartbeat alone does not prove provider execution, correct computation or persistence.
 
+For this macOS compute service, omit the LaunchAgent `ProcessType` key (the default Standard class). Do not configure Background or assume Adaptive improves compute scheduling: a controlled same-host study with identical Python, dependencies, input and forecast hash measured 1.80 seconds under Standard versus 8.87 seconds under Background and 9.27 under Adaptive. That single microbenchmark is not a throughput guarantee. The 50-stock hosted acceptance under Background actually reached the 900-second job deadline; see [the acceptance record](BUNDLE_ACCEPTANCE_A.md). Keep the existing one-job process isolation, numerical thread limits and 900-second deadline. Change scheduling only after pausing claims and draining active jobs and durable deliveries, preserve the original plist, and verify service/queue health after restart. Do not use a realtime or interactive scheduling class to conceal a compute-capacity failure.
+
 ```json
 {
   "api_base": "https://your-host.example/quant/api",
