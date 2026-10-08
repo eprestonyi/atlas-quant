@@ -117,3 +117,122 @@ objects and 27 D1 descriptors were checked, then the original cookie, completed
 F job, bundle ID and dataset root were re-read successfully through HTTP. It did
 not fabricate a fresh-stub export after a poisoned binding failed. No private
 session, raw financial input or licensed data is included in the public fixture.
+
+## v0.9 release and rollback checklist (plan, not deployment evidence)
+
+This checklist is based on the current source. It does not authorize provider
+requests, a new model run, production writes, or an unrecorded retry. Record each
+actual release SHA/build ID, timestamp and readback separately from local evidence.
+
+### Before changing production
+
+1. Pin the integrated Worker/UI, dataset consumer, research runner, codecs and
+   audit CLI to the reviewed release. Preserve the previous Worker version and
+   bindings, service configurations, encrypted spool directories and shared
+   compute-lock configuration. Check free disk and retain a verified D1 export
+   plus the R2 object descriptors needed to restore existing records; never print
+   session cookies, runner secrets or provider credentials.
+2. Apply the existing migration chain through `edge/migrations/0008_hosted_datasets.sql`
+   **before routing traffic to the new Worker**, even while both flags remain off.
+   New ordinary research claim queries reference `quant_run_datasets`; feature
+   flags do not remove that schema dependency. Migration 0008 is additive and
+   idempotent, with ten new tables and their indexes; it does not rewrite previous
+   jobs. Verify table/index definitions, foreign-key checks and preserved old row
+   counts. Keep the separate 0006-only migration test and current-Worker 0007/0008
+   tests distinct. Do not treat an unverified migration command exit as readback.
+3. Preserve both flags absent or exactly `false` initially:
+   `RESEARCH_DATASETS_ENABLED` and `FINANCIAL_DATASET_RESEARCH_ENABLED`.
+   Only the exact string `true` enables them. Composition can be opened separately;
+   financial research requires **both**. There is no dataset canary-owner allowlist
+   in this implementation: enabling a flag exposes that capability to every
+   otherwise eligible authenticated workspace. Do not describe it as canary-only.
+4. Verify the installed provider-free composition service advertises
+   `research-dataset/1`, uses its own queue and encrypted recovery spool, and shares
+   the same compute lock as the research service. Its fixed deadline is 600 seconds,
+   lease 120 seconds and heartbeat 20 seconds; none should be extended to hide a
+   failed acceptance. Verify the research service's financial mode is explicitly
+   configured and that its heartbeat advertises all three exact capabilities:
+   `atlas.quant.research_dataset/2`, `financial_json_v1`, and
+   `atlas.quant.financial_bundle/1`. A fresh heartbeat is an availability signal,
+   not proof of successful computation. Old research runners must not acquire a
+   dataset-linked job, and neither old research nor financial-prepare/acquisition
+   consumers may acquire a dataset composition job.
+
+### After deployment, before enabling new work
+
+- Authenticated `GET /quant/api/dataset-capabilities` must report `enabled:false`
+  and `researchBindingEnabled:false`; UI must show the closed boundary without a
+  fake ready state. Existing ordinary research lists, reports, source downloads,
+  financial input workspaces and their owner isolation must still work. Confirm
+  unknown capabilities or missing migrations do not silently downgrade the new
+  source to an ordinary upload.
+- Read existing completed test identities through their actual owner session.
+  Record expected source bundle/snapshot hashes, dataset root, exact source scope,
+  financial preparation roots and registry grants. A different workspace must not
+  read them or gain access by copying hashes. Reusing data means exact owner grants,
+  not wildcard proof access or regenerated source values.
+- Confirm the browser serves the pinned new assets, four preparation pages,
+  explicit subset boundaries, real loading/error states, Chinese state names,
+  and the node-status refresh that preserves both request IDs. Verify saved
+  research reload restores the D1 dataset binding and the complete selectable
+  state catalog, while its scope and fundamental/Ridge/asset-price profile remain
+  fixed and execution remains disabled. Full-page reload of an unfinished compose
+  draft is currently not supported; state preservation is limited to in-app
+  navigation until the plan is saved server-side.
+- Any newly authorized acceptance must be separately bounded and logged. Reuse
+  complete frozen sources; do not request a provider or rerun F merely to check a
+  deployment. A ready dataset establishes validated composition and byte closure,
+  not sufficient training coverage, verified units, historical as-published data,
+  or predictive advantage. Before opening research, the integrated synthetic
+  consumer → same-child restore/F → financial publication evidence must remain
+  reproducible with unchanged thresholds and negative outcomes retained.
+
+### Staged enablement and acceptance
+
+Open composition first only after its consumer and recovery path are healthy.
+Check actual queued/running/completed transitions, coverage including missing
+states, fixed deadline, private archive hashes and source ownership. Then enable
+financial research only after the research runner declares the full protocol set.
+A completed F must store `atlas.quant.financial_bundle/1`, exact dataset/2
+`sourceEvidence`, zero executions, and the same saved experiment-version binding.
+Report pages must stay bounded, retain all forecast outcomes and expose **both**
+the financial result archive and the full dataset closure archive. Downloaded
+bytes must pass the format-dispatched independent audit and source reconstruction;
+old bundle/1 readers must reject the new format rather than reinterpret it.
+Record desktop and actual verified-width narrow-screen outcomes independently of
+DOM tests. Publication, authenticated readback, browser operation and service
+continuity are separate acceptance entries, not interchangeable success labels.
+
+### Pause, abort and rollback boundaries
+
+- For a normal drain, set `meta.dataset_maintenance='paused'` to stop new compose
+  starts/claims while existing lease-bound work and delivery can finish. Pausing
+  `meta.runner_maintenance='paused'` stops **all** new research claims, including
+  ordinary research; it is not a financial-only switch. It does not prevent the
+  public API from queuing new research, so queued dataset jobs must be explicitly
+  inventoried and retained or cancelled before any older Worker is restored.
+- Feature-off is an admission/source-access cutoff, **not** a safe drain switch.
+  Turning composition or financial-research flags off during a running job may
+  reject remaining source reads or first publication. Prefer draining first; for
+  an urgent cutoff, retain the exact claim, lease, fixed deadline, stage and spool,
+  then record its cancellation/failure. Do not issue a new request ID to conceal
+  an unknown delivery, revive an expired lease or recompute a completed result.
+  Exact already-committed acknowledgements remain recoverable through their
+  defined protocol; do not generalize that exception to unfinished publication.
+- After flags are off, this release still provides owner-scoped reads and archives
+  for committed datasets/results. Verify those readbacks before calling rollback
+  complete. Keep all 0008 tables, immutable R2 parts, dependencies, registry grants,
+  per-version experiment bindings and run bindings. **Do not down-migrate/drop
+  tables, restore an old whole database over newer rows, or delete staged receipts
+  as routine rollback cleanup.**
+- A pre-v0.9 Worker/runtime is not guaranteed to understand new dataset-linked
+  queued jobs or financial results. Do not restore it with such jobs available
+  to its old claim path. Prefer the reviewed v0.9 reader with both flags off;
+  if code rollback is necessary, first drain/cancel and verify all active/queued
+  new-protocol jobs, stop incompatible consumers, retain recoverable spools, and
+  independently prove the chosen fallback cannot claim or rewrite these records.
+  New-format archive/reader availability is a separate compatibility requirement.
+- Re-enable only after the blocking issue is understood and pinned sources,
+  ownership, queue/lease states, capabilities and complete byte identities are
+  re-read. A retry must use the existing durable request/manifest identity where
+  the protocol requires it; a fresh compute requires an explicit new run decision.
