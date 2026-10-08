@@ -69,4 +69,6 @@ Synthetic tests cover all sixteen registered states entering F, actual missing-i
 
 The candidate passed 609 Python tests, including 12 independently authored admission regressions; after merging the accepted Studio/DSL changes from main, all 696 Python tests passed. The independent future-filing perturbation test re-freezes and recomputes changed statement inputs and confirms that earlier X/y values stay exactly unchanged; it performs no model fit or provider request. The real-data report was not rerun after the forecast-only entry guard: a separate offline recomposition confirmed the same source commitment and data fingerprint with zero forecast calls.
 
+After integrating the accepted full-universe core and final v0.6 source, all 739 Python tests and 147 Node tests passed, along with the TypeScript check and Worker build. This did not repeat the real-data canary or any provider call; the integrated build remains undeployed.
+
 Next integration must resolve server-authorized calendar/proof registries, preserve owner isolation and immutable references, recompute the package in a bounded worker, and publish a typed closure with paged dependencies. Only then can the UI attach a ready research dataset. The HTTP state machine is a separate workspace design; it is not implemented or published by this Python bridge.
