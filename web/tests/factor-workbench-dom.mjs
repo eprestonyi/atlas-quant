@@ -98,6 +98,17 @@ assert(w.document.querySelector('main').textContent.includes('运行准入未通
 assert(w.document.querySelector('main').textContent.includes('没有改成更小的股票子集'));
 assert.equal(s.strategy.universe.symbols.length, 1000);
 assert.equal(q.workspace.ui.activeId, 'workbench-test');
+q.studio.flow.reset();
+await route('easy/universe');
+assert(w.document.querySelector('main').textContent.includes('已保存的冻结筛选集合'));
+assert.equal(w.document.querySelectorAll('.sq-universe tbody tr').length, 40);
+const preservedUniverse = structuredClone(s.strategy.universe);
+s.strategy.universe.subsetPolicy = 'explicit';
+s.strategy.universe.symbols = symbols.slice(0, 20);
+q.studio.flow.reset(); q.render();
+assert(q.validateStrategy().some(x => x.includes('完整筛选集合')));
+s.strategy.universe = preservedUniverse;
+q.studio.flow.reset(); q.render();
 for (const path of ['strategies', 'instruments', 'monitor']) {
   await route('easy/' + path);
   assert(!w.document.querySelector('[data-sq="run"]'));

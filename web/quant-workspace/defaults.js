@@ -165,8 +165,8 @@ export function validateStrategy(
       !/^[a-f0-9]{64}$/.test(u.resolutionHash || '')
     )
       errors.push('股票池规则变化后需重新计算完整集合。');
-    if (!['all', 'explicit'].includes(u.subsetPolicy))
-      errors.push('解析集合后，需要保存完整结果与集合规则。');
+    if (u.subsetPolicy !== 'all')
+      errors.push('因子研究使用完整筛选集合；请重新计算股票筛选结果。');
     if (u.catalogSnapshot !== undefined) {
       const snap = u.catalogSnapshot;
       const unknown =

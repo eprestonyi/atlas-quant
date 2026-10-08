@@ -105,7 +105,7 @@ window.AtlasQuantV4 = {
       ui.activeVersion = saved?.experimentVersion || null;
       ui.universeScope = saved?.universeScope || null;
     } catch {}
-    const reports = createForecastReports(C, F, { onExecution: runExecution });
+    const reports = createForecastReports(C, F);
     const isStudio = () => s.quantMode === 'studio';
     const step = () =>
       s.view === 'runs'
@@ -859,19 +859,6 @@ window.AtlasQuantV4 = {
         render();
       }
     }
-    async function runExecution(artifactId, configuration) {
-      const response = await api('/statistical-quant/executions', {
-        method: 'POST',
-        body: JSON.stringify({
-          forecastArtifactId: artifactId,
-          ...configuration,
-        }),
-      });
-      const job = response.job;
-      s.runs = [job, ...s.runs.filter((x) => x.id !== job.id)];
-      C.navigate('runs', job.id);
-      return response;
-    }
     function mergePatch(target, patch) {
       for (const [key, value] of Object.entries(patch)) {
         if (['__proto__', 'constructor', 'prototype'].includes(key))
@@ -935,6 +922,8 @@ window.AtlasQuantV4 = {
         !spec.universe.symbols.length
       )
         errors.push('先计算股票筛选条件，完整结果至少需要一个成员。');
+      if (st === 'universe' && spec.universe.selection && spec.universe.subsetPolicy !== 'all')
+        errors.push('请重新计算完整筛选集合；旧版研究子集不会被当作完整结果。');
       if (st === 'settings' && spec.target.kind === 'frozen_basket') {
         const b = spec.target.basket || {},
           legs = b.symbols || [];
