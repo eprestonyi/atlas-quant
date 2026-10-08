@@ -1,3 +1,4 @@
+import { reportFeatureLabeler } from './feature-labels.js';
 // Descriptive factor evidence from frozen artifacts; never estimates missing statistics in the browser.
 export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
   const { esc: e, fmt, pct } = C;
@@ -5,10 +6,11 @@ export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
   const cell = x => `<td class="numeric">${value(x)}</td>`;
   const raw = x => `<pre class="sq-report-code">${e(JSON.stringify(x, null, 2))}</pre>`;
   const status = x => x?.status === 'available' || x?.status === 'ok' ? '已计算' : x?.unavailableReason || x?.status || '未提供';
+  let label = key => key;
   function featureDetail(x) {
     const ts = x.timeSeriesCorrelation || {}, fit = x.descriptiveFit || {};
-    return F.advanced(`${x.name} · 定义与统计口径`,
-      `<dl class="sq-key-values"><dt>定义</dt><dd>${e(x.definition?.expression || x.name)}</dd><dt>观察缺失</dt><dd>${fmt(x.missing?.count, 0)} / ${fmt(x.missing?.total, 0)} · ${pct(x.missing?.fraction)}</dd><dt>横截面 IC</dt><dd>${e(status(x.ic))} · ${fmt(x.ic?.dates, 0)} 个有效日期</dd><dt>Rank IC</dt><dd>${e(status(x.rankIc))} · ${fmt(x.rankIc?.dates, 0)} 个有效日期</dd><dt>描述性单变量 R²</dt><dd>${value(fit.rSquared)} · ${e(fit.fitSample || '未提供样本范围')}</dd><dt>显著性</dt><dd>未提供经依赖调整的 p 值或系数标准误</dd></dl>` +
+    return F.advanced(`${label(x.name, x.definition)} · 定义与统计口径`,
+      `<dl class="sq-key-values"><dt>输入标识</dt><dd><code>${e(x.name)}</code></dd><dt>定义</dt><dd>${e(x.definition?.expression || x.name)}</dd><dt>观察缺失</dt><dd>${fmt(x.missing?.count, 0)} / ${fmt(x.missing?.total, 0)} · ${pct(x.missing?.fraction)}</dd><dt>横截面 IC</dt><dd>${e(status(x.ic))} · ${fmt(x.ic?.dates, 0)} 个有效日期</dd><dt>Rank IC</dt><dd>${e(status(x.rankIc))} · ${fmt(x.rankIc?.dates, 0)} 个有效日期</dd><dt>描述性单变量 R²</dt><dd>${value(fit.rSquared)} · ${e(fit.fitSample || '未提供样本范围')}</dd><dt>显著性</dt><dd>未提供经依赖调整的 p 值或系数标准误</dd></dl>` +
       F.note('单变量拟合使用报告样本，只是描述关系；不是因子加入 F 后的样本外增量，也不是因果解释。单一标的的时间序列相关不称为横截面 IC。') +
       (ts.perTarget?.length ? table(['目标', '样本数', '时序 Pearson', '时序 Spearman'], ts.perTarget.map(t => `<tr><td>${e(t.targetId)}</td><td>${fmt(t.n, 0)}</td>${cell(t.pearson)}${cell(t.spearman)}</tr>`)) + `<p class="sq-subtle">目标总数 ${fmt(ts.totalTargets, 0)}；未展示 ${fmt(ts.omittedTargets, 0)}。${e(ts.interpretation || '')}</p>` : F.note('未返回可用的逐标的时间序列相关。')) +
       F.advanced('原始统计记录', raw(x)));
@@ -16,7 +18,7 @@ export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
   function features(rows) {
     return table(['输入因子', '有效 / 缺失', '均值 / 标准差', '中位数 / IQR', '横截面 IC / Rank IC', '描述性 R²'], rows.map(x => {
       const d = x.distribution || {};
-      return `<tr><td>${e(x.name)}<small>${x.kind === 'factor' ? '研究因子' : '派生状态'}</small></td><td>${fmt(d.count, 0)} / ${fmt(x.missing?.count, 0)}</td><td>${value(d.mean)}<small>${value(d.std)}</small></td><td>${value(d.median)}<small>${value(d.q25)} — ${value(d.q75)}</small></td><td>${value(x.ic?.mean)} / ${value(x.rankIc?.mean)}<small>${fmt(x.ic?.dates, 0)} 个有效横截面</small></td>${cell(x.descriptiveFit?.rSquared)}</tr>`;
+      return `<tr><td>${e(label(x.name, x.definition))}<small>${x.kind === 'factor' ? '研究因子' : '派生状态'}</small></td><td>${fmt(d.count, 0)} / ${fmt(x.missing?.count, 0)}</td><td>${value(d.mean)}<small>${value(d.std)}</small></td><td>${value(d.median)}<small>${value(d.q25)} — ${value(d.q75)}</small></td><td>${value(x.ic?.mean)} / ${value(x.rankIc?.mean)}<small>${fmt(x.ic?.dates, 0)} 个有效横截面</small></td>${cell(x.descriptiveFit?.rSquared)}</tr>`;
     })) + rows.map(featureDetail).join('');
   }
   function interval(edges, index) {
@@ -24,22 +26,23 @@ export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
     return `${index === 0 && lo === null ? '−∞' : value(lo)} 至 ${hi === null ? '+∞' : value(hi)}`;
   }
   function joint(x) {
-    if (!Array.isArray(x.counts) || !x.counts.length) return F.advanced(`${x.x} × ${x.y}`, F.note(`联合分布不可用：${x.status || '未返回频数表'}`));
+    if (!Array.isArray(x.counts) || !x.counts.length) return F.advanced(`${label(x.x)} × ${label(x.y)}`, F.note(`联合分布不可用：${x.status || '未返回频数表'}`) + F.advanced('联合输入原始记录', raw(x)));
     const counts = x.counts, columns = counts[0].length;
     const rowTotals = counts.map(row => row.reduce((a,b) => a + b, 0));
     const columnTotals = Array.from({ length: columns }, (_, n) => counts.reduce((a,row) => a + row[n], 0));
     const cells = counts.map((row, ri) => `<tr><th scope="row">${e(interval(x.xEdges, ri))}</th>${row.map((n, ci) => `<td class="numeric">${fmt(n, 0)}<small>${pct(x.probabilities?.[ri]?.[ci])}</small></td>`).join('')}<td class="numeric">${fmt(rowTotals[ri], 0)}</td></tr>`);
     cells.push(`<tr><th scope="row">Y 边际频数</th>${columnTotals.map(n => `<td class="numeric">${fmt(n, 0)}</td>`).join('')}<td class="numeric">${fmt(x.sampleCount, 0)}</td></tr>`);
-    return F.advanced(`${x.x} × ${x.y} · ${fmt(x.sampleCount, 0)} 对观测`,
-      `<p>X：${e(x.x)}；Y：${e(x.y)}。每格为联合频数与经验概率。</p>` + table(['X 分箱 / Y 分箱', ...Array.from({ length: columns }, (_, n) => interval(x.yEdges, n)), 'X 边际频数'], cells) +
+    return F.advanced(`${label(x.x)} × ${label(x.y)} · ${fmt(x.sampleCount, 0)} 对观测`,
+      `<p>X：${e(label(x.x))}；Y：${e(label(x.y))}。每格为联合频数与经验概率。</p>` + table(['X 分箱 / Y 分箱', ...Array.from({ length: columns }, (_, n) => interval(x.yEdges, n)), 'X 边际频数'], cells) +
       `<dl class="sq-key-values"><dt>缺失配对</dt><dd>${fmt(x.missingPairCount, 0)}</dd><dt>观察区间</dt><dd>${e(C.dateText(x.firstDate))} — ${e(C.dateText(x.lastDate))}</dd><dt>分箱来源</dt><dd>${e(x.edgeSource || '未提供')}</dd><dt>边界约定</dt><dd>${e(x.intervalConvention || '未提供')}</dd></dl>` +
       F.note('这是该报告样本的经验联合分布，不是已知的总体分布，也不意味着观测相互独立。') + F.advanced('分箱与概率原始记录', raw(x)));
   }
   function matrix(title, names, values, integer = false) {
     if (!Array.isArray(values)) return F.note(`${title}尚未返回。`);
-    return F.advanced(title, table(['输入', ...names], values.map((row, ri) => `<tr><th scope="row">${e(names[ri])}</th>${row.map(n => `<td class="numeric">${fmt(n, integer ? 0 : 4)}</td>`).join('')}</tr>`)));
+    return F.advanced(title, table(['输入', ...names.map(name => label(name))], values.map((row, ri) => `<tr><th scope="row">${e(label(names[ri]))}</th>${row.map(n => `<td class="numeric">${fmt(n, integer ? 0 : 4)}</td>`).join('')}</tr>`)));
   }
   function render(r) {
+    label = reportFeatureLabeler(r, C.state?.catalog?.factors || []);
     const meta = r.forecasts?.factorResearch, d = meta?.diagnostics;
     if (!d) return F.panel('因子诊断', F.note('此产物没有因子研究诊断记录。旧结果不会补造 IC、拟合度或联合分布。'));
     const featurePage = remote.enabled() ? remote.page('factorFeatures') : null;

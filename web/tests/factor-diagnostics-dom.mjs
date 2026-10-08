@@ -1,8 +1,10 @@
 /** Frozen diagnostic fixture only; this test does not produce statistical evidence. */
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { createForms } from '../quant-workspace/forms.js';
 import { createFactorDiagnostics } from '../quant-workspace/factor-diagnostics.js';
+import { FINANCIAL_FEATURE_LABELS, createFeatureLabeler } from '../quant-workspace/feature-labels.js';
 const dom = new JSDOM('<main></main>');
 const e = x => String(x ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
 const fmt = (x, n = 2) => x == null ? '—' : Number(x).toFixed(n);
@@ -13,8 +15,8 @@ const feature = { name: '<img src=x>', kind: 'factor', distribution: { count: 4,
 const pair = { x: 'x', y: 'y', status: 'available', xEdges: [null, 1, null], yEdges: [null, 2, null], counts: [[1,2],[3,4]], probabilities: [[.1,.2],[.3,.4]], sampleCount: 10, missingPairCount: 1, firstDate: '20250101', lastDate: '20250120', edgeSource: 'pre_terminal_development_feature_quantiles', intervalConvention: 'test fixture' };
 const diagnostics = { firstDate: '20250101', lastDate: '20250120', origins: 5, maturedValidOrigins: 4, targetDefinition: '(realizedFuture-currentState)/scale', features: [feature], dependence: { featureNames: ['x','y'], correlation: [[1,.2],[.2,1]], covariance: [[1,.1],[.1,2]], pairCounts: [[4,3],[3,4]], jointDistributions: [pair], jointPairBudget: 6, totalPossiblePairs: 1, omittedPairs: 0, jointPairSelection: 'declared_factor_order_then_derived_states_no_outcome_ranking' }, significance: { reason: 'overlapping_labels_and_cross_sectional_temporal_dependence_not_adjusted_for_factor_tests' } };
 const report = { forecasts: { factorResearch: { diagnostics } } };
-let remoteMode = false, pageCalls = [];
-const remote = { enabled: () => remoteMode, page(name) { pageCalls.push(name); return { loaded: true, items: name === 'factorFeatures' ? [feature] : [pair] }; } };
+let remoteMode = false, pageCalls = [], featureRows = [feature], pairRows = [pair];
+const remote = { enabled: () => remoteMode, page(name) { pageCalls.push(name); return { loaded: true, items: name === 'factorFeatures' ? featureRows : pairRows }; } };
 const renderer = createFactorDiagnostics(C, F, { remote, table, remoteState: (_page, html) => html });
 const original = JSON.stringify(report), main = dom.window.document.querySelector('main');
 main.innerHTML = renderer.render(report);
@@ -39,8 +41,34 @@ remoteMode = true;
 main.innerHTML = renderer.render({ forecasts: { factorResearch: { diagnostics: { ...diagnostics, features: undefined, dependence: { ...diagnostics.dependence, jointDistributions: undefined } } } } });
 assert.deepEqual(pageCalls, ['factorFeatures', 'factorJointDistributions']);
 assert(main.textContent.includes('one-asset'));
+const registered=JSON.parse(await fs.readFile(new URL('../../edge/financial/definitions.json',import.meta.url),'utf8')).items;
+assert.deepEqual(FINANCIAL_FEATURE_LABELS,Object.fromEntries(registered.map(x=>[x.expression,x.name])),'display catalogue matches registered financial formula names');
+const factors=registered.map(x=>({id:x.id,expression:x.expression,direction:1,role:'predictor'}));
+featureRows=[...factors.map(definition=>({...feature,name:'factor:'+definition.id,definition})),...['volatility20','change1','change5'].map(name=>({...feature,name,kind:'derived_state',definition:null}))];
+pairRows=[{...pair,x:featureRows[2].name,y:featureRows[3].name},{...pair,x:featureRows[0].name,y:'volatility20',counts:[],status:'insufficient_pairs'}];
+const financial={strategy:{factors:[{id:factors[2].id,expression:'unrelated',name:'当前草稿不应渗入'}]},forecasts:{sourceStrategy:{factors},factorResearch:{diagnostics:{...diagnostics,features:undefined,dependence:{...diagnostics.dependence,featureNames:featureRows.map(x=>x.name),jointDistributions:undefined,jointPairBudget:256,totalPossiblePairs:171,omittedPairs:0}}}}};
+const frozen=JSON.stringify(financial), rowsBefore=JSON.stringify(featureRows), pairsBefore=JSON.stringify(pairRows);
+for(const mode of ['easy','studio']) {
+  C.state.quantMode=mode;main.innerHTML=renderer.render(financial);
+  const cells=[...main.querySelector('table tbody').querySelectorAll('tr td:first-child')];
+  assert.deepEqual(cells.map(x=>x.firstChild.textContent),[...registered.map(x=>x.name),'20日状态变化波动','1日状态变化','5日状态变化']);
+  const titles=[...main.querySelectorAll('summary')].map(x=>x.textContent);
+  assert(titles.some(x=>x.includes('经营利润率 · 定义与统计口径')));
+  assert(titles.some(x=>x.includes('经营利润率 × 归母净利率')));
+  assert(titles.some(x=>x.includes('收入季度同比 × 20日状态变化波动')));
+  assert(!titles.some(x=>x.includes('factor:model_fin_')),'human summaries do not expose internal IDs');
+  assert(!main.textContent.includes('当前草稿不应渗入'));
+  assert(main.textContent.includes('256'),'joint budget comes from the frozen report');
+  assert([...main.querySelectorAll('code')].some(x=>x.textContent==='factor:model_fin_operating_margin'&&x.closest('details')),'single-factor detail preserves exact model feature key');
+  assert([...main.querySelectorAll('pre')].some(x=>x.textContent.includes(pairRows[1].x)),'unavailable joint table also retains input identifiers');
+}
+assert.equal(JSON.stringify(financial),frozen);assert.equal(JSON.stringify(featureRows),rowsBefore);assert.equal(JSON.stringify(pairRows),pairsBefore);
+const names=createFeatureLabeler({factors:[{id:'named',name:'冻结名称',expression:'old',direction:1},{id:'known',expression:'close',direction:1,version:1},{id:'changed',expression:'open',direction:1},{id:'model_fin_operating_margin',expression:'close',direction:1},{id:'inverse',expression:'model_fin_operating_margin',direction:-1}],catalog:[{id:'known',name:'已注册因子',expression:'close',version:1},{id:'changed',name:'错误的新定义',expression:'close'}]});
+assert.equal(names('factor:named'),'冻结名称');assert.equal(names('factor:known'),'已注册因子');assert.equal(names('factor:changed'),'factor:changed');
+assert.equal(names('factor:model_fin_operating_margin'),'factor:model_fin_operating_margin','reuse of a known ID with a different formula is not mislabeled');
+assert.equal(names('factor:inverse'),'经营利润率（反向）');assert.equal(names('factor:unknown'),'factor:unknown');
 main.innerHTML = renderer.render({ forecasts: {} });
 assert(main.textContent.includes('旧结果不会补造'));
 assert(!main.querySelector('table'));
-console.log(JSON.stringify({ chineseStatisticalMethodNotes: true, rawCodesInClosedDetails: true, frozenInputs: true, descriptiveNotOos: true, icNotTimeSeries: true, jointFrequencyProbabilityMargins: true, boundedRemoteCollections: true, absentEvidenceNotInvented: true, escapedNames: true, providerEvidence: false }));
+console.log(JSON.stringify({ chineseStatisticalMethodNotes: true, financialLabelCatalogueParity: true, frozenLabelsAcrossModes: true, sourceDefinitionPrecedence: true, unknownAndChangedFormulaFallback: true, originalFeatureOrderAndKeysPreserved: true, dynamicJointBudget: true, rawCodesInClosedDetails: true, frozenInputs: true, descriptiveNotOos: true, icNotTimeSeries: true, jointFrequencyProbabilityMargins: true, boundedRemoteCollections: true, absentEvidenceNotInvented: true, escapedNames: true, providerEvidence: false }));
 dom.window.close();

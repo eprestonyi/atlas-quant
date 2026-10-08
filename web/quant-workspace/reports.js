@@ -1,3 +1,4 @@
+import { reportFeatureLabeler, createFeatureLabeler } from './feature-labels.js';
 import { createModelFunctionEditor } from './model-function-editor.js';
 import { createFactorDiagnostics } from './factor-diagnostics.js';
 // Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
@@ -507,7 +508,7 @@ export function createForecastReports(C, F) {
           ['只保留模型自带状态', f.stateOnlyMse],
           ['因子增量改善 · 基准减当前', f.dateBalancedMseImprovement]
         ].map(([name, value]) => `<tr><td>${name}</td>${cell(value, 8)}</tr>`)
-      )}<div class="sq-report-stats">${stat('配对观察日期', fmt(f.pairedDates, 0), '相同目标、日期与双方有效成熟预测')}${stat('配对观测', fmt(f.pairedObservations, 0), '未把截面行数当作独立样本量')}${stat('相对 MSE 改善', pct(f.relativeMseImprovement), '负值表示加入因子后误差更高')}</div>${F.note(f.dateBalancedMseImprovement > 0 ? '这组因子在本次配对预测上降低了损失。该差异尚未进行因子增量显著性检验，不能解释为因果贡献或可获利。' : '这组因子没有降低本次配对预测损失。负向结果照常保留，不隐藏不利对照。', 'warning')}<p class="sq-subtle">实际移除的预测输入：${e((f.featuresRemoved || []).join('、'))}。基准在相同候选与验证预算内独立选模；冻结目标数量和事件/缺失输入掩码保持一致，但两个模型不一定生成相同范围的有效预测。对冲因子未被移除。</p>${incrementCoverage(f)}<div class="sq-actions">${F.button('forecast-baseline', '查看状态基准预测', { icon: 'book', small: true })}</div>${F.advanced(
+      )}<div class="sq-report-stats">${stat('配对观察日期', fmt(f.pairedDates, 0), '相同目标、日期与双方有效成熟预测')}${stat('配对观测', fmt(f.pairedObservations, 0), '未把截面行数当作独立样本量')}${stat('相对 MSE 改善', pct(f.relativeMseImprovement), '负值表示加入因子后误差更高')}</div>${F.note(f.dateBalancedMseImprovement > 0 ? '这组因子在本次配对预测上降低了损失。该差异尚未进行因子增量显著性检验，不能解释为因果贡献或可获利。' : '这组因子没有降低本次配对预测损失。负向结果照常保留，不隐藏不利对照。', 'warning')}<p class="sq-subtle">实际移除的预测输入：${e((f.featuresRemoved || []).map(reportFeatureLabeler(r, C.state.catalog?.factors || [])).join('、'))}。基准在相同候选与验证预算内独立选模；冻结目标数量和事件/缺失输入掩码保持一致，但两个模型不一定生成相同范围的有效预测。对冲因子未被移除。</p>${incrementCoverage(f)}<div class="sq-actions">${F.button('forecast-baseline', '查看状态基准预测', { icon: 'book', small: true })}</div>${F.advanced(
         '配对日期、模型与对照规则',
         `${daily ? remoteState(daily, '') : ''}${table(
           ['日期', '成熟配对数', '加入因子 MSE', '状态基准 MSE'],
@@ -759,13 +760,14 @@ export function createForecastReports(C, F) {
   }
   function fitDetail(fit) {
     if (!fit) return F.note('没有找到这个拟合记录。', 'warning');
-    return `<div class="sq-report-detail">${fit.status === 'invalid' ? F.note(fit.invalidReason === 'MISSING_MODEL_DATA' ? '这个时点缺少满足条件的训练输入，模型未能拟合。未来标签仍可能已经成熟，不把模型失败当作标签未到期。' : '本次拟合不可用：' + (fit.invalidReason || '未返回原因'), 'warning') : ''}<dl class="sq-key-values"><dt>估计器</dt><dd>${e(ESTIMATORS[fit.estimator] || fit.estimator)}</dd><dt>实际参数</dt><dd><code>${e(JSON.stringify(fit.params || {}))}</code></dd><dt>拟合时点</dt><dd>${e(d(fit.fitDate))}</dd><dt>训练观察日期</dt><dd>${e(d(fit.trainStart))} — ${e(d(fit.trainEnd))}</dd><dt>最晚标签成熟</dt><dd>${e(d(fit.labelEndMax))}</dd><dt>训练规模</dt><dd>${fmt(fit.trainDates, 0)} 日期 / ${fmt(fit.trainRows, 0)} 行</dd><dt>保留输入</dt><dd>${e((fit.featureNames || []).join('、'))}</dd></dl>${
+    const label = fit.functionArtifact?.featureConstruction ? createFeatureLabeler({ factors: fit.functionArtifact.featureConstruction.factors, catalog: C.state.catalog?.factors || [] }) : reportFeatureLabeler(ui.result, C.state.catalog?.factors || []);
+    return `<div class="sq-report-detail">${fit.status === 'invalid' ? F.note(fit.invalidReason === 'MISSING_MODEL_DATA' ? '这个时点缺少满足条件的训练输入，模型未能拟合。未来标签仍可能已经成熟，不把模型失败当作标签未到期。' : '本次拟合不可用：' + (fit.invalidReason || '未返回原因'), 'warning') : ''}<dl class="sq-key-values"><dt>估计器</dt><dd>${e(ESTIMATORS[fit.estimator] || fit.estimator)}</dd><dt>实际参数</dt><dd><code>${e(JSON.stringify(fit.params || {}))}</code></dd><dt>拟合时点</dt><dd>${e(d(fit.fitDate))}</dd><dt>训练观察日期</dt><dd>${e(d(fit.trainStart))} — ${e(d(fit.trainEnd))}</dd><dt>最晚标签成熟</dt><dd>${e(d(fit.labelEndMax))}</dd><dt>训练规模</dt><dd>${fmt(fit.trainDates, 0)} 日期 / ${fmt(fit.trainRows, 0)} 行</dd><dt>保留输入</dt><dd>${e((fit.featureNames || []).map(name => label(name)).join('、'))}</dd></dl>${
       fit.stateEffects?.length
         ? table(
             ['状态输入', '预测剩余变化效应', '是否观察到负向效应'],
             fit.stateEffects.map(
               (x) =>
-                `<tr><td>${e(x.feature)}</td>${cell(x.remainingChangeEffect, 7)}<td>${x.negativeEffectObserved ? '是' : '否'}</td></tr>`
+                `<tr><td>${e(label(x.feature))}</td>${cell(x.remainingChangeEffect, 7)}<td>${x.negativeEffectObserved ? '是' : '否'}</td></tr>`
             )
           ) + F.note('这是训练状态在四分位区间内扰动的条件效应，不是因果归因或均值回归证明。')
         : ''

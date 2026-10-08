@@ -1,3 +1,4 @@
+import { createFeatureLabeler } from './feature-labels.js';
 // Edits derive new immutable functions. Server resolves the owner-bound source and performs numeric inference.
 export function createModelFunctionEditor(C, F) {
   const { esc: e, fmt, api, openModal, download, toast } = C;
@@ -22,9 +23,10 @@ export function createModelFunctionEditor(C, F) {
   }
   function parameters(state) {
     const a = state.artifact, k = a.estimator.kind;
+    const label = createFeatureLabeler({ factors: a.featureConstruction?.factors || [], catalog: C.state?.catalog?.factors || [] });
     let body;
     if (k === 'constant') body = `<div class="sq-form-grid">${[0,1].map(n => parameter(state, `/estimator/value/${n}`, n ? '未来状态常量' : '入场状态常量')).join('')}</div>`;
-    else if (k === 'linear') body = `<div class="sq-form-grid">${[0,1].map(n => parameter(state, `/estimator/intercepts/${n}`, n ? '未来状态截距' : '入场状态截距')).join('')}</div>` + table(['输入（训练变换后）', '入场输出系数', '未来输出系数'], a.inputSchema.map((x, n) => `<tr><th scope="row">${e(x.name)}</th>${[0,1].map(o => `<td>${parameter(state, `/estimator/coefficients/${o}/${n}`, `${x.name} · ${o ? '未来' : '入场'}`)}</td>`).join('')}</tr>`));
+    else if (k === 'linear') body = `<div class="sq-form-grid">${[0,1].map(n => parameter(state, `/estimator/intercepts/${n}`, n ? '未来状态截距' : '入场状态截距')).join('')}</div>` + table(['输入（训练变换后）', '入场输出系数', '未来输出系数'], a.inputSchema.map((x, n) => `<tr><th scope="row">${e(label(x.name))}</th>${[0,1].map(o => `<td>${parameter(state, `/estimator/coefficients/${o}/${n}`, `${label(x.name)} · ${o ? '未来' : '入场'}`)}</td>`).join('')}</tr>`));
     else body = treeControls(state);
     return F.advanced('修改 F 的数值参数', body + F.note('修改后是未验证的新函数；原函数、预测与统计结果保持冻结。修改值不继承原模型的 IC、误差或拟合结论。'), true);
   }
