@@ -6,7 +6,7 @@ from ..engine import _prepare_data
 from ..financial_statements.prepare import _safe_rows
 from ..statistical_quant.schema import validate
 from .codec import decode, digest, encode, keys, require, sha, uuid
-from .profile import FORMAT, VERSION, DEFAULT_PROFILE
+from .profile import FORMAT, VERSION, VIEW_VERSION, DEFAULT_PROFILE
 from .manifest import validate_manifest
 
 FINGERPRINT_VERSION = "research_input_financial_v1"
@@ -47,7 +47,7 @@ def dataset_reference(value):
     require(
         value["format"] == FORMAT
         and type(value["version"]) is int
-        and value["version"] == VERSION,
+        and value["version"] in {VERSION, VIEW_VERSION},
         "DATASET_FORMAT",
         "Unknown dataset reference",
     )
@@ -60,6 +60,11 @@ def freeze_financial_input(
     dataset_reference(dataset_ref)
     manifest = validate_manifest(
         manifest_bytes, expected_root=dataset_ref["datasetRoot"], profile=profile
+    )
+    require(
+        dataset_ref["version"] == manifest["version"],
+        "DATASET_FORMAT",
+        "Dataset reference version differs from its actual manifest",
     )
     joined = next(
         c for c in manifest["components"] if c["componentId"] == "researchRows"
@@ -75,7 +80,7 @@ def freeze_financial_input(
         "schemaVersion": 2,
         "fingerprintVersion": FINGERPRINT_VERSION,
         "datasetRef": deepcopy(dataset_ref),
-        "sourceEvidenceClosure": "separate_research_dataset_v1",
+        "sourceEvidenceClosure": f"separate_research_dataset_v{manifest["version"]}",
         "rows": _safe_rows(result.data),
         "provenance": deepcopy(result.provenance),
         "dataFingerprint": audit["dataSha256"],
@@ -112,11 +117,23 @@ def restore_financial_input(strategy, snapshot_bytes, reader, authorized_registr
         type(snapshot["schemaVersion"]) is int
         and snapshot["schemaVersion"] == 2
         and snapshot["fingerprintVersion"] == FINGERPRINT_VERSION
-        and snapshot["sourceEvidenceClosure"] == "separate_research_dataset_v1",
+        and snapshot["sourceEvidenceClosure"]
+        in {"separate_research_dataset_v1", "separate_research_dataset_v2"},
         "DATASET_SNAPSHOT",
         "Unknown financial snapshot discriminator",
     )
     dataset_reference(snapshot["datasetRef"])
+    require(
+        snapshot["sourceEvidenceClosure"]
+        == f"separate_research_dataset_v{snapshot["datasetRef"]["version"]}",
+        "DATASET_FORMAT",
+        "Snapshot source discriminator differs from the referenced dataset version",
+    )
+    require(
+        snapshot["datasetRef"]["version"] == reader.manifest["version"],
+        "DATASET_FORMAT",
+        "Dataset reference version differs from source closure",
+    )
     require(
         snapshot["datasetRef"]["datasetRoot"] == reader.dataset_root,
         "DATASET_ROOT",

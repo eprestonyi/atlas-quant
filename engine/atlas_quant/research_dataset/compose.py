@@ -1,6 +1,6 @@
 """Offline typed closure construction, with real financial preparation."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from copy import deepcopy
 
 from ..financial_runner.trust import (
@@ -18,7 +18,15 @@ from ..financial_statements.prepare import _safe_rows
 from ..provider import _validate_panel
 from .codec import decode, digest, encode, keys, require, sha, uuid
 from .manifest import component_root, scope, validate_manifest
-from .profile import DEFAULT_PROFILE, FORMAT, PROFILE_ID, VERSION, check_profile
+from .profile import (
+    DEFAULT_PROFILE,
+    FORMAT,
+    PROFILE_ID,
+    VERSION,
+    VIEW_VERSION,
+    VIEW_PROFILE_ID,
+    check_profile,
+)
 
 
 @dataclass(frozen=True)
@@ -264,7 +272,7 @@ def prepared_payload(artifact):
     }
 
 
-def compose_dataset_components(
+def _compose_dataset_components(
     scope_value,
     market_bytes,
     financial_sources,
@@ -273,19 +281,38 @@ def compose_dataset_components(
     *,
     market_calendar_ref,
     profile=DEFAULT_PROFILE,
+    origin_view=None,
 ):
     """Return a complete manifest only after every bounded callback succeeds.
 
     write_part(component_id, ordinal, raw_bytes) must stage privately. The caller
     publishes only after the returned manifest is durable. No network or fit.
     """
+    child_profile = profile
+    if origin_view is not None:
+        origin_parts = (
+            len(origin_view.origin_bytes) + profile.part_bytes - 1
+        ) // profile.part_bytes
+        require(
+            profile.total_bytes > len(origin_view.origin_bytes)
+            and profile.max_parts > origin_parts
+            and profile.max_components > 1,
+            "DATASET_BUDGET",
+            "Origin exhausts the parent budget before financial preparation",
+        )
+        child_profile = replace(
+            profile,
+            total_bytes=profile.total_bytes - len(origin_view.origin_bytes),
+            max_parts=profile.max_parts - origin_parts,
+            max_components=profile.max_components - 1,
+        )
     sources, registry_raw, result = _prepare(
         scope_value,
         market_bytes,
         financial_sources,
         authorized_registry,
         market_calendar_ref,
-        profile,
+        child_profile,
     )
     payloads, components = [], []
     total, count = 0, 0
@@ -335,12 +362,34 @@ def compose_dataset_components(
         return item["componentRoot"]
 
     registry_root = add("registryEvidence", "registry_evidence", registry_raw, {}, [])
+    market_dependencies = [registry_root]
+    if origin_view is not None:
+        receipt = origin_view.receipt
+        require(
+            receipt["marketRoot"] == result.provenance["marketRoot"],
+            "DATASET_ROOT",
+            "Origin market bytes disagree with composition",
+        )
+        origin = decode(origin_view.origin_bytes, profile.total_bytes)
+        market_dependencies.append(
+            add(
+                "marketOrigin",
+                "snapshot_scope_origin",
+                origin_view.origin_bytes,
+                {
+                    "sourceBundleId": origin["source"]["bundleId"],
+                    "sourceSnapshotSha256": origin["source"]["snapshotSha256"],
+                    "marketRoot": receipt["marketRoot"],
+                },
+                [],
+            )
+        )
     market_root = add(
         "marketDataset",
         "market_dataset",
         market_bytes,
         {"marketRoot": result.provenance["marketRoot"]},
-        [registry_root],
+        market_dependencies,
     )
     prepared_roots, source_refs = [], []
     for i, (source, artifact) in enumerate(zip(sources, result.financial_artifacts)):
@@ -417,8 +466,8 @@ def compose_dataset_components(
     )
     manifest = {
         "format": FORMAT,
-        "version": VERSION,
-        "profile": PROFILE_ID,
+        "version": VIEW_VERSION if origin_view is not None else VERSION,
+        "profile": VIEW_PROFILE_ID if origin_view is not None else PROFILE_ID,
         "scope": deepcopy(scope_value),
         "marketCalendarRef": market_calendar_ref,
         "financialSources": source_refs,
@@ -435,3 +484,61 @@ def compose_dataset_components(
         for ordinal, offset in enumerate(range(0, len(raw), profile.part_bytes)):
             write_part(name, ordinal, raw[offset : offset + profile.part_bytes])
     return DatasetPublication(raw_manifest, result)
+
+
+def compose_dataset_components(
+    scope_value,
+    market_bytes,
+    financial_sources,
+    authorized_registry,
+    write_part,
+    *,
+    market_calendar_ref,
+    profile=DEFAULT_PROFILE,
+):
+    """Compose the unchanged version-1 direct market-input profile."""
+    return _compose_dataset_components(
+        scope_value,
+        market_bytes,
+        financial_sources,
+        authorized_registry,
+        write_part,
+        market_calendar_ref=market_calendar_ref,
+        profile=profile,
+    )
+
+
+def compose_snapshot_dataset_components(
+    view,
+    financial_sources,
+    authorized_registry,
+    write_part,
+    *,
+    market_calendar_ref,
+    profile=DEFAULT_PROFILE,
+):
+    """Compose version 2 only after revalidating its complete retained origin."""
+    from .snapshot_view import SnapshotMarketView, validate_snapshot_scope_origin
+
+    check_profile(profile)
+    require(
+        isinstance(view, SnapshotMarketView),
+        "DATASET_VIEW",
+        "An explicit snapshot market view is required",
+    )
+    checked = validate_snapshot_scope_origin(view.origin_bytes, profile=profile)
+    require(
+        checked.market_bytes == view.market_bytes,
+        "DATASET_VIEW_ORIGIN",
+        "Supplied market bytes differ from origin recomputation",
+    )
+    return _compose_dataset_components(
+        checked.receipt["targetScope"],
+        checked.market_bytes,
+        financial_sources,
+        authorized_registry,
+        write_part,
+        market_calendar_ref=market_calendar_ref,
+        profile=profile,
+        origin_view=checked,
+    )
