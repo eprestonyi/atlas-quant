@@ -6,7 +6,7 @@ Atlas Quant 是嵌入 Atlas 的开源统计量化研究工作区。先建立条�
 
 [Atlas Quant](https://atlas-aletheia.com/quant/) · [源码](https://github.com/eprestonyi/atlas-quant) · [Discussions](https://github.com/eprestonyi/atlas-quant/discussions) · [Issues](https://github.com/eprestonyi/atlas-quant/issues)
 
-**v0.5 已于 2026-10-08 部署并完成正式分片和冻结预测重放验收**，部署构建为 `0.5.0-bc615b2893be`。发布证据见 [v0.5 验收记录](docs/RELEASE_V05.md)，既有真实数据研究见 [v0.4 验收记录](docs/RELEASE_V04.md)，当前服务状态以 [health](https://atlas-aletheia.com/quant/api/health) 为准。大规模整池研究与四库历史覆盖仍在继续建设；实施进度与未完成项见 [REBUILD_PLAN.md](docs/REBUILD_PLAN.md)。
+**v0.6 已于 2026-10-08 部署，完整私有复现包与 Studio 确定语义已完成正式验收**。发布证据见 [v0.6 验收记录](docs/RELEASE_V06.md)，既有分片和真实数据研究见 [v0.5](docs/RELEASE_V05.md) 与 [v0.4](docs/RELEASE_V04.md)，当前服务状态以 [health](https://atlas-aletheia.com/quant/api/health) 为准。大规模整池研究与四库历史覆盖仍在继续建设；实施进度与未完成项见 [REBUILD_PLAN.md](docs/REBUILD_PLAN.md)。
 
 v0.5 加入完整分片产物、按需报告和独立分片审计。[传输协议](docs/BUNDLE_TRANSPORT_V1.md) · [验收过程与失败修复记录](docs/BUNDLE_ACCEPTANCE_A.md)
 
