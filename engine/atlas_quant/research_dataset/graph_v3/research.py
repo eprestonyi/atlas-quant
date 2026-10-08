@@ -15,7 +15,7 @@ from .snapshot import (validate_research_profile,restore_graph_for_research,free
 
 
 def run_graph_research(strategy,reader,authorized_registry,dataset_ref,*,research_profile,work_dir,
-                       plan_sink=None,progress=None):
+                       plan_sink=None,progress=None,finalize=None,deadline=None):
     """No providers/queues/execution; supervisor must also enforce live RSS/wall.
 
     Snapshot and full source bounds are checked before any model fit. The exact
@@ -26,7 +26,7 @@ def run_graph_research(strategy,reader,authorized_registry,dataset_ref,*,researc
     def check():
         peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*(1 if sys.platform=='darwin' else 1024)
         require(peak<=3*1024**3,'CAPACITY_MEMORY','Local graph profile exceeded 3 GiB RSS')
-        require(time.monotonic()-started<=900,'CAPACITY_TIMEOUT','Local graph profile exceeded 900 seconds')
+        require(time.monotonic()<=min(started+900,deadline if deadline is not None else started+900),'CAPACITY_TIMEOUT','Local graph profile exceeded 900 seconds')
         require(shutil.disk_usage(work_dir).free>=500*1024**2,'CAPACITY_DISK','Local graph profile requires 500 MiB free reserve')
     check()
     if progress:progress({'phase':'source_recomposition'})
@@ -47,7 +47,17 @@ def run_graph_research(strategy,reader,authorized_registry,dataset_ref,*,researc
         'maximumFitAttempts':maximum,'terminalOriginDates':dates_count,'terminalOrigins':len(origins),
         'jointPairBudget':256,'perFitWallSeconds':300,'logicalJoined':result.logical_joined})
     runtime=FitRuntime(check,maximum,progress)
-    report=_research_from_samples(strategy,panel,dates,audit,deepcopy(result.provenance),samples,plan_sink=plan_sink,runtime=runtime)
+    plans=[]
+    def planned(value):
+        plans.append(value)
+        if plan_sink is not None:plan_sink(value)
+    report=_research_from_samples(strategy,panel,dates,audit,deepcopy(result.provenance),samples,plan_sink=planned,runtime=runtime)
     check()
+    require(len(plans)==1,'GRAPH_RESEARCH_COVERAGE','One complete source-bound origin plan required')
+    if finalize is not None:
+        # Callback is process-local code, never accepted from serialized jobs.
+        # Source admission stays in this child and is never exported as a token.
+        finalize(report,snapshot,plans[0],result,check)
+        check()
     if progress:progress({'phase':'research_complete','fitCount':len(runtime.events)})
     return report,snapshot,tuple(runtime.events)

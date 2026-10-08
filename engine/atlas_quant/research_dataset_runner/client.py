@@ -30,7 +30,8 @@ class ResearchDatasetClient(DatasetClient):
         require(method == "GET", "DATASET_ROUTE")
         return super()._request(method, route, **kwargs)
 
-    def source_contract(self, job):
+    @staticmethod
+    def source_contract(job):
         """Legacy dataset/2 stays explicit; graph/3 uses a separate subclass."""
         reference = dataset_reference(job.get("datasetRef"))
         require(reference["version"] == 2)

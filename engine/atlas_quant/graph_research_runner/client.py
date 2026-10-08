@@ -6,7 +6,8 @@ from .spool import GraphResearchSpool
 
 
 class GraphResearchClient(ResearchDatasetClient):
-    def source_contract(self, job):
+    @staticmethod
+    def source_contract(job):
         reference = dataset_reference(job.get("datasetRef"))
         require(job.get("admissionProfile") == RESEARCH_PROFILE, "DATASET_INPUT_IDENTITY")
         require(job.get("resultTransport") == {"format": "atlas.quant.financial_bundle", "version": 2},

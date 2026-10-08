@@ -15,10 +15,15 @@ class FinancialGraphBundleSpool(BundleSpool):
             fail("BUNDLE_FORMAT", "新版金融分片引用无效。")
         return f"{collection}-{ordinal}"
 
-    def build(self, report, snapshot_raw, coverage, source_evidence):
+    def build(self, report, snapshot_raw, coverage, source_evidence, *, source_result, source_scope, precommit_check):
         raw = build_financial_graph_bundle(report, snapshot_raw, coverage, source_evidence,
                                            self.write_chunk, self.read_chunk)
-        self.write("manifest", raw)
+        from .research_dataset.graph_v3.coverage import verify_source_coverage
+        reader = FinancialGraphBundleReader(raw, self.read_chunk)
+        verify_source_coverage(reader, report["strategy"], source_result, source_scope,
+                               research_profile=source_evidence["admissionProfile"])
+        precommit_check()
+        self.write("manifest", raw)  # Recovery marker only after source-derived full-domain checks.
         return {"bundleId": sha(raw), "_bundleKey": self.key, "_bundleFormat": CAPABILITY}
 
     def reader(self, expected_id=None):
