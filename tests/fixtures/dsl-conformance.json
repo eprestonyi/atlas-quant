@@ -1,0 +1,292 @@
+{
+  "description": "Hand-checkable synthetic complete grid, not a market calendar or provider dataset",
+  "closeA": [
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117,
+    118,
+    119,
+    120,
+    121,
+    122,
+    123,
+    124
+  ],
+  "closeB": [
+    200,
+    202,
+    204,
+    206,
+    208,
+    210,
+    212,
+    214,
+    216,
+    218,
+    220,
+    222,
+    224,
+    226,
+    228,
+    230,
+    232,
+    234,
+    236,
+    238,
+    240,
+    242,
+    244,
+    246,
+    248
+  ],
+  "vol": 5,
+  "ext_observation": 7,
+  "cases": [
+    {
+      "expression": "returns(close,20)",
+      "lookback": 20,
+      "expected": [
+        0.1923076923076923,
+        0.1923076923076923
+      ]
+    },
+    {
+      "expression": "lag(close,20)",
+      "lookback": 20,
+      "expected": [
+        104,
+        208
+      ]
+    },
+    {
+      "expression": "delta(close,20)",
+      "lookback": 20,
+      "expected": [
+        20,
+        40
+      ]
+    },
+    {
+      "expression": "ts_mean(close,3)",
+      "lookback": 2,
+      "expected": [
+        123,
+        246
+      ]
+    },
+    {
+      "expression": "ts_std(close,3)",
+      "lookback": 2,
+      "expected": [
+        0.816496580927726,
+        1.632993161855452
+      ]
+    },
+    {
+      "expression": "ts_min(close,3)",
+      "lookback": 2,
+      "expected": [
+        122,
+        244
+      ]
+    },
+    {
+      "expression": "ts_max(close,3)",
+      "lookback": 2,
+      "expected": [
+        124,
+        248
+      ]
+    },
+    {
+      "expression": "ts_sum(close,3)",
+      "lookback": 2,
+      "expected": [
+        369,
+        738
+      ]
+    },
+    {
+      "expression": "ts_rank(close,3)",
+      "lookback": 2,
+      "expected": [
+        1,
+        1
+      ]
+    },
+    {
+      "expression": "rank(close)",
+      "lookback": 0,
+      "expected": [
+        0.5,
+        1
+      ]
+    },
+    {
+      "expression": "zscore(close)",
+      "lookback": 0,
+      "expected": [
+        -1,
+        1
+      ]
+    },
+    {
+      "expression": "log(close)",
+      "lookback": 0,
+      "expected": [
+        4.820281565605037,
+        5.5134287461649825
+      ]
+    },
+    {
+      "expression": "abs(close-130)",
+      "lookback": 0,
+      "expected": [
+        6,
+        118
+      ]
+    },
+    {
+      "expression": "sqrt(close)",
+      "lookback": 0,
+      "expected": [
+        11.135528725660043,
+        15.748015748023622
+      ]
+    },
+    {
+      "expression": "sign(close-130)",
+      "lookback": 0,
+      "expected": [
+        -1,
+        1
+      ]
+    },
+    {
+      "expression": "min(close,vol)",
+      "lookback": 0,
+      "expected": [
+        5,
+        5
+      ]
+    },
+    {
+      "expression": "max(close,vol)",
+      "lookback": 0,
+      "expected": [
+        124,
+        248
+      ]
+    },
+    {
+      "expression": "clip(close,110,120)",
+      "lookback": 0,
+      "expected": [
+        120,
+        120
+      ]
+    },
+    {
+      "expression": "-close",
+      "lookback": 0,
+      "expected": [
+        -124,
+        -248
+      ]
+    },
+    {
+      "expression": "+close",
+      "lookback": 0,
+      "expected": [
+        124,
+        248
+      ]
+    },
+    {
+      "expression": "(close+10)*2/4",
+      "lookback": 0,
+      "expected": [
+        67,
+        129
+      ]
+    },
+    {
+      "expression": "returns(lag(close,2),20)",
+      "lookback": 22,
+      "expected": [
+        0.196078431372549,
+        0.196078431372549
+      ]
+    },
+    {
+      "expression": "ts_std(returns(close,1),20)",
+      "lookback": 20,
+      "expected": null
+    },
+    {
+      "expression": "ts_mean(close,20)",
+      "lookback": 19,
+      "expected": [
+        114.5,
+        229
+      ]
+    },
+    {
+      "expression": "close/(close-close)",
+      "lookback": 0,
+      "expected": [
+        null,
+        null
+      ]
+    },
+    {
+      "expression": "zscore(vol)",
+      "lookback": 0,
+      "expected": [
+        null,
+        null
+      ]
+    },
+    {
+      "expression": "ts_std(close,1)",
+      "lookback": 0,
+      "expected": [
+        0,
+        0
+      ]
+    },
+    {
+      "expression": "ext_observation",
+      "lookback": 0,
+      "expected": [
+        7,
+        7
+      ]
+    }
+  ],
+  "invalid": [
+    "lag(close,-1)",
+    "returns(close,0)",
+    "returns(close,253)",
+    "lag(close,--1)",
+    "clip(close,2,1)",
+    "future(close,2)",
+    "close**2",
+    "42"
+  ]
+}

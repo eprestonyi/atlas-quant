@@ -1,5 +1,6 @@
 import {ApiError, textField, validateExpression} from './validation.mjs';
 import {reviewMessages} from './code-review-context.mjs';
+import {describeExpression} from './factor-language.mjs';
 import {NOW, random, json, parse, sha, rate, audit, body, safeError, factorItem} from './runtime.mjs';
 import {UniverseRuleError, compileUniverseCatalog, validateUniverseSelection, resolveUniverseSelection, universeResolutionHash, universeOptions} from './universe.mjs';
 
@@ -58,11 +59,178 @@ async function studioPublic(req,env,path){
  return null;
 }
 function sourceCode(value){textField(value,'研究代码',40000);return value;}
-function manualReview(language,code){const findings=[];const add=(severity,line,message,suggestion='')=>findings.push({severity,line,message,suggestion});if(language==='dsl'){try{const m=validateExpression(code);add('info',1,`表达式通过语法检查；引用 ${m.fields.length} 个字段，总回看 ${m.lookback} 个交易日。`);}catch(e){add('error',1,e.message);}}else{const lines=code.split('\n');for(let i=0;i<lines.length;i++){const x=lines[i];if(/\.shift\(\s*-|\.shift\(.*periods\s*=\s*-/.test(x))add('warning',i+1,'负位移可能把未来数据放进特征。','标签可使用未来值，但输入特征不可使用；按交易日拆分并清除跨窗标签。');if(/train_test_split/.test(x)&&!/shuffle\s*=\s*False/.test(x))add('warning',i+1,'随机拆分通常不适合金融时间序列。','使用按日期的验证，并防止同日不同股票跨入训练与测试。');if(/\.bfill\(|fillna\(.*bfill/.test(x))add('warning',i+1,'后向填充可能使用尚未公开的数据。','使用披露时间后的 as-of join，不把财报期末日期当作可用时间。');if(/(?:api[_-]?key|token|password)\s*=\s*['"][^'"]{12,}/i.test(x))add('error',i+1,'代码中可能包含明文凭据。','移除凭据。浏览器研究运行时不需要服务端 API token。');if(/pickle\.loads|eval\(|exec\(/.test(x))add('warning',i+1,'动态代码或反序列化需要谨慎审查。');}add('info',1,'本地检查仅覆盖规则；Python 语法和执行错误由隔离运行时实际报告。');}return {providerExecuted:false,mode:'manual',summary:findings.some(f=>f.severity==='error')?'有需要修正的问题。':'规则检查完成，请结合数据时点与研究目标审阅。',findings,patches:[]};}
-async function aiCodeReview(env,input,owner,req){const code=sourceCode(input.code);const language=['dsl','python'].includes(input.language)?input.language:'python';const base=manualReview(language,code);if(input.mode!=='ai')return base;await rate(env,'ai:'+owner,20,86400);await rate(env,'ai:global',500,86400);if(!env.AI)throw new ApiError('AI_UNAVAILABLE','AI 检查服务暂未配置，请先使用本地规则检查。',503);let answer;try{answer=await env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct',{messages:reviewMessages(language,code,input.strategy),max_tokens:2400,temperature:0.1});}catch{throw new ApiError('AI_PROVIDER_FAILED','AI 服务本次未成功返回，请稍后重试；本地规则检查仍可使用。',502);}const response=answer?.response,raw=(response&&typeof response==='object'?JSON.stringify(response):String(response||'')).slice(0,40000);let parsed;try{parsed=response&&typeof response==='object'&&!Array.isArray(response)?response:JSON.parse(raw.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{parsed={summary:raw||'模型返回空响应。',findings:[],patches:[]};}if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))parsed={summary:raw||'模型返回空响应。',findings:[],patches:[]};const safeString=(s,max=2000)=>String(s||'').slice(0,max);const review={providerExecuted:true,provider:'Cloudflare Workers AI',model:'@cf/qwen/qwen2.5-coder-32b-instruct',mode:'ai',summary:safeString(parsed.summary,12000),findings:Array.isArray(parsed.findings)?parsed.findings.filter(f=>f&&typeof f==='object').slice(0,30).map(f=>({severity:['error','warning','info'].includes(f.severity)?f.severity:'info',line:Number.isInteger(f.line)&&f.line>0?f.line:1,message:safeString(f.message),suggestion:safeString(f.suggestion)})):[],patches:Array.isArray(parsed.patches)?parsed.patches.slice(0,12).filter(p=>p&&typeof p==='object'&&typeof p.before==='string'&&p.before.length&&code.includes(p.before)&&typeof p.after==='string'&&p.after.length<40000).map(p=>({id:random(),title:safeString(p.title,120),before:p.before,after:p.after,reason:safeString(p.reason)})):[],localReview:base,reviewedAt:NOW(),codeSha256:await sha(code)};await audit(env,owner,'code.ai_review',review.codeSha256,{provider:review.provider,model:review.model});return review;}
+function manualReview(language, code) {
+  const findings = [];
+  const add = (severity, line, message, suggestion = '') =>
+    findings.push({ severity, line, message, suggestion });
+  if (language === 'dsl') {
+    try {
+      const m = validateExpression(code);
+      add(
+        'info',
+        1,
+        `表达式通过语法检查；引用 ${m.fields.length} 个字段，总回看 ${m.lookback} 个完整市场交易日网格间隔。`,
+      );
+    } catch (e) {
+      add('error', 1, e.message);
+    }
+  } else {
+    const lines = code.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const x = lines[i];
+      if (/\.shift\(\s*-|\.shift\(.*periods\s*=\s*-/.test(x))
+        add(
+          'warning',
+          i + 1,
+          '负位移可能把未来数据放进特征。',
+          '标签可使用未来值，但输入特征不可使用；按交易日拆分并清除跨窗标签。',
+        );
+      if (/train_test_split/.test(x) && !/shuffle\s*=\s*False/.test(x))
+        add(
+          'warning',
+          i + 1,
+          '随机拆分通常不适合金融时间序列。',
+          '使用按日期的验证，并防止同日不同股票跨入训练与测试。',
+        );
+      if (/\.bfill\(|fillna\(.*bfill/.test(x))
+        add(
+          'warning',
+          i + 1,
+          '后向填充可能使用尚未公开的数据。',
+          '使用披露时间后的 as-of join，不把财报期末日期当作可用时间。',
+        );
+      if (/(?:api[_-]?key|token|password)\s*=\s*['"][^'"]{12,}/i.test(x))
+        add(
+          'error',
+          i + 1,
+          '代码中可能包含明文凭据。',
+          '移除凭据。浏览器研究运行时不需要服务端 API token。',
+        );
+      if (/pickle\.loads|eval\(|exec\(/.test(x))
+        add('warning', i + 1, '动态代码或反序列化需要谨慎审查。');
+    }
+    add('info', 1, '本地检查仅覆盖规则；Python 语法和执行错误由隔离运行时实际报告。');
+  }
+  return {
+    providerExecuted: false,
+    mode: 'manual',
+    summary: findings.some((f) => f.severity === 'error')
+      ? '有需要修正的问题。'
+      : '规则检查完成，请结合数据时点与研究目标审阅。',
+    findings,
+    patches: [],
+  };
+}
+async function aiCodeReview(env, input, owner, req) {
+  const code = sourceCode(input.code);
+  const language = ['dsl', 'python'].includes(input.language) ? input.language : 'python';
+  const base = {
+    ...manualReview(language, code),
+    language,
+    codeSha256: await sha(code),
+    reviewedAt: NOW(),
+    correctnessCertified: false,
+  };
+  if (language === 'dsl') {
+    try {
+      base.deterministicFacts = describeExpression(code);
+    } catch {
+      base.deterministicFacts = {
+        status: 'invalid',
+        expression: code,
+        executionPerformed: false,
+        correctnessCertified: false,
+      };
+    }
+  }
+  if (input.mode !== 'ai') return base;
+  await rate(env, 'ai:' + owner, 20, 86400);
+  await rate(env, 'ai:global', 500, 86400);
+  if (!env.AI)
+    throw new ApiError('AI_UNAVAILABLE', 'AI 检查服务暂未配置，请先使用本地规则检查。', 503);
+  let answer;
+  try {
+    answer = await env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct', {
+      messages: reviewMessages(language, code, input.strategy),
+      max_tokens: 2400,
+      temperature: 0.1,
+    });
+  } catch {
+    throw new ApiError(
+      'AI_PROVIDER_FAILED',
+      'AI 服务本次未成功返回，请稍后重试；本地规则检查仍可使用。',
+      502,
+    );
+  }
+  const response = answer?.response,
+    raw = (
+      response && typeof response === 'object' ? JSON.stringify(response) : String(response || '')
+    ).slice(0, 40000);
+  let parsed;
+  try {
+    parsed =
+      response && typeof response === 'object' && !Array.isArray(response)
+        ? response
+        : JSON.parse(raw.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, ''));
+  } catch {
+    parsed = { summary: raw || '模型返回空响应。', findings: [], patches: [] };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    parsed = { summary: raw || '模型返回空响应。', findings: [], patches: [] };
+  const safeString = (s, max = 2000) => String(s || '').slice(0, max);
+  const review = {
+    providerExecuted: true,
+    provider: 'Cloudflare Workers AI',
+    model: '@cf/qwen/qwen2.5-coder-32b-instruct',
+    mode: 'ai',
+    summary: safeString(parsed.summary, 12000),
+    findings: Array.isArray(parsed.findings)
+      ? parsed.findings
+          .filter((f) => f && typeof f === 'object')
+          .slice(0, 30)
+          .map((f) => ({
+            severity: ['error', 'warning', 'info'].includes(f.severity) ? f.severity : 'info',
+            line: Number.isInteger(f.line) && f.line > 0 ? f.line : 1,
+            message: safeString(f.message),
+            suggestion: safeString(f.suggestion),
+          }))
+      : [],
+    patches: Array.isArray(parsed.patches)
+      ? parsed.patches
+          .slice(0, 12)
+          .filter(
+            (p) =>
+              p &&
+              typeof p === 'object' &&
+              typeof p.before === 'string' &&
+              p.before.length &&
+              code.includes(p.before) &&
+              typeof p.after === 'string' &&
+              p.after.length < 40000,
+          )
+          .map((p) => ({
+            id: random(),
+            title: safeString(p.title, 120),
+            before: p.before,
+            after: p.after,
+            reason: safeString(p.reason),
+          }))
+      : [],
+    localReview: base,
+    deterministicFacts: base.deterministicFacts,
+    correctnessCertified: false,
+    reviewedAt: NOW(),
+    codeSha256: base.codeSha256,
+  };
+  await audit(env, owner, 'code.ai_review', review.codeSha256, {
+    provider: review.provider,
+    model: review.model,
+  });
+  return review;
+}
 async function studioPrivate(req,env,path,owner){
  if(path==='/universes/resolve'&&req.method==='POST'){await rate(env,'universe-resolve:'+owner,60,60);const input=await body(req,200000);if(Object.keys(input).some(k=>k!=='selection'))throw new ApiError('INVALID_UNIVERSE_SELECTION','股票池解析仅接受 selection 规则。');return json(await resolveUniverseRules(env,input.selection));}
- if(path==='/expressions/lint'&&req.method==='POST'){const input=await body(req,12000);try{const result=validateExpression(input.expression);const external=result.fields.filter(x=>/^(?:pcd|fd|ext|model)_/.test(x));return json({valid:true,diagnostics:[],...result,availability:{status:external.some(x=>x.startsWith('pcd_')||!CATALOG.factors.some(f=>(f.requiredFields||[]).includes(x)))?'needs_mapping':'ready',reason:external.length?'外部字段需要真实数值及披露可用时间；语法检查不代表数据覆盖。':'运行前仍需检查标的与区间覆盖。'}});}catch(e){return json({valid:false,diagnostics:[{severity:'error',line:1,message:safeError(e).message}],fields:[],lookback:null,availability:{status:'unavailable'}});}}
+ if(path==='/expressions/lint'&&req.method==='POST'){const input=await body(req,12000);try{const result=validateExpression(input.expression);const external=result.fields.filter(x=>/^(?:pcd|fd|ext|model)_/.test(x));return json({valid:true,diagnostics:[],...result,expression:input.expression,codeSha256:await sha(input.expression),deterministicFacts:describeExpression(input.expression),availability:{status:external.some(x=>x.startsWith('pcd_')||!CATALOG.factors.some(f=>(f.requiredFields||[]).includes(x)))?'needs_mapping':'ready',reason:external.length?'外部字段需要真实数值及披露可用时间；语法检查不代表数据覆盖。':'运行前仍需检查标的与区间覆盖。'}});}catch(e){return json({valid:false,expression:typeof input.expression==='string'?input.expression:null,deterministicFacts:{status:'invalid',expression:typeof input.expression==='string'?input.expression:null,executionPerformed:false,correctnessCertified:false},diagnostics:[{severity:'error',line:1,message:safeError(e).message}],fields:[],lookback:null,availability:{status:'unavailable'}});}}
  if(path==='/code/review'&&req.method==='POST'){const input=await body(req,200000);return json({review:await aiCodeReview(env,input,owner,req)});}
  if(path==='/code/projects'&&req.method==='GET'){const rows=await env.DB.prepare('SELECT * FROM code_projects WHERE owner=? ORDER BY updated_at DESC LIMIT 100').bind(owner).all();return json({items:rows.results.map(r=>({id:r.id,name:r.name,language:r.language,code:r.code,version:r.version,createdAt:r.created_at,updatedAt:r.updated_at}))});}
  if(path==='/code/projects'&&req.method==='POST'){const input=await body(req,170000),name=textField(input.name,'项目名称',80),code=sourceCode(input.code);if(!['python','dsl'].includes(input.language))throw new ApiError('LANGUAGE','请选择 Python 或 DSL');const n=await env.DB.prepare('SELECT count(*) n FROM code_projects WHERE owner=?').bind(owner).first();if(n.n>=100)throw new ApiError('LIMIT','最多保存 100 个代码项目');const id=random(),time=NOW();await env.DB.prepare('INSERT INTO code_projects(id,owner,name,language,code,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').bind(id,owner,name,input.language,code,time,time).run();return json({item:{id,name,language:input.language,code,version:1,createdAt:time,updatedAt:time}},201);}
