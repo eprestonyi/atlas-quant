@@ -19,9 +19,9 @@ frozen evidence; numerical edits create unvalidated derived functions.
 | Complete filter and Easy flow | Actual local browser saved 1,000 members, then 12 after explicit filters; no subset picker | New production build and authenticated browser readback |
 | Automatic selection | Eight predeclared candidates, date-ordered nested validation, state-only comparator and preserved tails | Exact final commit CI; no claim of unbiased or universally optimal selection |
 | Portable F and diagnostics | Native function download agrees with Python evaluation; joint, marginal and conditional tables checked | Same behavior on deployed assets and independent owner workspace |
-| Market full-pool transport | Two-security loopback HTTP source → same-child F → both archives passed; 1,000-security run underway | Complete 1,000-security cold synthetic source/F transport and independent paired archive audit under unchanged limits |
+| Market full-pool transport | Two-security loopback HTTP passed; 1,000-security source completed with 2,001 receipts and 261,973 rows. First F publication failed at the legacy 50-target index guard; its failure remains retained | Fix the admitted full-scope index and rejected-output retention; a separately declared correction acceptance reuses this frozen source, followed by independent paired audit under unchanged limits |
 | Existing financial dataset/2 | Actual browser composition, auto research and native dual downloads passed for one synthetic security | Candidate runtime and authenticated hosted readback using frozen input |
-| Financial dataset/3 | 50-security source closure independently reconstructed; small thin snapshot/result bundle pair passed | Supervised 50-security F and paired audit, then separate hosted routes, claims, capability, publication and browser acceptance |
+| Financial dataset/3 | Supervised 50-security F completed with 2,050 main and baseline rows each. Fresh source reconstruction and independent source-derived full-domain audit passed; coordinated member/day/tail deletion attacks rejected | Separate hosted routes, claims, capability, publication and browser acceptance; the existing 50-security F is retained and is not repeated for these checks |
 | Source authenticity | Exact receipt, source and authorized registry identities retained | Synthetic acceptance never substitutes for provider or disclosure authentication; reuse previously frozen real evidence for canary |
 
 The graph dataset/3 and financial bundle/2 implementations currently expose a
@@ -30,6 +30,13 @@ authority. A fresh same-process restoration must recompute financial inputs
 from retained source and compare the full logical data before fitting.
 Publishing the general workbench does not implicitly publish graph admission.
 An unavailable profile must remain unavailable in the capability response/UI.
+
+The first 1,000-security F's manifest and 17 received chunks survived its rejection,
+but the old runner discarded its local result spool after acknowledging failure.
+That evidence is incomplete and cannot be presented as a reusable full model
+archive. Rejected deliveries must now retain encrypted original results and source
+references outside the automatic retry queue. A later correction acceptance is a
+new declared run, never a rewrite of that failed job or another source acquisition.
 
 ## Five services, four compute consumers
 
