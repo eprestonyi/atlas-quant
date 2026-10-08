@@ -1069,3 +1069,46 @@ test('a frozen parent/quarter package validates and an explicit revision preserv
  assert.equal(result.manifest.summary.input.selection.scope,'parent');assert.equal(result.manifest.summary.input.selection.flowBasis,'quarter');assert.equal(result.manifest.roots.inputRoot,validated.manifest.roots.inputRoot);assert.notEqual(result.manifest.roots.packRoot,validated.manifest.roots.packRoot);
  const read=(await (await request(`/financial/inputs/${data.input.id}`,{cookie:owner})).json()).input;assert.equal(read.parentId,initial.id);assert.equal(read.selection.scope,'parent');assert.equal(read.selection.flowBasis,'quarter');
 });
+
+test('completion between input and job reads cannot strand a validating UI snapshot', async () => {
+  const { inputDetail } = await import('../edge/financial/inputs.mjs');
+  await alive();
+  const src = await upload();
+  await queue(src);
+  const claimed = await claimJob();
+  const stored = await db.prepare('SELECT owner FROM financial_inputs WHERE id=?').bind(src.id).first();
+  let completed = false, batches = 0;
+  async function completeOnce() {
+    if (completed) return;
+    completed = true;
+    await publishValidation(claimed.job, src);
+  }
+  const racingDB = {
+    prepare(sql) {
+      return { bind(...args) {
+        const raw = db.prepare(sql).bind(...args);
+        return {
+          raw,
+          async first() {
+            const value = await raw.first();
+            // Reproduce completion after the old input SELECT but before its
+            // subsequent job SELECT. A coherent batch has no such gap.
+            await completeOnce();
+            return value;
+          },
+        };
+      } };
+    },
+    async batch(statements) {
+      batches++;
+      await completeOnce();
+      return db.batch(statements.map((statement) => statement.raw));
+    },
+  };
+  const detail = await inputDetail({ DB: racingDB }, stored.owner, src.id);
+  assert.equal(detail.latestJob.status, 'completed');
+  assert.equal(detail.input.status, 'ready_to_prepare');
+  assert.deepEqual(detail.input.selection, summary().input.selection);
+  assert.equal(detail.activeJob, null);
+  assert.equal(batches, 1);
+});

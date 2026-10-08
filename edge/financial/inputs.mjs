@@ -319,17 +319,23 @@ export async function queueOperation(req, env, owner, inputId, action) {
   };
 }
 export async function inputDetail(env, owner, inputId) {
-  const input = await ownedInput(env, owner, inputId),
-    job = await env.DB.prepare(
+  id(inputId);
+  // Completion updates these records together. Read one D1 snapshot so a
+  // terminal job cannot be paired with a stale input that stops UI polling.
+  const rows = await env.DB.batch([
+    env.DB.prepare('SELECT * FROM financial_inputs WHERE id=? AND owner=?')
+      .bind(inputId, owner),
+    env.DB.prepare(
       'SELECT * FROM financial_jobs WHERE owner=? AND input_id=? ORDER BY created_at DESC,id DESC LIMIT 1'
     )
-      .bind(owner, input.id)
-      .first(),
-    prep = await env.DB.prepare(
+      .bind(owner, inputId),
+    env.DB.prepare(
       'SELECT id,roots,metadata,created_at FROM financial_preparations WHERE owner=? AND input_id=? ORDER BY created_at DESC,id DESC LIMIT 1'
     )
-      .bind(owner, input.id)
-      .first();
+      .bind(owner, inputId),
+  ]);
+  const [input, job, prep] = rows.map((row) => row.results[0]);
+  if (!input) fail('NOT_FOUND', '财务输入不存在', 404);
   return {
     input: inputDTO(input),
     validation: parse(input.metadata, {})?.validation || null,
