@@ -33,6 +33,7 @@ CODECS = {
     "snapshot": "financial_json_v1",
 }
 PROFILES = {1: "financial_compose_50_v1", 2: "financial_snapshot_view_50_v1"}
+AUTO_PROFILE = "financial_fundamental_auto_50_v1"
 SNAPSHOT_KEYS = {
     "schemaVersion",
     "fingerprintVersion",
@@ -130,7 +131,7 @@ class FinancialBundleAudit(BundleAudit):
             and ref["format"] == "atlas.quant.research_dataset"
             and type(ref["version"]) is int
             and ref["version"] in PROFILES
-            and evidence["admissionProfile"] == PROFILES[ref["version"]],
+            and (evidence["admissionProfile"] == PROFILES[ref["version"]] or ref["version"] == 2 and evidence["admissionProfile"] == AUTO_PROFILE),
             "Unregistered dataset reference",
         )
         require(set(manifest["documents"]) == set(CODECS), "Required documents differ")
@@ -201,10 +202,19 @@ class FinancialBundleAudit(BundleAudit):
                 and strategy["research"]["mode"] == "statistical_quant"
                 and strategy["target"]["kind"] == "asset_price"
                 and strategy["model"]["family"] == "fundamental"
-                and strategy["model"]["estimator"] == "ridge"
+                and strategy["model"]["estimator"] == ("auto" if self.manifest["sourceEvidence"]["admissionProfile"] == AUTO_PROFILE else "ridge")
                 and strategy["execution"]["enabled"] is False,
                 "Financial forecast-only profile differs",
             )
+            if self.manifest["sourceEvidence"]["admissionProfile"] == AUTO_PROFILE:
+                from datetime import datetime
+                u = strategy["universe"]
+                span = (datetime.strptime(u["end"], "%Y%m%d")-datetime.strptime(u["start"], "%Y%m%d")).days
+                require(not u.get("selection") and 1 <= len(u["symbols"]) <= 50 and 0 <= span <= 366 and len(strategy["factors"]) <= 16
+                        and strategy["validation"]["innerFolds"] == strategy["validation"]["outerFolds"] == 2
+                        and strategy["model"]["refitDays"] >= 20
+                        and all(f["role"] == "predictor" for f in strategy["factors"])
+                        and not any(strategy.get("dataBindings", {}).values()), "Auto financial resource admission differs")
             prediction = {
                 k: v
                 for k, v in strategy.items()
@@ -234,7 +244,7 @@ class FinancialBundleAudit(BundleAudit):
         require(
             manifest["version"] == ref["version"]
             and manifest["profile"]
-            == self.manifest["sourceEvidence"]["admissionProfile"],
+            == PROFILES[ref["version"]],
             "Sidecar format/profile differs",
         )
         details = audit_semantics(manifest, payloads, check, pins)

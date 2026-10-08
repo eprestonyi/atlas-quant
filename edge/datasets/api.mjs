@@ -1,5 +1,6 @@
 import { datasetArchiveResponse } from './archive.mjs';
-import { researchEnabled, supportsFinancialDatasets } from './research.mjs';
+import { researchEnabled, supportsFinancialDatasets, supportsFinancialResearchProfile, FINANCIAL_AUTO_PROFILE } from './research.mjs';
+import { financialResearchAdmissions } from './research-profile.mjs';
 /** Owner-scoped control plane; result bytes remain private, bounded R2 parts. */
 import { body } from '../runtime.mjs';
 import { pageQuery } from '../financial/common.mjs';
@@ -21,6 +22,14 @@ import {
 } from './common.mjs';
 import { createPlan, startPlan, planDTO } from './plans.mjs';
 import { expire, cancelJob } from './jobs.mjs';
+async function financialResearchAvailability(env) {
+  const runner = await env.DB.prepare("SELECT value,updated_at FROM meta WHERE key='runner'").first();
+  const fresh = !!runner && Date.now()-Date.parse(runner.updated_at) < 120000;
+  const capability = parse(runner?.value, {});
+  return {ridge: fresh && supportsFinancialDatasets(capability),
+    auto: fresh && supportsFinancialResearchProfile(capability, FINANCIAL_AUTO_PROFILE)};
+}
+
 async function marketList(env, owner, url) {
   const { page, pageSize, offset } = pageQuery(url);
   const base = `FROM quant_bundle_runs b JOIN quant_bundle_stages s ON s.id=b.stage_id AND s.owner=b.owner AND s.status='committed' JOIN jobs j ON j.id=b.job_id AND j.owner=b.owner AND j.status='completed' JOIN quant_runs q ON q.job_id=j.id AND q.owner=j.owner AND q.kind='forecast' WHERE b.owner=?`;
@@ -111,18 +120,12 @@ export async function datasetApi(req, env, path, owner) {
     return null;
   const url = new URL(req.url);
   if (path === '/dataset-capabilities' && req.method === 'GET') {
-    const runner = await env.DB.prepare(
-        "SELECT value,updated_at FROM meta WHERE key='runner'",
-      ).first(),
-      online =
-        !!runner &&
-        Date.now() - Date.parse(runner.updated_at) < 120000 &&
-        supportsFinancialDatasets(parse(runner.value, {}));
+    const availability = await financialResearchAvailability(env), online = availability.ridge;
     return json({
       enabled: enabled(env),
       profile: PROFILE,
       composition: { ...(await runnerInfo(env)), capability: CAPABILITY },
-      forecast: { online, admissionProfile: PROFILE },
+      forecast: { online, admissionProfile: PROFILE, researchAdmissions: financialResearchAdmissions(researchEnabled(env), availability) },
       datasetFormats: ['atlas.quant.research_dataset/2'],
       financialResultFormats: ['atlas.quant.financial_bundle/1'],
       researchBindingEnabled: researchEnabled(env) && online,
@@ -260,6 +263,8 @@ export async function datasetApi(req, env, path, owner) {
         fail('DATASET_PAGE_BUDGET', '覆盖页超过大小限制', 413);
       return json(value);
     }
+    const availability = await financialResearchAvailability(env);
+    const researchAdmissions = financialResearchAdmissions(researchEnabled(env) && d.status === 'ready', availability, parse(d.scope));
     return json({
       datasetRef: datasetRef(d),
       name: d.name,
@@ -271,6 +276,8 @@ export async function datasetApi(req, env, path, owner) {
         configurationEligible: researchEnabled(env) && d.status === 'ready',
         sampleStatus: 'not_checked',
       },
+      researchAdmissions,
+      preferredResearchAdmission: researchAdmissions.find(x => x.estimator === 'auto' && x.configurationEligible && x.runnerAvailable) || null,
       researchBindingEnabled: researchEnabled(env) && d.status === 'ready',
       archiveUrl: `/quant/api/datasets/${d.id}/archive?datasetRoot=${d.dataset_root}`,
       sourceEvidenceClosure: 'separate_research_dataset_v2',

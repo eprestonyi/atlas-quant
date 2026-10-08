@@ -4,40 +4,12 @@ from copy import deepcopy
 
 from ..engine import _prepare_data
 from ..financial_statements.prepare import _safe_rows
-from ..statistical_quant.schema import validate
 from .codec import decode, digest, encode, keys, require, sha, uuid
 from .profile import FORMAT, VERSION, VIEW_VERSION, DEFAULT_PROFILE
 from .manifest import validate_manifest
+from .research_profile import validate_research_profile
 
 FINGERPRINT_VERSION = "research_input_financial_v1"
-
-
-def validate_research_profile(strategy, scope):
-    # Require explicit false before schema defaults can obscure user intent.
-    require(
-        isinstance(strategy, dict)
-        and strategy.get("schemaVersion") == 2
-        and isinstance(strategy.get("execution"), dict)
-        and strategy["execution"].get("enabled") is False,
-        "DATASET_FORECAST_ONLY",
-        "Financial dataset profile requires explicit forecast-only schema 2",
-    )
-    normalized = validate(strategy)
-    require(
-        normalized["research"]["mode"] == "statistical_quant"
-        and normalized["target"]["kind"] == "asset_price"
-        and normalized["model"]["family"] == "fundamental"
-        and normalized["model"]["estimator"] == "ridge",
-        "DATASET_RESEARCH_PROFILE",
-        "This profile admits only fundamental Ridge asset-price forecasts",
-    )
-    require(
-        {key: normalized["universe"][key] for key in ("symbols", "start", "end")}
-        == scope,
-        "DATASET_SCOPE",
-        "Research must use the exact frozen dataset universe and interval",
-    )
-    return normalized
 
 
 def dataset_reference(value):
@@ -55,7 +27,7 @@ def dataset_reference(value):
 
 
 def freeze_financial_input(
-    strategy, result, dataset_ref, *, manifest_bytes, profile=DEFAULT_PROFILE
+    strategy, result, dataset_ref, *, manifest_bytes, profile=DEFAULT_PROFILE, research_profile=None
 ):
     dataset_reference(dataset_ref)
     manifest = validate_manifest(
@@ -74,7 +46,7 @@ def freeze_financial_input(
         "DATASET_SNAPSHOT",
         "Composed rows/provenance do not match the referenced source closure",
     )
-    normalized = validate_research_profile(strategy, manifest["scope"])
+    normalized = validate_research_profile(strategy, manifest["scope"], research_profile=research_profile, dataset_version=manifest["version"])
     _, _, audit = _prepare_data(result.data, normalized, result.provenance)
     snapshot = {
         "schemaVersion": 2,
@@ -95,7 +67,7 @@ def freeze_financial_input(
     return snapshot
 
 
-def restore_financial_input(strategy, snapshot_bytes, reader, authorized_registry):
+def restore_financial_input(strategy, snapshot_bytes, reader, authorized_registry, *, research_profile=None):
     from .reader import restore_dataset_for_research
 
     snapshot = decode(snapshot_bytes, reader.profile.joined_bytes)
@@ -139,13 +111,14 @@ def restore_financial_input(strategy, snapshot_bytes, reader, authorized_registr
         "DATASET_ROOT",
         "Financial snapshot belongs to a different source closure",
     )
-    result = restore_dataset_for_research(strategy, reader, authorized_registry)
+    result = restore_dataset_for_research(strategy, reader, authorized_registry, research_profile=research_profile)
     regenerated = freeze_financial_input(
         strategy,
         result,
         snapshot["datasetRef"],
         manifest_bytes=reader.manifest_bytes,
         profile=reader.profile,
+        research_profile=research_profile,
     )
     require(
         encode(regenerated) == snapshot_bytes,

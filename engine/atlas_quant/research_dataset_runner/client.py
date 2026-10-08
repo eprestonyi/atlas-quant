@@ -15,6 +15,7 @@ from ..dataset_runner.protocol import (
     require,
 )
 from ..research_dataset.snapshot import dataset_reference
+from ..research_dataset.research_profile import admit_profile
 from ..research_dataset import DatasetReader
 from .spool import ResearchDatasetSpool
 
@@ -41,8 +42,10 @@ class ResearchDatasetClient(DatasetClient):
             "DATASET_INPUT_IDENTITY",
         )
         reference = dataset_reference(job.get("datasetRef"))
-        require(reference["version"] == 2 and job.get("admissionProfile") == PROFILE)
-        evidence = {"datasetRef": reference, "admissionProfile": PROFILE}
+        require(reference["version"] == 2)
+        research_profile = admit_profile(job.get("admissionProfile"), 2)
+        require(job.get("admissionProfile") == research_profile, "DATASET_INPUT_IDENTITY")
+        evidence = {"datasetRef": reference, "admissionProfile": research_profile}
         require(job.get("sourceEvidence") == evidence, "DATASET_INPUT_IDENTITY")
         route = job["id"] + "/"
         require(
@@ -79,7 +82,7 @@ class ResearchDatasetClient(DatasetClient):
             meta["job"] == {"id": job["id"], "kind": "forecast"}
             and meta["datasetRef"] == reference
             and meta["sourceEvidence"] == evidence
-            and meta["admissionProfile"] == PROFILE,
+            and meta["admissionProfile"] == research_profile,
             "DATASET_INPUT_IDENTITY",
         )
         require(meta["limits"] == LIMITS, "DATASET_LIMITS")

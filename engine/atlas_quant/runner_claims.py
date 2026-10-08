@@ -25,6 +25,8 @@ def claim_request(request_id, *, financial_datasets=False):
         request["transportFormats"].append("atlas.quant.financial_bundle/1")
         request["datasetFormats"] = ["atlas.quant.research_dataset/2"]
         request["snapshotFormats"] = ["financial_json_v1"]
+        from .research_dataset.research_profile import AUTO_PROFILE, SOURCE_PROFILES
+        request["financialResearchProfiles"] = [SOURCE_PROFILES[2], AUTO_PROFILE]
     return request
 
 
