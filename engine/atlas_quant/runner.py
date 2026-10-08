@@ -133,7 +133,7 @@ def prepare_job(job, config):
 
 
 def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None, snapshot_sink=None,
-            forecast_plan_sink=None, result_limit=None):
+            forecast_plan_sink=None, result_limit=None, compute_lock_path=None, deadline=None):
     """Run a single trusted edge job; callable locally with no queue interaction."""
     if not isinstance(job, dict) or not isinstance(job.get("strategy"), dict):
         raise RunnerError("INVALID_JOB", "任务缺少策略。")
@@ -217,7 +217,8 @@ def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None, snapsh
         scope = threadpool_limits(limits=2)
     except ImportError:
         scope = contextlib.nullcontext()
-    with scope:
+    from .compute_slot import compute_slot
+    with scope, compute_slot(compute_lock_path, deadline=deadline):
         result = run_research(strategy, data, provenance, forecast_plan_sink=forecast_plan_sink)
     _validate_result(result, limit=result_limit)
     if snapshot_sink is not None and strategy.get("research", {}).get("mode") == "statistical_quant":
@@ -243,7 +244,7 @@ def _validate_result(result, *, limit=None):
     return result
 
 
-def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot=False, bundle_context=None):
+def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot=False, bundle_context=None, compute_lock_path=None, deadline=None):
     try:
         snapshots, plans = [], []
         if bundle_context is not None:
@@ -264,7 +265,8 @@ def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture
             result = run_job(job, token=token, cache_dir=cache_dir, allowed_proxy_hosts=allowed_proxy_hosts,
                              snapshot_sink=snapshots.append if capture_snapshot else None,
                              forecast_plan_sink=plans.append if bundle_context is not None else None,
-                             result_limit=BUNDLE_LIMIT if bundle_context is not None else None)
+                             result_limit=BUNDLE_LIMIT if bundle_context is not None else None,
+                             compute_lock_path=compute_lock_path, deadline=deadline)
         if bundle_context is not None:
             coverage = plans[0] if plans else job.get("replay", {}).get("coverage")
             if coverage is None and job.get("jobKind") == "execution":
@@ -288,12 +290,12 @@ def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture
         connection.close()
 
 
-def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None, allowed_proxy_hosts=None, heartbeat=None, stop_requested=None, capture_snapshot=False, bundle_context=None):
+def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None, allowed_proxy_hosts=None, heartbeat=None, stop_requested=None, capture_snapshot=False, bundle_context=None, compute_lock_path=None):
     """Hard wall-clock process bound, with optional lease/cancellation callback."""
     ctx = multiprocessing.get_context("spawn")
     parent, child = ctx.Pipe(duplex=False)
-    process = ctx.Process(target=_child_entry, args=(child, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot, bundle_context), daemon=True)
     deadline = time.monotonic() + timeout
+    process = ctx.Process(target=_child_entry, args=(child, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot, bundle_context, compute_lock_path, deadline), daemon=True)
     process.start()
     child.close()
     next_heartbeat = time.monotonic() + 15
@@ -334,7 +336,7 @@ class QueueClient:
         self.session = session or requests.Session()
 
     def post(self, route, payload, *, deadline=None):
-        if route not in ("claim", "heartbeat", "complete", "snapshot", "replay", "bundles/begin", "bundles/finalize"):
+        if route not in ("claim", "heartbeat", "complete", "snapshot", "replay", "bundles/begin", "bundles/finalize", "financial-bundles/begin", "financial-bundles/finalize", "financial-bundles/complete"):
             raise RunnerError("QUEUE_ROUTE", "队列接口无效。")
         deadline = min(deadline, time.monotonic()+60) if deadline is not None else time.monotonic()+60
         try:
@@ -368,9 +370,9 @@ class QueueClient:
         except (requests.RequestException, ValueError, TypeError):
             raise RunnerError("QUEUE_NETWORK", "无法访问队列服务。") from None
 
-    def bundle_chunk(self, method, bundle_id, collection, ordinal, identity, *, raw=None, stage_id=None, deadline=None):
+    def bundle_chunk(self, method, bundle_id, collection, ordinal, identity, *, raw=None, stage_id=None, deadline=None, namespace="bundles"):
         from .bundle import HASH, COLLECTIONS, CHUNK_LIMIT
-        if (method not in ("GET", "PUT") or not isinstance(bundle_id, str) or not HASH.fullmatch(bundle_id)
+        if (namespace not in ("bundles", "financial-bundles") or method not in ("GET", "PUT") or not isinstance(bundle_id, str) or not HASH.fullmatch(bundle_id)
                 or collection not in COLLECTIONS or not isinstance(ordinal, int) or isinstance(ordinal, bool) or not 0 <= ordinal < 256):
             raise RunnerError("QUEUE_ROUTE", "分片接口身份无效。")
         if method == "PUT" and (not isinstance(raw, bytes) or len(raw) > CHUNK_LIMIT or not stage_id):
@@ -384,7 +386,7 @@ class QueueClient:
             remaining = deadline-time.monotonic()
             if remaining <= 0:
                 raise RunnerError("QUEUE_DEADLINE", "分片读取超过本次时间预算。")
-            url = self.base + f"/runner/bundles/{bundle_id}/chunks/{collection}/{ordinal}"
+            url = self.base + f"/runner/{namespace}/{bundle_id}/chunks/{collection}/{ordinal}"
             with self.session.request(method, url, data=raw, headers=headers, allow_redirects=False,
                     timeout=(min(10, remaining), min(35, remaining)), stream=True) as response:
                 if response.status_code != 200:
@@ -478,8 +480,17 @@ class CompletionSpool:
 def flush_completions(client, spool):
     from .runner_claims import ClaimIntent, claim_request, validate_receipt
     from .bundle_spool import BundleSpool, deliver_bundle
-    private_keys = {"_snapshotKey", "_claimRequestId", "_bundleKey", "_terminalConfirmed"}
+    private_keys = {"_snapshotKey", "_claimRequestId", "_bundleKey", "_bundleFormat", "_datasetKey", "_terminalConfirmed"}
     for path, payload in spool.pending():
+        bundle_format = payload.get("_bundleFormat", "atlas.quant.bundle/1")
+        if bundle_format not in {"atlas.quant.bundle/1", "atlas.quant.financial_bundle/1"}:
+            raise RunnerError("DELIVERY_INTEGRITY", "未知的持久结果格式；保留原件。")
+        store_class, deliver = BundleSpool, deliver_bundle
+        complete_route = "complete"
+        if bundle_format == "atlas.quant.financial_bundle/1":
+            from .financial_bundle_spool import FinancialBundleSpool, deliver_financial_bundle
+            store_class, deliver = FinancialBundleSpool, deliver_financial_bundle
+            complete_route = "financial-bundles/complete"
         request_id = payload.get("_claimRequestId")
         intent = {"requestId": request_id, "jobId": payload["id"], "leaseToken": payload["leaseToken"]}
         snapshot_key = payload.get("_snapshotKey")
@@ -489,7 +500,7 @@ def flush_completions(client, spool):
             snapshot_store = SnapshotSpool(spool)
             snapshot = snapshot_store.read(snapshot_key, payload)
         if payload.get("_bundleKey") is not None:
-            bundle_store = BundleSpool.from_spool(spool, payload)
+            bundle_store = store_class.from_spool(spool, payload)
             if bundle_store.key != payload["_bundleKey"]:
                 raise RunnerError("DELIVERY_INTEGRITY", "分片身份与待回传任务不一致。")
         delivery_deadline = time.monotonic()+BUNDLE_DELIVERY_SECONDS if bundle_store is not None else None
@@ -502,7 +513,7 @@ def flush_completions(client, spool):
                 terminal_discard = False
                 if not payload.get("_terminalConfirmed"):
                     if "bundleId" in payload:
-                        stage = deliver_bundle(client, spool, payload, deadline=delivery_deadline)
+                        stage = deliver(client, spool, payload, deadline=delivery_deadline)
                         terminal_discard = stage is None
                         if stage is not None and payload.get("stageId") != stage:
                             payload = dict(payload, stageId=stage)
@@ -512,10 +523,11 @@ def flush_completions(client, spool):
                         client.post("snapshot", {"id": payload["id"], "leaseToken": payload["leaseToken"],
                                                   "snapshot": snapshot})
                     if not terminal_discard:
+                        route = "complete" if "error" in public_payload else complete_route
                         if delivery_deadline is None:
-                            client.post("complete", public_payload)
+                            client.post(route, public_payload)
                         else:
-                            client.post("complete", public_payload, deadline=delivery_deadline)
+                            client.post(route, public_payload, deadline=delivery_deadline)
                 submitting_result = False
                 if request_id is not None:
                     receipt = (client.post("claim", claim_request(request_id)) if delivery_deadline is None
@@ -680,7 +692,8 @@ def _serve(config, spool, *, once=False):
             answer = input_error or execute_bounded(prepare_job(job, config), timeout=remaining,
                 token=None if job.get("jobKind") == "execution" else os.environ.get("TUSHARE_TOKEN"), cache_dir=config.get("cache_dir"),
                 allowed_proxy_hosts=config.get("allowed_proxy_hosts"), heartbeat=heartbeat,
-                stop_requested=lambda: STOP, capture_snapshot=job.get("jobKind") != "execution", bundle_context=bundle_context)
+                stop_requested=lambda: STOP, capture_snapshot=job.get("jobKind") != "execution", bundle_context=bundle_context,
+                compute_lock_path=config.get("compute_lock_path"))
             # Persist authenticated encrypted bytes before exact idempotent delivery.
             complete = dict(identity, _claimRequestId=intent["requestId"], **answer)
             if bundle_context is not None:

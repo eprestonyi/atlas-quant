@@ -596,6 +596,33 @@ def test_actual_child_is_killed_after_mid_compute_cancellation(tmp_path):
     assert not multiprocessing.active_children()
 
 
+def test_financial_child_waits_for_host_slot_with_original_deadline(tmp_path):
+    from atlas_quant.compute_slot import compute_slot
+
+    directory = tmp_path / "compute"
+    directory.mkdir(mode=0o700)
+    lock = str(directory / "host.lock")
+    spool, queue = FinancialSpool(config(tmp_path)), Queue()
+    monitor = service.LeaseMonitor(queue, queue.job)
+    monitor.deadline = time.monotonic() + 0.4
+    with compute_slot(lock, deadline=time.monotonic() + 5):
+        with pytest.raises(RunnerError) as error:
+            service.execute_bounded(
+                spool, queue.job, ({}, b"source", {}), monitor,
+                computer=child_compute, compute_lock_path=lock,
+            )
+        assert error.value.code in {"FINANCIAL_DEADLINE", "COMPUTE_SLOT_TIMEOUT"}
+        assert spool.publication(queue.job).manifest() is None
+    assert not multiprocessing.active_children()
+    # The deadline failure neither published a result nor leaked the host lock.
+    service.execute_bounded(
+        spool, queue.job, ({}, b"source", {}),
+        service.LeaseMonitor(queue, queue.job),
+        computer=child_compute, compute_lock_path=lock,
+    )
+    assert spool.publication(queue.job).manifest()
+
+
 def test_actual_child_durable_commit_survives_missing_pipe_ack(tmp_path, monkeypatch):
     spool, queue = FinancialSpool(config(tmp_path)), Queue()
     monkeypatch.setattr(service, "_child_entry", child_commit_without_ack)
