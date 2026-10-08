@@ -465,6 +465,10 @@ const fixture=bundleFixture({count:1,rowsPerChunk:100,mutate:({forecast,report,s
  const holdout=calendar[start+Math.floor((calendar.length-start)*0.8)];
  const definition=symbol=>{const d={kind:'asset_price',symbols:[symbol],quantities:[1],unit:'CNY_adjusted_research_price',construction:'single_asset',formationStart:null,formationEnd:null,hedgeAudit:{}};return {id:'target_'+hash(canonical(d)).slice(0,24),...d};};
  forecast.targetDefinitions=scope.symbols.map(definition);
+ forecast.hedgeFits=[];let lastConstruction=-100000;
+ for(let t=start;t<calendar.length;t+=observation)if(t-lastConstruction>=s.model.refitDays){
+  forecast.hedgeFits.push({date:calendar[t],informationCutoff:calendar[t-1],targetIds:[...scope.symbols].sort().map(s=>definition(s).id),status:'valid'});lastConstruction=t;
+ }
  const template=forecast.rows[0];let sampleCount=0;
  forecast.rows=[];
  for(let t=start;t<calendar.length;t+=observation){sampleCount+=scope.symbols.length;if(calendar[t]<holdout)continue;

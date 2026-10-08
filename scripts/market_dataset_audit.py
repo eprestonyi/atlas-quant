@@ -1376,6 +1376,73 @@ def factor_lookback(expression, fields, check):
     return lookback
 
 
+def asset_target_definition(symbol):
+    """Registered unit-asset identity, derived from a frozen source member only."""
+    content = dict(
+        kind="asset_price",
+        symbols=[symbol],
+        quantities=[1],
+        unit="CNY_adjusted_research_price",
+        construction="single_asset",
+        formationStart=None,
+        formationEnd=None,
+        hedgeAudit={},
+    )
+    return {"id": "target_" + sha(encode(content))[:24], **content}
+
+
+def validate_asset_hedge_fits(
+    audit, calendar, symbols, start, observation, refit, check
+):
+    """Check complete construction refs on every scheduled refit, before holdout too.
+
+    Unit-asset definitions exist even when source observations or future endpoints
+    are missing. Their construction status therefore stays valid and all member
+    IDs remain present; an invalid numerical sample is not a missing target.
+    """
+    check.require(
+        type(refit) is int and 20 <= refit <= 126,
+        "Invalid declared asset construction refit clock",
+        "RESULT_CLOCK",
+    )
+    expected_ids = [asset_target_definition(s)["id"] for s in sorted(symbols)]
+    positions, last = [], None
+    for t in range(start, len(calendar), observation):
+        if last is None or t - last >= refit:
+            positions.append(t)
+            last = t
+    check.require(
+        audit.count("hedgeFits") == len(positions),
+        "Asset construction fits omit or add full-source refit dates",
+        "RESULT_HEDGE_REFERENCES",
+    )
+    rows = iter(audit.rows("hedgeFits"))
+    for t in positions:
+        row = next(rows, None)
+        check.require(
+            isinstance(row, dict)
+            and set(row) == {"date", "informationCutoff", "targetIds", "status"}
+            and row["date"] == calendar[t]
+            and row["informationCutoff"] == calendar[t - 1]
+            and row["status"] == "valid"
+            and isinstance(row["targetIds"], list)
+            and row["targetIds"] == expected_ids,
+            "Asset construction clock/status or complete ordered raw target references differ",
+            "RESULT_HEDGE_REFERENCES",
+        )
+    check.require(
+        next(rows, None) is None,
+        "Extra raw asset construction fits",
+        "RESULT_HEDGE_REFERENCES",
+    )
+    return dict(
+        hedgeFitClockVerified=True,
+        fullHedgeTargetReferencesVerified=True,
+        expectedHedgeFits=len(positions),
+        hedgeFitTargetCount=len(expected_ids),
+    )
+
+
 def validate_asset_coverage(audit, manifest, strategy, check):
     """Derive the full symbol × terminal-origin grid without trusting plan/targets."""
     calendar, symbols = manifest["calendar"], manifest["scope"]["symbols"]
@@ -1489,17 +1556,7 @@ def validate_asset_coverage(audit, manifest, strategy, check):
             "Target is not a unique frozen single asset",
             "RESULT_TARGETS",
         )
-        content = dict(
-            kind="asset_price",
-            symbols=members,
-            quantities=[1],
-            unit="CNY_adjusted_research_price",
-            construction="single_asset",
-            formationStart=None,
-            formationEnd=None,
-            hedgeAudit={},
-        )
-        expected = {"id": "target_" + sha(encode(content))[:24], **content}
+        expected = asset_target_definition(members[0])
         # Registered bundle canonical numbers equate 1 and 1.0; never bool.
         quantities = target.get("quantities")
         check.require(
@@ -1561,7 +1618,11 @@ def validate_asset_coverage(audit, manifest, strategy, check):
         check.require(
             next(rows, None) is None, "Extra asset origins", "RESULT_COVERAGE"
         )
+    hedge_fits = validate_asset_hedge_fits(
+        audit, calendar, symbols, start, observation, strategy["model"]["refitDays"], check
+    )
     return dict(
+        **hedge_fits,
         fullAssetCoverageVerified=True,
         originClockVerified=True,
         targetDefinitionsVerified=True,
