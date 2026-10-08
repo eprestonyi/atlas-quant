@@ -199,7 +199,9 @@ def test_baseline_changes_only_factor_columns_preserving_every_origin_and_label(
 
     def fake_forecast(actual, strategy, **limits):
         captured.append((actual, strategy, limits))
-        return [], [], {}
+        from atlas_quant.statistical_quant.validation import forecast_origins
+        holdout, _ = forecast_origins(actual, strategy, max_forecasts=limits["max_forecasts"])
+        return [], [], {"holdoutStart": holdout, "selectionAudit": {}}
 
     monkeypatch.setattr(core, "forecast", fake_forecast)
     monkeypatch.setattr(
@@ -229,9 +231,10 @@ def test_baseline_changes_only_factor_columns_preserving_every_origin_and_label(
         check_exact=True,
     )
     assert captured[0][1] is captured[1][1]
-    assert (
-        captured[0][2] == captured[1][2] == {"max_forecasts": 60000, "runtime": runtime}
-    )
+    assert captured[0][2] == {"max_forecasts": 60000, "runtime": runtime}
+    # Baseline selection uses the identical samples/limits. Only the redundant
+    # portable-function export is suppressed; all baseline fits and rows remain.
+    assert captured[1][2] == {"max_forecasts": 60000, "runtime": runtime, "export_functions": False}
 
 
 @pytest.mark.parametrize(

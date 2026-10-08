@@ -1,0 +1,139 @@
+{
+  "schema": "atlas-factor-research-contract/1",
+  "appendOnlyReportExtension": true,
+  "paths": {
+    "functions": "forecasts.modelFits[].functionArtifact",
+    "functionReferences": "forecasts.factorResearch.modelFunctions",
+    "factorFeatures": "forecasts.factorResearch.diagnostics.features",
+    "factorJointDistributions": "forecasts.factorResearch.diagnostics.dependence.jointDistributions",
+    "selectionAudit": "forecasts.diagnostics.selectionAudit"
+  },
+  "function": {
+    "schema": "atlas-model-function/1",
+    "hashAlgorithm": "sha256-canonical-f64-json/1",
+    "identityAlgorithm": {
+      "omitTopLevel": "artifactId",
+      "numbers": "finite binary64; -0 becomes +0; numeric leaf becomes {\"$f64\":\"16 lowercase big-endian hexadecimal characters\"}; booleans remain booleans",
+      "objects": "ASCII keys sorted ascending, reject original $f64 key; max depth32",
+      "strings": "UTF-8 JSON, no ASCII escaping",
+      "serialization": "compact JSON, no whitespace",
+      "digest": "SHA256"
+    },
+    "allowedTopLevelKeys": [
+      "schema",
+      "hashAlgorithm",
+      "inputSchema",
+      "featureConstruction",
+      "transforms",
+      "estimator",
+      "training",
+      "scope",
+      "outputs",
+      "identity",
+      "provenance",
+      "editPolicy",
+      "lineage",
+      "artifactId"
+    ],
+    "estimatorKinds": {
+      "constant": {
+        "value": "two finite numbers"
+      },
+      "linear": {
+        "coefficients": "2 x featureCount finite matrix",
+        "intercepts": "two finite numbers"
+      },
+      "histogram_trees": {
+        "outputs": "two {baseline, trees} forests",
+        "nodeFields": [
+          "value",
+          "feature",
+          "threshold",
+          "left",
+          "right",
+          "leaf",
+          "missingLeft"
+        ],
+        "thresholdRule": "left_if_less_equal",
+        "leafValuesIncludeLearningRate": true
+      }
+    },
+    "transformOrder": [
+      "training_quantile_winsorization",
+      "training_median_imputation",
+      "training_mean_and_scale_standardization"
+    ],
+    "inputRows": "exact named finite-number-or-null feature mapping; no DSL evaluation in function evaluator",
+    "outputs": [
+      "entry_level_change_over_known_gross",
+      "exit_level_change_over_known_gross"
+    ],
+    "context": [
+      "currentState",
+      "scale"
+    ],
+    "identity": {
+      "V": "currentState + scale * output[1]",
+      "e": "currentState - V",
+      "expectedChange": "-e"
+    },
+    "editPaths": [
+      "/estimator/value/{output}",
+      "/estimator/intercepts/{output}",
+      "/estimator/coefficients/{output}/{feature}",
+      "/estimator/outputs/{output}/baseline",
+      "/estimator/outputs/{output}/trees/{tree}/{leaf}/0"
+    ],
+    "editRules": "finite numeric values only; tree topology/splits/training metadata immutable; new content hash, parent hash, UNVALIDATED_USER_EDIT; original validation not inherited",
+    "limits": {
+      "artifactBytes": 2097152,
+      "features": 128,
+      "treesPerOutput": 256,
+      "nodesPerTree": 255,
+      "inputRows": 25000,
+      "edits": 256
+    },
+    "golden": "engine/tests/fixtures/model-function-golden-v1.json"
+  },
+  "factorResearch": {
+    "schemaVersion": 1,
+    "modelFunctions": "[{modelFitId, artifactId, path}]",
+    "diagnostics": {
+      "period": "terminal_sequential_out_of_sample",
+      "target": "realized_exit_level_change_over_origin_known_gross",
+      "features": "[{name,kind,definition,missing,distribution,ic,rankIc,timeSeriesCorrelation,descriptiveFit}]",
+      "distributionKeys": [
+        "count",
+        "mean",
+        "variance",
+        "std",
+        "min",
+        "q01",
+        "q25",
+        "median",
+        "q75",
+        "q99",
+        "max"
+      ],
+      "ic": "per-date cross-sectional correlation, minimum3 finite varying target pairs; equal-valid-date summary; single-asset unavailable",
+      "timeSeriesCorrelation": "per-target Pearson/Spearman, explicitly not cross-sectional IC; target-id ordered cap32 with omitted count",
+      "descriptiveFit": "pooled terminal-sample univariate OLS slope/intercept/R², no p-values or IID standard errors; not OOS incremental or causal contribution",
+      "dependence": "featureNames + pairwise-complete correlation/covariance/pairCounts + jointDistributions",
+      "jointDistribution": "{x,y,status,xEdges,yEdges,counts,probabilities,sampleCount,missingPairCount,firstDate,lastDate,edgeSource,requestedBins,intervalConvention,interpretation}; null exterior edge denotes -/+infinity; empirical joint frequencies, not assumed density",
+      "jointSelection": "up to 256 declared feature pairs, factors first; includes every pair for admitted 16-factor profiles with at most 20 inputs; no outcome ranking; 5 requested quantile bins fixed once per axis from pre-terminal feature values, duplicate boundaries coalesced; historical reports retain their declared budget",
+      "significance": "unavailable for factor-level tests because overlap/dependence not adjusted",
+      "selectionUse": false
+    }
+  },
+  "selection": {
+    "mechanism": "family fixed by user before estimation",
+    "candidates": "predeclared finite estimator/regularization grid, hashed before fit",
+    "score": "equal-date joint entry/exit normalized MSE",
+    "choice": "minimum inner mean MSE; within best-fold heuristic1SE prefer predeclared lower complexity",
+    "warning": "dependent folds and few folds: this is an explicit selection heuristic, never a confidence interval or promise of no bias/overfit",
+    "evaluation": "purged nested inner selection, outer estimate, untouched-for-selection terminal window; sequential refits only matured past labels",
+    "budget": "includes factor-free nested baseline branch plus both sequential refit attempts",
+    "RL": false
+  },
+  "cli": "PYTHONPATH=engine python -m atlas_quant.statistical_quant.model_function function.json input.json --edits edits.json --output result.json"
+}

@@ -9,14 +9,14 @@ from ..research_dataset.codec import decode
 from .protocol import LIMITS, PROFILE, keys, require
 
 
-def compute_publication(job, inputs, write_part):
+def source_inputs(job, inputs, *, profile=PROFILE, job_kind="dataset_compose"):
     metadata, manifest_raw, snapshot_raw, packages, registry = inputs
     require(
         metadata["job"] == {k: job[k] for k in ("id", "kind", "planId", "deadline")},
         "DATASET_INPUT_IDENTITY",
     )
     plan, source = metadata["plan"], metadata["sources"]["market"]
-    require(plan["profile"] == PROFILE and job["kind"] == "dataset_compose")
+    require(plan["profile"] == profile and job["kind"] == job_kind)
     selection = plan["marketSource"]
     require(
         source["runId"] == selection["runId"]
@@ -73,6 +73,11 @@ def compute_publication(job, inputs, write_part):
                 tuple(entry["proofRefs"]),
             )
         )
+    return view, sources, registry, plan, expected
+
+
+def compute_publication(job, inputs, write_part):
+    view, sources, registry, plan, expected = source_inputs(job, inputs)
     publication = compose_snapshot_dataset_components(
         view,
         sources,

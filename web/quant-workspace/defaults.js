@@ -1,50 +1,12 @@
 // Versioned research defaults and client-side protocol checks; server validation remains authoritative.
 export const RESEARCH_MODE = 'statistical_quant';
 export const STEPS = [
-  {
-    id: 'universe',
-    name: '研究范围',
-    short: '股票池',
-    icon: 'database',
-    hint: '完整集合、筛选与明确研究成员',
-  },
-  {
-    id: 'state',
-    name: '因子与状态',
-    short: '状态',
-    icon: 'layers',
-    hint: '只使用观察时点已知的信息',
-  },
-  {
-    id: 'target',
-    name: '目标与期限',
-    short: '目标',
-    icon: 'chart',
-    hint: '定义要预测的价格或冻结数量篮子',
-  },
-  { id: 'model', name: 'F 预测模型', short: '模型', icon: 'model', hint: '声明机制，估计未来状态' },
-  {
-    id: 'validation',
-    name: '预测检验',
-    short: '检验',
-    icon: 'shield',
-    hint: '先检查预测，再评价交易',
-  },
-  { id: 'risk', name: '对冲与风险', short: '风险', icon: 'sliders', hint: '把预测与风险约束分开' },
-  {
-    id: 'execution',
-    name: '执行与成本',
-    short: '执行',
-    icon: 'wallet',
-    hint: '成交只引用有效的预测产物',
-  },
-  {
-    id: 'report',
-    name: '运行与报告',
-    short: '报告',
-    icon: 'book',
-    hint: '冻结配置，复核预测到成交的每一步',
-  },
+  { id: 'universe', name: '股票筛选', short: '筛选', icon: 'database', hint: '逐层加入和剔除条件，完整筛选结果就是研究票池' },
+  { id: 'model', name: '研究机制', short: '机制', icon: 'model', hint: '选择 F 所检验的经济或统计假设' },
+  { id: 'settings', name: '研究设置', short: '设置', icon: 'clock', hint: '定义数据、研究窗口、观察频率与预测期限' },
+  { id: 'state', name: '因子与状态', short: '因子', icon: 'layers', hint: '定义 X，拟合和方法选择由系统按时间验证完成' },
+  { id: 'validation', name: '拟合与检验', short: '检验', icon: 'shield', hint: '冻结候选协议，比较样本外预测误差与无变化基准' },
+  { id: 'report', name: 'F 模型与报告', short: '报告', icon: 'book', hint: '保存可复核的函数、拟合记录与因子证据' },
 ];
 export const FAMILIES = {
   mean_reversion: {
@@ -77,7 +39,7 @@ export const ESTIMATORS = {
 export function defaultStrategy() {
   return {
     schemaVersion: 2,
-    name: '我的统计量化研究',
+    name: '我的因子研究',
     research: { mode: RESEARCH_MODE, observationDays: 1 },
     universe: { symbols: [], start: '20230101', end: '20260930' },
     factors: [],
@@ -176,8 +138,8 @@ export function validateStrategy(
       errors.push(`${label}需要为 ${min}–${max}${integer ? ' 的整数' : ' 之间的数值'}。`);
   };
   if (!s.name?.trim()) errors.push('填写研究名称。');
-  if (!Array.isArray(u.symbols) || u.symbols.length < 1 || u.symbols.length > 50)
-    errors.push('明确选择 1–50 个研究成员。');
+  if (!Array.isArray(u.symbols) || u.symbols.length < 1)
+    errors.push('请计算股票筛选结果；完整集合至少需要一个成员。');
   else if (
     new Set(u.symbols).size !== u.symbols.length ||
     u.symbols.some((x) => !/^\d{6}\.(SH|SZ)$/.test(x))
@@ -202,9 +164,9 @@ export function validateStrategy(
       !/^[a-f0-9]{64}$/.test(u.snapshotHash || '') ||
       !/^[a-f0-9]{64}$/.test(u.resolutionHash || '')
     )
-      errors.push('股票池规则变化后需重新解析并确认成员。');
-    if (!['all', 'explicit'].includes(u.subsetPolicy))
-      errors.push('解析集合后，请明确确认完整结果或研究子集。');
+      errors.push('股票池规则变化后需重新计算完整集合。');
+    if (u.subsetPolicy !== 'all')
+      errors.push('因子研究使用完整筛选集合；请重新计算股票筛选结果。');
     if (u.catalogSnapshot !== undefined) {
       const snap = u.catalogSnapshot;
       const unknown =

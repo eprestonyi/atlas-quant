@@ -9,13 +9,15 @@ from ..financial_runner.spool import TERMINAL
 from ..runner import RunnerError
 from .client import DatasetClient
 from .compute import execute_bounded, safe_error
-from .delivery import deliver, settle_failure, terminal_status
+from .delivery import (
+    deliver, settle_failure, terminal_status, terminal_rejection, TERMINAL_REJECTIONS,
+)
 from .lease import LeaseMonitor, timestamp
 from .protocol import CAPABILITY, encode, identifier, require
 from .spool import DatasetSpool
 
 
-def validate_claim(response, state, base):
+def validate_claim(response, state, base, *, namespace="datasets", job_kind="dataset_compose"):
     receipt = response.get("claim") if isinstance(response, dict) else None
     require(
         isinstance(receipt, dict) and receipt.get("requestId") == state["requestId"],
@@ -42,14 +44,14 @@ def validate_claim(response, state, base):
     require(
         isinstance(job, dict)
         and job.get("id") == receipt["jobId"]
-        and job.get("kind") == "dataset_compose",
+        and job.get("kind") == job_kind,
         "DATASET_CLAIM_IDENTITY",
     )
     for key in ("id", "planId", "leaseToken"):
         identifier(job.get(key))
     expected = (
         urlsplit(base).path.rstrip("/")
-        + "/runner/datasets/jobs/"
+        + "/runner/" + namespace + "/jobs/"
         + job["id"]
         + "/input"
     )
@@ -69,11 +71,20 @@ def validate_claim(response, state, base):
     return status, job
 
 
-def _retain(error):
+def _retain(error, phase=None):
     """Transport ambiguity and corrupt private evidence cannot clear a claim."""
     code = error.code
     return (
         "SPOOL" in code
+        # The lease monitor also decodes successful HTTP receipts before
+        # delivery starts. Shared decoder codes are not a failed computation
+        # when a complete publication already exists.
+        or (phase == "publishing" and code in {
+            "FINANCIAL_JSON", "FINANCIAL_IDENTITY", "FINANCIAL_BYTE_BUDGET",
+            "DATASET_PROTOCOL",
+            "DATASET_ENCODING", "DATASET_BYTE_BUDGET", "DATASET_INTEGRITY",
+            "DATASET_LEASE",
+        })
         or code
         in {
             "DATASET_MANIFEST",
@@ -85,10 +96,12 @@ def _retain(error):
             "DATASET_COMPLETION_IDENTITY",
             "DATASET_TERMINAL_ACK",
             "DATASET_PART_ACK",
+            "DATASET_PUBLICATION_UNCERTAIN",
         }
         or (
             code == "DATASET_HTTP"
-            and error.http_status not in {400, 403, 404, 409, 413, 422}
+            and (error.http_status not in TERMINAL_REJECTIONS
+                 or (phase == "publishing" and not terminal_rejection(error)))
         )
     )
 
@@ -100,7 +113,14 @@ def run_once(
     heartbeat_client,
     *,
     stop_requested=None,
-    bounded_compute=execute_bounded
+    bounded_compute=execute_bounded,
+    capability=CAPABILITY,
+    claim_validator=validate_claim,
+    terminal_reader=terminal_status,
+    failure_settler=settle_failure,
+    delivery=deliver,
+    monitor_class=LeaseMonitor,
+    rejection_handler=None,
 ):
     state = spool.current_or_create()
     if state["phase"] == "terminal":
@@ -110,11 +130,11 @@ def run_once(
         "claim",
         {
             "requestId": state["requestId"],
-            "capability": CAPABILITY,
+            "capability": capability,
             "engineVersion": __version__,
         },
     )
-    status, job = validate_claim(response, state, config["api_base"])
+    status, job = claim_validator(response, state, config["api_base"])
     if status in TERMINAL:
         if state.get("job"):
             # A lost completion response may be confirmed by the original claim.
@@ -127,7 +147,7 @@ def run_once(
                     state = dict(
                         state, publication={"datasetRoot": sha(encode(manifest))}
                     )
-            observed, _ = terminal_status(client, state)
+            observed, _ = terminal_reader(client, state)
             require(observed == status, "DATASET_TERMINAL_ACK")
         spool.acknowledge(state, status)
         return
@@ -142,10 +162,10 @@ def run_once(
             )
         )
     if state["phase"] == "failing":
-        settle_failure(client, spool, state)
+        failure_settler(client, spool, state)
         return
     try:
-        with LeaseMonitor(
+        with monitor_class(
             heartbeat_client, job, stop_requested=stop_requested
         ) as monitor:
             if state["phase"] == "computing":
@@ -171,30 +191,33 @@ def run_once(
                     slot_path=config.get("compute_lock_path"),
                 )
                 state = spool.save(dict(state, phase="publishing"))
-            deliver(client, spool, state, monitor)
+            delivery(client, spool, state, monitor)
     except Exception as original:
         error = (
             original
             if isinstance(original, RunnerError)
             else RunnerError(**safe_error(original))
         )
-        if _retain(error):
-            raise error from None
         current = spool.read()
         require(current is not None, "DATASET_SPOOL_INTEGRITY")
+        if _retain(error, current["phase"]):
+            raise error from None
         rejected = safe_error(error)
-        if error.code == "DATASET_HTTP" and current["phase"] == "publishing":
+        if terminal_rejection(error) and current["phase"] == "publishing":
+            if rejection_handler is not None:
+                rejection_handler(spool, current, error)
             rejected = safe_error(
                 RunnerError("DATASET_RESULT_REJECTED", "发布被明确拒绝。")
             )
         current = spool.save(dict(current, phase="failing", error=rejected))
-        settle_failure(client, spool, current)
+        failure_settler(client, spool, current)
 
 
-def serve(config, *, once=False, stop_requested=None, client_factory=DatasetClient):
-    require(config.get("dataset_enabled") is True, "DATASET_DISABLED")
+def serve(config, *, once=False, stop_requested=None, client_factory=DatasetClient,
+          enabled_key="dataset_enabled", spool_type=DatasetSpool, capability=CAPABILITY, iteration=None):
+    require(config.get(enabled_key) is True, "DATASET_DISABLED")
     stop_requested = stop_requested or (lambda: False)
-    spool = DatasetSpool(config)
+    spool = spool_type(config)
     with spool.locked():
         client = client_factory(config)
         while not stop_requested():
@@ -207,7 +230,7 @@ def serve(config, *, once=False, stop_requested=None, client_factory=DatasetClie
                     ready = client.post(
                         "heartbeat",
                         {
-                            "capability": CAPABILITY,
+                            "capability": capability,
                             "engineVersion": __version__,
                             "state": "ready",
                         },
@@ -219,7 +242,7 @@ def serve(config, *, once=False, stop_requested=None, client_factory=DatasetClie
                     )
                     should_claim = ready["canClaim"]
                 if should_claim and not stop_requested():
-                    run_once(
+                    (iteration or run_once)(
                         config,
                         spool,
                         client,

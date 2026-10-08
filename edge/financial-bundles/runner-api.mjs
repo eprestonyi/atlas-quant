@@ -7,6 +7,7 @@ import { finalizeBundle } from '../bundles/verify.mjs';
 import { completeBundle } from '../bundles/publication.mjs';
 import { assertDatasetCommitment, verifySnapshotDataset } from './source.mjs';
 import { FINANCIAL_FORMAT, validateFinancialManifest, same } from './manifest.mjs';
+import {registeredFinancialProfile} from '../datasets/research-profile.mjs';
 
 /** assertRunDataset is a fixed server module supplied by worker dispatch, never
  * a client claim. It rechecks ownership, immutable admission and current pins. */
@@ -22,7 +23,7 @@ export async function financialBundleRunnerApi(req, env, path, { assertRunDatase
       !current ||
       !same(current.sourceEvidence, parsed.manifest.sourceEvidence) ||
       current.sourceEvidence?.datasetRef?.version !== 2 ||
-      current.sourceEvidence?.admissionProfile !== 'financial_snapshot_view_50_v1'
+      !registeredFinancialProfile(current.sourceEvidence?.admissionProfile, 2)
     )
       throw new ApiError('FINANCIAL_BUNDLE_SOURCE', '结果来源与原始数据集准入不一致', 409);
     assertDatasetCommitment(current, parsed);

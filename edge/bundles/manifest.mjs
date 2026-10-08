@@ -17,7 +17,7 @@ function atPath(value, path) {
   return value;
 }
 
-function skeleton(document, recipe, collections, artifactId, codec) {
+function skeleton(document, recipe, collections, artifactId, codec, collectionPaths) {
   const uses = new Set();
   let reference = false;
   const text = recipe.parts
@@ -81,7 +81,7 @@ function skeleton(document, recipe, collections, artifactId, codec) {
   for (const id of uses) if (!found.has(id)) fail('集合在实际文档中缺失', 'BUNDLE_LAYOUT');
   if (reference !== found.has('@forecast')) fail('报告缺少预测引用', 'BUNDLE_LAYOUT');
   if (document === 'report' && !reference) fail('报告必须引用完整预测文档', 'BUNDLE_LAYOUT');
-  for (const [id, [owner, path]] of Object.entries(COLLECTION_PATHS)) {
+  for (const [id, [owner, path]] of Object.entries(collectionPaths)) {
     if (owner !== document) continue;
     const actual = atPath(metadata, path);
     if (actual !== undefined && (!Array.isArray(actual) || !uses.has(id))) {
@@ -139,6 +139,8 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
   const bundleId = await sha(manifestText);
   if (expectedId !== null && bundleId !== expectedId)
     fail('manifest 原字节哈希不一致', 'BUNDLE_HASH');
+  const collectionPaths = protocol.collectionPaths ?? COLLECTION_PATHS;
+  const snapshotCollection = protocol.snapshotCollection ?? 'snapshotRows';
   const documentNames =
     manifest.kind === 'forecast'
       ? ['forecast', 'report', 'snapshot', 'coverage']
@@ -148,7 +150,7 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
     fail('完整文档集合缺失');
   if (
     !Array.isArray(manifest.collections) ||
-    manifest.collections.length > Object.keys(COLLECTION_PATHS).length
+    manifest.collections.length > Object.keys(collectionPaths).length
   )
     fail('集合目录无效');
   const collections = new Map();
@@ -157,7 +159,7 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
     rowCount = 0;
   for (const collection of manifest.collections) {
     keys(collection, ['id', 'document', 'path', 'rowCount', 'chunks'], 'collection');
-    const definition = COLLECTION_PATHS[collection.id];
+    const definition = collectionPaths[collection.id];
     if (
       !definition ||
       collections.has(collection.id) ||
@@ -223,7 +225,8 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
       document,
       collections,
       manifest.forecastArtifactId,
-      protocol.codecs?.[name] ?? 'forecast_json_v1'
+      protocol.codecs?.[name] ?? 'forecast_json_v1',
+      collectionPaths
     );
     for (const collection of collections.values())
       if (collection.document === name && !parsed.uses.has(collection.id))
@@ -243,7 +246,7 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
   ]) {
     if (!collections.has(id)) fail('完整研究缺少必需集合：' + id);
   }
-  if (manifest.kind === 'forecast' && !collections.has('snapshotRows'))
+  if (manifest.kind === 'forecast' && !collections.has(snapshotCollection))
     fail('预测研究缺少冻结数据');
   const forecast = metadata.forecast;
   if (
@@ -256,9 +259,9 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
   )
     fail('预测身份或完整记录数不匹配');
   if (
-    forecast.totalRows > 25000 ||
-    collections.get('targets').rowCount > 110000 ||
-    collections.get('modelFits').rowCount > 110000
+    forecast.totalRows > (protocol.maxForecastRows ?? 25000) ||
+    collections.get('targets').rowCount > (protocol.maxInputRows ?? 110000) ||
+    collections.get('modelFits').rowCount > (protocol.maxInputRows ?? 110000)
   )
     fail('未扩容的数值维度超过上限', 'BUNDLE_BUDGET', 413);
   const report = metadata.report;
@@ -288,8 +291,17 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
     (metadata.snapshot.schemaVersion !== protocol.snapshotVersion ||
       metadata.snapshot.dataFingerprint !== manifest.dataFingerprint ||
       !object(metadata.snapshot.provenance) ||
-      collections.get('snapshotRows').rowCount > 110000 ||
-      collections.get('snapshotRows').rowCount < 1)
+      (protocol.snapshotRowCountPath
+        ? atPath(metadata.snapshot, protocol.snapshotRowCountPath)
+        : collections.get(snapshotCollection).rowCount) > (protocol.maxInputRows ?? 110000) ||
+      !Number.isSafeInteger(
+        protocol.snapshotRowCountPath
+          ? atPath(metadata.snapshot, protocol.snapshotRowCountPath)
+          : collections.get(snapshotCollection).rowCount
+      ) ||
+      (protocol.snapshotRowCountPath
+        ? atPath(metadata.snapshot, protocol.snapshotRowCountPath)
+        : collections.get(snapshotCollection).rowCount) < 1)
   )
     fail('冻结数据格式或指纹无效');
   return { manifest, manifestText, bundleId, collections, metadata, rowCount };

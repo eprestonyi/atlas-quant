@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "status": "LOCAL_SYNTHETIC_CAPACITY_HTTP_AND_REPORT_ACCEPTED_PRODUCTION_CLOSED",
+  "admissionProfile": "pooled_asset_1000_trend_auto_v1",
+  "source": {
+    "format": "atlas.quant.market_dataset",
+    "version": 1
+  },
+  "transport": "atlas.quant.bundle/1",
+  "workerFlags": [
+    "MARKET_RESEARCH_ENABLED",
+    "MARKET_TREND_AUTO_ENABLED"
+  ],
+  "runnerFlags": [
+    "market_dataset_research_enabled",
+    "market_trend_auto_research_enabled"
+  ],
+  "defaultEnabled": false,
+  "capability": {
+    "field": "marketResearchProfiles",
+    "value": "pooled_asset_1000_trend_auto_v1"
+  },
+  "research": {
+    "family": "trend",
+    "estimator": "auto",
+    "targetKind": "asset_price",
+    "executionEnabled": false,
+    "modelScope": "pooled_all_symbols",
+    "membershipPolicy": "complete_filtered_set",
+    "maxSymbols": 1000,
+    "maxCalendarDaysInclusive": 366,
+    "maxFactors": 16,
+    "maxInputRows": 300000,
+    "maxSamples": 300000,
+    "maxForecastRowsPerBranch": 80000,
+    "innerFolds": 2,
+    "outerFolds": 2,
+    "minimumRefitCalendarSessions": 20,
+    "minimumObservationDays": 1,
+    "candidateConfigurations": 8,
+    "candidateFamilies": [
+      "no_change",
+      "historical_drift",
+      "ridge",
+      "elastic_net",
+      "hist_gradient_boosting"
+    ],
+    "factorFreeBaseline": "independent selection and fit with the same sample mask and endogenous trend states",
+    "targetTiming": "legacy_next_open_plus_h",
+    "terminalEvaluation": "sequential_out_of_sample_with_predeclared_matured_label_refits",
+    "selectionRule": "one_standard_error_complexity_heuristic_not_a_confidence_interval",
+    "biasOrOverfittingEliminated": false,
+    "reinforcementLearningIncluded": false
+  },
+  "limits": {
+    "wallSeconds": 900,
+    "fitSeconds": 300,
+    "rssBytes": 3221225472,
+    "cacheBytes": 419430400,
+    "minimumFreeDiskBytes": 524288000
+  },
+  "futureCapacityDeclaration": {
+    "performed": true,
+    "synthetic": true,
+    "providerCalls": 0,
+    "acceptanceMode": "one new supervised hosted HTTP forecast job reusing an existing complete frozen source",
+    "newSourceAcquisitionJobs": 0,
+    "offline1000FitsBeforeHttp": 0,
+    "maximumNewForecastJobs": 1,
+    "sourcePinPolicy": "declare exact existing dataset ID and root in a new private acceptance directory before submitting; do not replay a previous job",
+    "symbols": 1000,
+    "calendarSessions": 262,
+    "range": [
+      "20240101",
+      "20241231"
+    ],
+    "factorInputs": 16,
+    "builtinTrendInputs": 5,
+    "diagnosticInputs": 21,
+    "jointTables": 210,
+    "horizonSessions": 5,
+    "observationDays": 1,
+    "trainWindow": 120,
+    "refitDays": 20,
+    "minTrainDates": 40,
+    "mainForecastRows": 41000,
+    "baselineRows": 41000,
+    "maturePerBranch": 35000,
+    "tailPerBranch": 6000,
+    "scheduledFitsIfAllValid": 106,
+    "maximumFitAttempts": 182,
+    "planningCommand": "python scripts/benchmark-filter-universe.py --profile pooled_asset_1000_trend_auto_v1 --family trend --plan-only --output NEW_PRIVATE_DIRECTORY",
+    "requiredArtifacts": [
+      "supervised time, peak RSS and all fit attempts",
+      "original result and source archives",
+      "independent paired source/result audit",
+      "complete 21-input and 210-joint diagnostics",
+      "safe F resolve/evaluation",
+      "fresh HTTP terminal readback"
+    ],
+    "failurePolicy": "preserve original evidence; never truncate members, tail rows, factors or candidate list, and never raise guards to pass"
+  },
+  "evidence": {
+    "full1000CapacityVerified": true,
+    "hostedHttpVerified": true,
+    "browserVerified": true,
+    "productionDeployed": false,
+    "forecastEdgeValidated": false,
+    "browserScope": "completed report, full pair/source native downloads, original function resolution/evaluation; source rebinding and derived edit on latest UI pending Mac unlock"
+  },
+  "oldProfilePolicy": "pooled_asset_1000_auto_candidate_v1 remains mean_reversion only; pooled_asset_1000_v1 remains Ridge only",
+  "uiStatus": "Exact live profile admission and explicit immutable source reuse implemented; isolated DOM/Worker tests independently pass; final native source-rebinding/edit check pending",
+  "loopbackPreview": {
+    "flag": "--enable-trend-auto",
+    "defaultEnabled": false,
+    "resumePreservesOriginalStrategyAndSource": true,
+    "productionPermission": false
+  },
+  "scopeLimitations": [
+    "SH/SZ only",
+    "frozen current membership does not prove historical PIT membership",
+    "unknown or missing source fields never fetched by F job",
+    "no strategy or execution"
+  ],
+  "capacityAcceptance": {
+    "candidateCommit": "83a59b9990ee292c07db7d136a9a98968b918dfd",
+    "jobId": "51485737-c5d6-446e-9ed8-bc289e29354a",
+    "bundleId": "5de3bb3caba61e6c50190f078154f4ca24cc7780ef8281bba3ac2f48e5253437",
+    "sourceDatasetId": "aa0d7154-e609-4e4a-b2a7-e627c222139e",
+    "sourceRoot": "de21d8558a752c5626f0f42c62f73e46690121faec0ef054ae00d38e676eb2ed",
+    "sourceArchiveSha256": "2fe1f29a63ee638656f72ff5463807d9697af6f458bf71c85fd879c5d6cccf8f",
+    "resultArchiveSha256": "51ba359c5473d4970c86c12360e6183e2e1208b494fe5f60b6fc7500e05fde11",
+    "resultArchiveBytes": 123352064,
+    "engineSeconds": 23.945778708002763,
+    "httpConsumerSeconds": 44.087356042000465,
+    "peakRssBytes": 995819520,
+    "actualCacheBytes": 154415359,
+    "actualFitAttempts": 106,
+    "sourceAuditChecks": 32806260,
+    "resultAuditChecks": 808343,
+    "newSourceJobs": 0,
+    "providerCalls": 0,
+    "newForecastJobs": 1,
+    "remainingForecastBudget": 0,
+    "winner": "no_change",
+    "evidenceStatus": "NO_VALIDATED_FORECAST_EDGE"
+  }
+}

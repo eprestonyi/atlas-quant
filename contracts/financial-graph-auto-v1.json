@@ -1,0 +1,197 @@
+{
+  "status": "LOCAL_F_AND_INDEPENDENT_SOURCE_DOMAIN_VERIFIED_HOSTED_UNVERIFIED",
+  "admissionProfile": "financial_fundamental_graph_auto_50_v1",
+  "source": {
+    "format": "atlas.quant.research_dataset",
+    "version": 3,
+    "compositionProfile": "financial_snapshot_graph_50_v1"
+  },
+  "result": {
+    "format": "atlas.quant.financial_bundle",
+    "version": 2,
+    "snapshotSchemaVersion": 3
+  },
+  "research": {
+    "family": "fundamental",
+    "estimator": "auto",
+    "target": "asset_price",
+    "executionEnabled": false,
+    "symbols": 50,
+    "financialStates": 16,
+    "calendarDaysInclusive": 366,
+    "exactFrozenScopeRequired": true,
+    "innerFolds": 2,
+    "outerFolds": 2,
+    "minimumRefitCalendarSessions": 20,
+    "candidateCount": 8,
+    "factorFreeBaselineRequired": true
+  },
+  "authority": {
+    "registryPins": "separately authorized exact original registry bytes",
+    "freshRecomposition": "all raw financial package formulas in the same child, full component/root/row/provenance comparison",
+    "admission": "private process-local frame capability only after fresh source restore; JSON snapshot/boolean cannot grant it",
+    "syntheticPreserved": true,
+    "providerOrPdfAuthenticityImplied": false
+  },
+  "limits": {
+    "wallSeconds": 900,
+    "rssBytes": 3221225472,
+    "minimumFreeDiskBytes": 524288000,
+    "sourcePhysicalBytes": 67108864,
+    "logicalJoinedBytes": 25165824,
+    "logicalExpandedSnapshotBytes": 25165824,
+    "snapshotPhysicalBytes": 25165824,
+    "preparedPerInputBytes": 67108864,
+    "eventPerInputBytes": 33554432
+  },
+  "hosted": false,
+  "production": false,
+  "legacyClaimsAccepted": false,
+  "noBiasOrOverfitGuarantee": false,
+  "localFullScopeEvidence": {
+    "jobId": "094ca26b-91cf-4d6a-bb95-befd96440ae8",
+    "bundleId": "5fdc2c64d229a96a28c0c5cfa470b5fb2083193bf5bcf631585d559463feff73",
+    "datasetRoot": "cca665750bd7ba9d5eacc7ac7b0e54418397c35bf7f22fbb1981349d3cad3172",
+    "forecastArtifactId": "1c8b5993b206828ba9933591b48d648476c5304836cc8360f2addeac2c85f02a",
+    "symbols": 50,
+    "factorCount": 16,
+    "forecastRows": 2050,
+    "baselineRows": 2050,
+    "modelFits": 3,
+    "fitCount": 105,
+    "factorFeatures": 19,
+    "jointDistributions": 171,
+    "functionArtifacts": 3,
+    "selectedModel": {
+      "estimator": "no_change",
+      "id": "no_change:0",
+      "params": {}
+    },
+    "evidenceStatus": "NO_VALIDATED_FORECAST_EDGE",
+    "wallSeconds": 49.29672029198264,
+    "childPeakRssBytes": 574210048,
+    "archives": {
+      "dataset.tar": {
+        "byteLength": 28959232,
+        "sha256": "7af94be900b8e20db737802418a8902ad84df5e5ca5c395f09b6f7ce0e77dc09"
+      },
+      "financial.tar": {
+        "byteLength": 8948736,
+        "sha256": "11779d42283cc393e1666d12c55d2fe5f5e56e68f8449649c4da325cabbcdc74"
+      }
+    },
+    "providerCalls": 0,
+    "trades": 0,
+    "synthetic": true,
+    "terminalMatureRows": 1750,
+    "terminalTailRows": 300,
+    "candidateNonconvergenceRetained": {
+      "primaryOuterFold": "elastic_net:0",
+      "reason": "MODEL_DID_NOT_CONVERGE"
+    },
+    "exactSnapshot": {
+      "logicalExpandedSnapshot": {
+        "byteLength": 24925386,
+        "sha256": "97509cd81f3dfc9c542ce90c395794e1683abd59e128ea6763550818420b16d3"
+      },
+      "modelAdmissionRegistered": false,
+      "physicalSnapshot": {
+        "byteLength": 5183350,
+        "sha256": "9a9ddf7010f5331f7f18154e3accb37d909d93e25f27c6059edea131bb628da3"
+      },
+      "sourceAuthorityVerified": false
+    },
+    "independentPairedAudit": {
+      "auditor": "atlas.financial_graph_bundle.stdlib_audit/2",
+      "status": "PASS",
+      "resultChecks": 710319,
+      "sourceChecks": 3859466,
+      "engineImports": false,
+      "modelsFitted": 0,
+      "providerCalls": 0,
+      "maxAbsoluteError": 0.0,
+      "externalRegistryAndSourceBytesMatched": true,
+      "sourceForecastDomainVerified": true,
+      "sourceCoverage": {
+        "baselineRequired": true,
+        "coverageBasis": "frozen source calendar and all symbols; independently interpreted declared strategy clock",
+        "expectedForecastRows": 2050,
+        "expectedOriginDates": 41,
+        "factorLookback": 0,
+        "fullAssetCoverageVerified": true,
+        "holdoutStart": "20241105",
+        "invalidTailOriginsRetained": true,
+        "originClockVerified": true,
+        "originalRequestedStrategyAuthenticated": false,
+        "sampleStartIndex": 61,
+        "targetDefinitionsVerified": true
+      },
+      "inputValidityRecomputed": false,
+      "financialFormulasRecomputed": false,
+      "modelFunctionsReevaluated": false,
+      "researchStatisticsRecomputed": false,
+      "providerAuthenticityVerified": false,
+      "sourceAuthorityVerified": false,
+      "modelAdmissionRegistered": false,
+      "receipt": {
+        "path": "../atlas-quant-graph-audit/private/graph-source-domain-20261008-01/frozen-50-paired-audit.json",
+        "sha256": "eb319b6204de4a21e9a4bc0d36b946a47951c0b0a6c26a0dbc71d21d74980c53"
+      },
+      "coordinatedRemoval": {
+        "status": "PASS",
+        "allInnerHashesRebuilt": true,
+        "transportAndSelfConsistencyPassed": true,
+        "rejected": [
+          {
+            "attack": "half_pool",
+            "code": "RESULT_TARGETS",
+            "remainingForecastRows": 1025,
+            "remainingBaselineRows": 1025,
+            "remainingTargets": 25
+          },
+          {
+            "attack": "day",
+            "code": "RESULT_COVERAGE",
+            "remainingForecastRows": 2000,
+            "remainingBaselineRows": 2000,
+            "remainingTargets": 50
+          },
+          {
+            "attack": "tail",
+            "code": "RESULT_COVERAGE",
+            "remainingForecastRows": 1750,
+            "remainingBaselineRows": 1750,
+            "remainingTargets": 50
+          }
+        ],
+        "originalFilesUnchanged": true,
+        "originalFileCount": 21,
+        "receipt": {
+          "path": "../atlas-quant-graph-audit/private/graph-source-domain-20261008-01/coordinated-attack-summary.json",
+          "sha256": "e7a3650737ea1e47be48a48657cf49da815927cb9a3dbc1f0ff7b0e22abdf8c2"
+        }
+      }
+    },
+    "freshProcessRecomposition": {
+      "modelsFitted": 0,
+      "providerCalls": 0,
+      "snapshotExact": true,
+      "wallSeconds": 27.900111625000136,
+      "childPeakRssBytes": 643645440
+    },
+    "laterRevisionsAreNotNewFits": true,
+    "freshSourceDomainVerification": {
+      "modelsFitted": 0,
+      "providerCalls": 0,
+      "sourceForecastDomainVerified": true,
+      "inputValidityRecomputed": true,
+      "origins": 2050,
+      "symbols": 50,
+      "wallSeconds": 40.80366016598418,
+      "childPeakRssBytes": 724205568,
+      "receipt": "private/financial-graph-auto-50-20261008-01/fresh-recomposition-source-coverage/recomposition.json",
+      "independentStdlibCoveragePending": false
+    }
+  },
+  "hostedBlocker": "ISOLATED_HTTP_OWNER_LEASE_SOURCE_RESULT_AND_RECOVERY_ACCEPTANCE_REQUIRED: local source-domain verification is complete; hosted graph routes and full archive download acceptance remain unverified"
+}

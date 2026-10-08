@@ -1,0 +1,276 @@
+{
+  "status": "LOCAL_SOURCE_CLOSURE_IMPLEMENTED_NOT_MODEL_ADMITTED",
+  "format": "atlas.quant.research_dataset",
+  "version": 3,
+  "profile": "financial_snapshot_graph_50_v1",
+  "legacyInterpretationUnchanged": [
+    "atlas.quant.research_dataset/1",
+    "atlas.quant.research_dataset/2"
+  ],
+  "physicalLimits": {
+    "closureBytes": 67108864,
+    "manifestBytes": 262144,
+    "partBytes": 524288,
+    "parts": 256,
+    "components": 32,
+    "sourcePackagesAggregateBytes": 25165824,
+    "financialInputs": 8,
+    "symbols": 50,
+    "calendarDaysInclusive": 366,
+    "factors": 16
+  },
+  "workingAndLogicalLimits": {
+    "retainedCanonicalPayloadBytes": 67108864,
+    "preparedLogicalComponentBytes": 67108864,
+    "eventLogicalBytesPerPreparedComponent": 33554432,
+    "joinedLogicalDocumentBytes": 25165824,
+    "maximumCanonicalRowBytes": 65536,
+    "processRssBytes": 3221225472,
+    "jobWallSeconds": 900,
+    "minimumFreeDiskBytes": 524288000,
+    "aggregateLogicalPayloadsMayBeHashedSequentiallyButNotMaterializedTogether": true
+  },
+  "preparedComponent": {
+    "format": "atlas.quant.financial_prepared_graph",
+    "version": 1,
+    "encoding": "financial_json_v1",
+    "keys": [
+      "format",
+      "version",
+      "logicalPrepared",
+      "dependencies",
+      "calendars",
+      "events",
+      "assignments",
+      "panel",
+      "selection",
+      "provenance",
+      "coverage"
+    ],
+    "logicalPrepared": {
+      "keys": [
+        "sha256",
+        "byteLength",
+        "preparedRoot"
+      ],
+      "codec": "financial_json_v1"
+    },
+    "dependencies": {
+      "rowKeys": [
+        "id",
+        "value"
+      ],
+      "id": "sha256(financial_json_v1(value))",
+      "order": "strictly ascending id"
+    },
+    "calendars": {
+      "rowKeys": [
+        "id",
+        "value"
+      ],
+      "id": "sha256(financial_json_v1(value))",
+      "order": "strictly ascending id"
+    },
+    "events": {
+      "rowKeys": [
+        "id",
+        "symbol",
+        "stateId",
+        "computedAsOf",
+        "result",
+        "dependencyRefs",
+        "calendarRef"
+      ],
+      "result": "original result object excluding dependencies and calendar; retains original lineageHash",
+      "order": "original exact state-event order",
+      "id": "original canonical event hash after reference expansion",
+      "dependencyRefs": "ordered original dependencies, no new sorting",
+      "calendarRef": "registered dictionary id or null"
+    },
+    "assignments": "exact original ordered symbol/from/through/states interval assignments",
+    "panel": {
+      "keys": [
+        "symbols",
+        "sessions",
+        "stateIds",
+        "rowCount",
+        "columnNames"
+      ],
+      "order": "symbol then session; only exact original declared columns",
+      "derivation": "float(decimalValue) and availableDate when state status ok; else null; preserve signed zero and reject overflow/underflow"
+    },
+    "provenance": "exact legacy prepared provenance including preparedRoot",
+    "coverage": "exact legacy prepared coverage",
+    "limits": {
+      "events": 10000,
+      "dependencyObjects": 20000,
+      "calendarObjects": 8,
+      "dependencyRefsPerEvent": 128,
+      "assignments": 10000,
+      "panelRows": 110000,
+      "referenceDepth": 1,
+      "panelSessions": 366
+    },
+    "validation": [
+      "exact closed keys",
+      "unique ids",
+      "no dangling or unused dictionary entries",
+      "no recursive references",
+      "original event/lineage hash matches",
+      "assignment coverage unique and complete",
+      "availability never after assigned observation",
+      "stream exact prepared payload hash",
+      "registry independently authorized before recomposition"
+    ],
+    "selection": "exact original input package selection; used to reconstruct the original preparedRoot body"
+  },
+  "numericComponent": {
+    "format": "atlas.quant.exact_column_table",
+    "version": 1,
+    "keys": [
+      "format",
+      "version",
+      "rowCount",
+      "columns",
+      "logicalRows"
+    ],
+    "columnKeys": {
+      "number": [
+        "name",
+        "kind",
+        "values"
+      ],
+      "dictionary": [
+        "name",
+        "kind",
+        "dictionary",
+        "indices"
+      ]
+    },
+    "logicalRows": {
+      "keys": [
+        "sha256",
+        "byteLength"
+      ],
+      "codec": "financial_json_v1"
+    },
+    "numbers": "finite JSON tokens preserving integer versus float and negative floating zero; null represents missing only",
+    "dictionary": "string/null values in first-occurrence order with bounded integer indices; no recursive values",
+    "rows": "all columns have exact rowCount; original row order preserved",
+    "limits": {
+      "rows": 110000,
+      "columns": 128,
+      "columnNameBytes": 96,
+      "dictionaryEntries": 110000,
+      "stringCellBytes": 256,
+      "physicalBytes": 25165824,
+      "logicalRowsBytes": 25165824
+    }
+  },
+  "rootPolicy": {
+    "originalRootsPreserved": [
+      "sourceSnapshotSha256",
+      "sourceBundleId",
+      "inputRoot",
+      "packRoot",
+      "preparedRoot",
+      "calendarRoot",
+      "marketRoot",
+      "financialDatasetRoot"
+    ],
+    "newIdentities": [
+      "datasetRoot",
+      "componentRoot",
+      "graphPayloadSha256",
+      "numericColumnPayloadSha256"
+    ],
+    "sourceBytes": "original financial packages, source snapshot and independently authorized registry records retained exactly",
+    "noTrustFromSelfDeclaredRoots": true
+  },
+  "admission": {
+    "hosted": false,
+    "production": false,
+    "legacyRunnerMayClaim": false,
+    "modelFitRequiredForSourceCreation": false
+  },
+  "componentEvidence": {
+    "status": "PASS_COMPONENTS_ONLY",
+    "symbols": 50,
+    "rows": 13100,
+    "states": 16,
+    "calendarDaysInclusive": 366,
+    "preparedGraphBytes": 15919030,
+    "numericColumnTableBytes": 5060771,
+    "completeLogicalJoinedBytes": 24870637,
+    "completeLogicalJoinedSha256": "b48e2df426902027cbbb5b438571d300490e19cc4f61f2718f131ff9312e1a69",
+    "physicalComponentsAndManifestReserveBytes": 28720595,
+    "childPeakRssBytes": 555859968,
+    "childWallSeconds": 10.174308249988826,
+    "providerCalls": 0,
+    "modelsFitted": 0,
+    "sourceRecompositionFromRawPerformed": false,
+    "completeDatasetManifestImplemented": false,
+    "wholeSystemAccepted": false,
+    "joinedMeasurementQualification": "Prototype measurement used pre-normalization market integers, not the actual legacy-normalized joined model input; numbers and evidence retained unchanged. Superseded as a final joined oracle by sourceClosureEvidence."
+  },
+  "numericEnvelope": {
+    "keys": [
+      "schemaVersion",
+      "numericInput",
+      "provenance",
+      "logicalJoined"
+    ],
+    "schemaVersion": 1,
+    "numericInput": "atlas.quant.exact_column_table/1",
+    "logicalJoined": {
+      "keys": [
+        "sha256",
+        "byteLength"
+      ],
+      "reconstruction": "exact schemaVersion=1 rows/provenance after unchanged legacy numeric-panel normalization"
+    },
+    "rawSourceIdentity": "Original market int/float tokens remain exact in marketDataset and marketOrigin; model-panel normalization is a distinct existing semantic step."
+  },
+  "sourceClosureEvidence": {
+    "status": "PASS_SOURCE_CLOSURE_ONLY",
+    "datasetRoot": "cca665750bd7ba9d5eacc7ac7b0e54418397c35bf7f22fbb1981349d3cad3172",
+    "symbols": 50,
+    "rows": 13100,
+    "states": 16,
+    "calendarDaysInclusive": 366,
+    "physicalClosureBytes": 28924215,
+    "manifestBytes": 13767,
+    "parts": 60,
+    "components": 10,
+    "logicalJoined": {
+      "byteLength": 24923037,
+      "sha256": "8077543843d06f7f575f606da27ec4fa378155be5e716435aed9cf4ea5ff072b"
+    },
+    "financialDatasetRoot": "a8c26a623bb79b0503c010f504065d7aa6fb05db304d528e81a78afd5e0a5bc9",
+    "dataFingerprint": "7153e3436e2aa3aa2997d115c6b09799c775b285b9b5f0672c6cfd5846104975",
+    "sourceValidation": {
+      "authorityMeaning": "independently_authorized_registry_bytes_and_recomputed_frozen_packages",
+      "completeHistoricalVersionsVerified": false,
+      "financialRecomputed": true,
+      "modelAdmissionRegistered": false,
+      "originalAsPublishedVerified": false,
+      "revisionTimeVerified": false,
+      "sourceAuthorityVerified": true,
+      "synthetic": true
+    },
+    "providerCalls": 0,
+    "modelsFitted": 0,
+    "modelAdmissionRegistered": false,
+    "hosted": false,
+    "production": false,
+    "buildChildWallSeconds": 17.801581332983915,
+    "buildPeakRssBytes": 680263680,
+    "recomposeChildWallSeconds": 17.294001750007737,
+    "recomposePeakRssBytes": 739573760,
+    "separateProcessRawRecomposition": true,
+    "actualLegacy50DatasetExists": false,
+    "oracle": "actual small old-v2/new-v3 equality plus full-scope retained-component numeric normalization; no successful legacy 50 dataset exists",
+    "independentArchiveAudit": false,
+    "thinSnapshot": false
+  }
+}

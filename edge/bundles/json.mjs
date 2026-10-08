@@ -47,7 +47,8 @@ function canonicalNumber(token, codec) {
   if (/^-?(?:0|[1-9]\d*)$/.test(token)) return token !== '-0';
   const number = Number(token);
   if (!Number.isFinite(number)) return false;
-  if (codec === 'financial_json_v1') return token === floatToken(number);
+  if (['financial_json_v1', 'financial_column_snapshot_v1'].includes(codec))
+    return token === floatToken(number);
   if (Number.isInteger(number)) return false;
   return token === floatToken(number);
 }
@@ -78,7 +79,8 @@ export function parseStrictJson(
   text,
   { canonical = true, sensitive = true, codec = 'forecast_json_v1' } = {}
 ) {
-  if (!['forecast_json_v1', 'financial_json_v1'].includes(codec)) fail('未注册 JSON 编码');
+  if (!['forecast_json_v1', 'financial_json_v1', 'financial_column_snapshot_v1'].includes(codec))
+    fail('未注册 JSON 编码');
   if (typeof text !== 'string') fail('分片须为 UTF-8 JSON 文本');
   let position = 0;
   const numberPattern = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;

@@ -59,6 +59,22 @@ def _research_from_samples(s, panel, dates, audit, p, samples, *, plan_sink=None
     limits = {} if max_forecasts is None else {"max_forecasts": max_forecasts}
     if runtime is not None:
         limits["runtime"] = runtime
+    # Declare the complete selection budget before any model is fitted. Failed
+    # rolling fits may retry at the next origin, so cap them by all origin dates.
+    from .validation import forecast_origins
+    from .models import candidates
+    factor_columns = [name for name in samples.X if name.startswith("factor:")]
+    branches = 2 if factor_columns else 1
+    _, terminal_origins = forecast_origins(samples, s, max_forecasts=max_forecasts)
+    terminal_dates = samples.meta.loc[terminal_origins, "date"].nunique()
+    candidate_count = len(candidates(s["model"]["estimator"]))
+    outer_count, inner_count = s["validation"]["outerFolds"], s["validation"]["innerFolds"]
+    selection_fit_cap = branches*((outer_count+1)*inner_count*candidate_count+outer_count)
+    declared_budget = {"branches": branches, "includesFactorFreeBaseline": bool(factor_columns),
+        "nestedSelectionAndOuterFitCap": selection_fit_cap,
+        "sequentialFitAttemptCap": int(branches*terminal_dates),
+        "maximumFitAttempts": int(selection_fit_cap+branches*terminal_dates),
+        "declaredBeforeFitting": True, "actualFitsMayBeLower": True}
     with threadpool_limits(limits=1):
         if plan_sink is not None:
             from .validation import forecast_origins
@@ -79,23 +95,31 @@ def _research_from_samples(s, panel, dates, audit, p, samples, *, plan_sink=None
             "validInputOrigins": int(samples.meta.inputValid.sum()),
             "invalidReasons": {str(k): int(v) for k, v in samples.meta.invalidReason.dropna().value_counts().items()},
             "features": [{"name": name, "finiteOrigins": int(np.isfinite(samples.X[name]).sum())} for name in samples.X]}
-        factor_columns = [name for name in samples.X if name.startswith("factor:")]
         if factor_columns:
             # Hold q, labels, coverage mask, maturity and candidate budget fixed.
             # Re-select/re-fit the state-only baseline in its own train folds.
             baseline_samples = replace(samples, X=samples.X.drop(columns=factor_columns))
-            baseline_rows, baseline_fits, baseline_diagnostics = forecast(baseline_samples, s, **limits)
+            baseline_rows, baseline_fits, baseline_diagnostics = forecast(baseline_samples, s, export_functions=False, **limits)
             from .comparison import compare_factor_increment
             diagnostics["factorIncrement"] = compare_factor_increment(
                 rows, baseline_rows, factor_columns, baseline_fits, baseline_diagnostics)
         else:
             diagnostics["factorIncrement"] = {"status": "not_applicable", "reason": "no_predictor_or_event_factor_columns",
                 "hedgeFactorsAblated": False}
+    from .factor_diagnostics import factor_diagnostics
+    factor_research = {"schemaVersion": 1, "modelFunctions": [
+        {"modelFitId": f["id"], "artifactId": f["functionArtifact"]["artifactId"],
+         "path": f"forecasts.modelFits[{i}].functionArtifact"}
+        for i, f in enumerate(fits) if "functionArtifact" in f],
+        "diagnostics": factor_diagnostics(samples, diagnostics["holdoutStart"], s["factors"]),
+        "editSemantics": "derived_function_requires_new_validation_original_report_is_immutable"}
+    diagnostics["selectionAudit"]["researchFitBudget"] = {
+        **declared_budget, "sequentialFitAttempts": len(fits)+(len(baseline_fits) if factor_columns else 0)}
     artifact = _finite_json({"schemaVersion": 1, "predictionConfigHash": digest(prediction_config(s)),
                             "dataFingerprint": audit["dataSha256"], "sourceStrategy": copy.deepcopy(s),
                             "rows": rows, "totalRows": len(rows), "truncated": False,
                             "targetDefinitions": list(samples.definitions.values()), "modelFits": fits,
-                            "hedgeFits": samples.hedge_fits, "diagnostics": diagnostics})
+                            "hedgeFits": samples.hedge_fits, "diagnostics": diagnostics, "factorResearch": factor_research})
     artifact["artifactId"] = digest(artifact)
     return _envelope(s, p, audit, artifact, panel, dates)
 

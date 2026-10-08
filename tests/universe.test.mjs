@@ -36,11 +36,11 @@ test('multi-value filters are OR while successive filters remain AND; duplicates
  const excluded=resolveUniverseSelection({version:1,includeSymbols:[codes[0]],excludeSymbols:[codes[0]]},catalog);assert.deepEqual(excluded.symbols,[]);
 });
 
-test('full member sets remain intact above the research limit and carry an explicit subset requirement',()=>{
+test('full member sets remain intact above the research limit and request independent admission without a subset',()=>{
  const symbols=Array.from({length:80},(_,i)=>String(i+1).padStart(6,'0')+'.SZ');
  const c=compileUniverseCatalog({securities:symbols.map(ts_code=>({ts_code})),items:[{id:'all',symbols}],hash:'a'.repeat(64)});
  const r=resolveUniverseSelection({version:1,includeGroups:[group('all',['universe','all'])]},c);
- assert.equal(r.symbolCount,80);assert.deepEqual(r.symbols,symbols);assert.equal(r.members.length,80);assert.equal(r.requiresSubset,true);assert.equal(r.maxRunSymbols,50);
+ assert.equal(r.symbolCount,80);assert.deepEqual(r.symbols,symbols);assert.equal(r.members.length,80);assert.equal(r.requiresSubset,false);assert.equal(r.maxRunSymbols,undefined);assert.equal(r.admissionStatus,'preflight_required');
 });
 
 test('actual members lacking metadata are preserved without invented area or name',()=>{
@@ -117,7 +117,7 @@ test('current real catalog resolves exactly the independent full-set calculation
  const index=real.items.find(u=>u.category==='index'&&u.definition.index_code==='000852.SH');assert.ok(index);
  const selected=resolveUniverseSelection({version:1,includeGroups:[group('real',['universe',index.id],['area','北京'])]},c);
  const beijing=new Set(real.securities.filter(s=>s.area==='北京').map(s=>s.ts_code));assert.deepEqual(selected.symbols,[...new Set(index.symbols.filter(s=>beijing.has(s)))].sort());
- const full=resolveUniverseSelection({version:1,includeGroups:[group('full',['universe',index.id])]},c);assert.equal(full.symbolCount,new Set(index.symbols).size);assert.ok(full.symbolCount>50);assert.equal(full.requiresSubset,true);assert.equal(full.catalogSnapshot.missingIdentityCount,4);
+ const full=resolveUniverseSelection({version:1,includeGroups:[group('full',['universe',index.id])]},c);assert.equal(full.symbolCount,new Set(index.symbols).size);assert.ok(full.symbolCount>50);assert.equal(full.requiresSubset,false);assert.equal(full.catalogSnapshot.missingIdentityCount,4);
 });
 
 test('full real D1 snapshot loads 5911 identities and 1354 pools without shipping memberships in options',async()=>{
@@ -126,6 +126,6 @@ test('full real D1 snapshot loads 5911 identities and 1354 pools without shippin
   const response=await x.request('/universe-options');assert.equal(response.status,200);const text=await response.text(),options=JSON.parse(text);
   assert.equal(options.catalogSnapshot.universeCount,real.items.length);assert.equal(options.catalogSnapshot.missingIdentityCount,4);assert.ok(Buffer.byteLength(text)<50000);assert.ok(!text.includes('"symbols":'));
   const index=real.items.find(u=>u.category==='index'&&u.definition.index_code==='000852.SH');
-  const result=await x.request('/universes/resolve',{method:'POST',cookie:x.cookie,data:{selection:{version:1,includeGroups:[group('index',['universe',index.id])]}}});assert.equal(result.status,200);const data=await result.json();assert.equal(data.symbolCount,index.symbols.length);assert.equal(data.members.length,index.symbols.length);assert.ok(data.requiresSubset);
+  const result=await x.request('/universes/resolve',{method:'POST',cookie:x.cookie,data:{selection:{version:1,includeGroups:[group('index',['universe',index.id])]}}});assert.equal(result.status,200);const data=await result.json();assert.equal(data.symbolCount,index.symbols.length);assert.equal(data.members.length,index.symbols.length);assert.equal(data.requiresSubset,false);
  }finally{await x.mf.dispose();}
 });

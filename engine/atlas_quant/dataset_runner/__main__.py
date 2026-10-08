@@ -14,7 +14,7 @@ from .protocol import decode, encode, require
 from .service import serve
 
 
-def load_config(path):
+def load_config(path, *, enabled_key="dataset_enabled", delivery_key="dataset_delivery_dir", additional_keys=(), require_lock=False):
     target = Path(path).expanduser()
     require(
         target.is_absolute() and not target.is_symlink() and target.is_file(),
@@ -37,8 +37,8 @@ def load_config(path):
         "dataset_enabled",
         "poll_seconds",
     }
-    require(isinstance(value, dict) and set(value) <= allowed, "DATASET_CONFIG")
-    require(value.get("dataset_enabled") is True, "DATASET_DISABLED")
+    require(isinstance(value, dict) and set(value) <= allowed | set(additional_keys), "DATASET_CONFIG")
+    require(value.get(enabled_key) is True, "DATASET_DISABLED")
     base, secret = value.get("api_base"), value.get("runner_secret")
     require(isinstance(base, str), "DATASET_CONFIG")
     parsed = urlsplit(base)
@@ -54,11 +54,13 @@ def load_config(path):
         and not any(c.isspace() for c in secret),
         "DATASET_CONFIG",
     )
-    for name in ("delivery_dir", "dataset_delivery_dir"):
+    for name in ("delivery_dir", delivery_key):
         require(
             isinstance(value.get(name), str) and Path(value[name]).is_absolute(),
             "DATASET_CONFIG",
         )
+    if require_lock:
+        require(isinstance(value.get("compute_lock_path"), str), "DATASET_CONFIG")
     if "compute_lock_path" in value:
         from ..compute_slot import ComputeSlotError, validate_slot_path
 
@@ -71,7 +73,7 @@ def load_config(path):
     return {**value, "api_base": base.rstrip("/"), "poll_seconds": poll}
 
 
-def main(argv=None):
+def main(argv=None, *, loader=load_config, server=serve):
     parser = argparse.ArgumentParser(
         description="Compose frozen research datasets without provider acquisition"
     )
@@ -84,8 +86,8 @@ def main(argv=None):
     for name in (signal.SIGINT, signal.SIGTERM):
         signal.signal(name, lambda *_: stopped.set())
     try:
-        return serve(
-            load_config(args.config), once=args.once, stop_requested=stopped.is_set
+        return server(
+            loader(args.config), once=args.once, stop_requested=stopped.is_set
         )
     except (RunnerError, OSError, ValueError) as error:
         print(encode({"error": safe_error(error)}).decode(), file=sys.stderr)

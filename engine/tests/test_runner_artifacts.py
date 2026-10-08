@@ -185,7 +185,7 @@ def test_corrupt_or_cross_lease_snapshot_blocks_all_delivery(tmp_path):
     assert exc.value.code == "DELIVERY_INTEGRITY" and saved.exists() and path.exists()
 
 
-def test_snapshot_rejection_is_durable_failure_and_cleans_up_only_after_ack(tmp_path, monkeypatch):
+def test_snapshot_rejection_is_durable_failure_and_retains_original_after_ack(tmp_path, monkeypatch):
     strategy, frame, provenance = inputs()
     config = spool_config(tmp_path)
     spool = CompletionSpool(config)
@@ -208,7 +208,7 @@ def test_snapshot_rejection_is_durable_failure_and_cleans_up_only_after_ack(tmp_
             assert route == "complete" and "error" in payload
             return {"ok": True}
     flush_completions(Acknowledge(), CompletionSpool(config))
-    assert not list(spool.pending()) and not list((spool.root / "snapshots").glob("*.enc"))
+    assert not list(spool.pending()) and list((spool.root / "snapshots").glob("*.enc"))
 
 
 def test_replay_transport_retries_only_missing_artifact(monkeypatch):

@@ -1,3 +1,5 @@
+import { LEGACY_DATASET } from './context.mjs';
+import { validateGraphDatasetManifest } from '../dataset-graphs/manifest.mjs';
 /** Immutable, resumable publication. No joined 64MiB JSON is parsed by the Worker. */
 import { parseStrictJson } from '../bundles/json.mjs';
 import {
@@ -15,18 +17,19 @@ import {
   json,
   canonical,
   requireEnabled,
-  datasetRef,
+  datasetRef
 } from './common.mjs';
 import { leased } from './jobs.mjs';
 import { taskPlan, assertRegistry } from './transport.mjs';
 import { validateDatasetManifest } from './manifest.mjs';
 import { readObject } from './common.mjs';
-const hex = (x) =>
-  [...new Uint8Array(x)].map((n) => n.toString(16).padStart(2, '0')).join('');
+const validator = (context) =>
+  context.version === 3 ? validateGraphDatasetManifest : validateDatasetManifest;
+const hex = (x) => [...new Uint8Array(x)].map((n) => n.toString(16).padStart(2, '0')).join('');
 async function stageFor(env, job, root) {
   hash(root);
   const stage = await env.DB.prepare(
-    'SELECT * FROM quant_dataset_stages WHERE job_id=? AND owner=? AND lease_token=? AND dataset_root=?',
+    'SELECT * FROM quant_dataset_stages WHERE job_id=? AND owner=? AND lease_token=? AND dataset_root=?'
   )
     .bind(job.id, job.owner, job.lease_token, root)
     .first();
@@ -35,13 +38,11 @@ async function stageFor(env, job, root) {
 }
 async function receipt(env, stage, parsed) {
   const rows = await env.DB.prepare(
-      'SELECT component_id,ordinal,sha256,byte_length FROM quant_dataset_parts WHERE stage_id=?',
+      'SELECT component_id,ordinal,sha256,byte_length FROM quant_dataset_parts WHERE stage_id=?'
     )
       .bind(stage.id)
       .all(),
-    map = new Map(
-      rows.results.map((r) => [r.component_id + '/' + r.ordinal, r]),
-    );
+    map = new Map(rows.results.map((r) => [r.component_id + '/' + r.ordinal, r]));
   return {
     publicationId: stage.id,
     datasetRoot: stage.dataset_root,
@@ -52,47 +53,40 @@ async function receipt(env, stage, parsed) {
         ordinals: c.parts
           .filter((p) => {
             const r = map.get(c.componentId + '/' + p.ordinal);
-            return (
-              !r || r.sha256 !== p.sha256 || r.byte_length !== p.byteLength
-            );
+            return !r || r.sha256 !== p.sha256 || r.byte_length !== p.byteLength;
           })
-          .map((p) => p.ordinal),
+          .map((p) => p.ordinal)
       }))
-      .filter((x) => x.ordinals.length),
+      .filter((x) => x.ordinals.length)
   };
 }
-export async function beginPublication(env, jobId, value) {
+export async function beginPublication(env, jobId, value, context = LEGACY_DATASET) {
   object(value, ['leaseToken', 'datasetRoot', 'manifestText']);
-  const job = await leased(env, jobId, value.leaseToken, { terminal: true }),
-    { spec } = await taskPlan(env, job),
-    parsed = await validateDatasetManifest(
-      value.manifestText,
-      value.datasetRoot,
-      spec,
-    );
+  const job = await leased(env, jobId, value.leaseToken, {
+      terminal: true,
+      context
+    }),
+    { spec } = await taskPlan(env, job, context),
+    parsed = await validator(context)(value.manifestText, value.datasetRoot, spec);
   const old = await env.DB.prepare(
-    'SELECT * FROM quant_dataset_stages WHERE job_id=? AND owner=? AND lease_token=?',
+    'SELECT * FROM quant_dataset_stages WHERE job_id=? AND owner=? AND lease_token=?'
   )
     .bind(job.id, job.owner, job.lease_token)
     .first();
   if (old) {
-    if (
-      old.dataset_root !== value.datasetRoot ||
-      old.manifest_text !== value.manifestText
-    )
+    if (old.dataset_root !== value.datasetRoot || old.manifest_text !== value.manifestText)
       fail('DATASET_PUBLICATION_CONFLICT', '同一任务不能替换冻结产物', 409);
-    if (job.status === 'completed' && old.status === 'committed')
-      return receipt(env, old, parsed);
+    if (job.status === 'completed' && old.status === 'committed') return receipt(env, old, parsed);
   }
-  await leased(env, jobId, value.leaseToken);
-  requireEnabled(env);
+  await leased(env, jobId, value.leaseToken, { context });
+  requireEnabled(env, context);
   await assertRegistry(env, job.owner, spec.sources.registry);
   const time = NOW(),
     stageId = random(),
     datasetId = random();
   await env.DB.prepare(
     `INSERT OR IGNORE INTO quant_dataset_stages(id,job_id,owner,lease_token,dataset_id,dataset_root,manifest_text,total_bytes,status,created_at,updated_at)
-    SELECT ?,?,?,?,?,?,?,?,'staging',?,? WHERE EXISTS(SELECT 1 FROM quant_dataset_jobs WHERE id=? AND owner=? AND lease_token=? AND status='running' AND lease_until>? AND deadline>?)`,
+    SELECT ?,?,?,?,?,?,?,?,'staging',?,? WHERE EXISTS(SELECT 1 FROM quant_dataset_jobs WHERE id=? AND owner=? AND lease_token=? AND status='running' AND lease_until>? AND deadline>?)`
   )
     .bind(
       stageId,
@@ -109,7 +103,7 @@ export async function beginPublication(env, jobId, value) {
       job.owner,
       job.lease_token,
       time,
-      time,
+      time
     )
     .run();
   const stage = await stageFor(env, job, value.datasetRoot);
@@ -117,19 +111,15 @@ export async function beginPublication(env, jobId, value) {
     fail('DATASET_PUBLICATION_CONFLICT', '产物并发版本不同', 409);
   return receipt(env, stage, parsed);
 }
-export async function publicationStatus(env, jobId, token, root) {
-  const job = await leased(env, jobId, token, { terminal: true }),
+export async function publicationStatus(env, jobId, token, root, context = LEGACY_DATASET) {
+  const job = await leased(env, jobId, token, { terminal: true, context }),
     stage = await stageFor(env, job, root),
-    { spec } = await taskPlan(env, job);
+    { spec } = await taskPlan(env, job, context);
   if (stage.status !== 'committed') {
-    requireEnabled(env);
+    requireEnabled(env, context);
     await assertRegistry(env, job.owner, spec.sources.registry);
   }
-  return receipt(
-    env,
-    stage,
-    await validateDatasetManifest(stage.manifest_text, root, spec),
-  );
+  return receipt(env, stage, await validator(context)(stage.manifest_text, root, spec));
 }
 export async function putPart(
   env,
@@ -139,35 +129,34 @@ export async function putPart(
   componentId,
   ordinal,
   root,
+  context = LEGACY_DATASET
 ) {
-  const job = await leased(env, jobId, req.headers.get('X-Dataset-Lease'));
-  requireEnabled(env);
+  const job = await leased(env, jobId, req.headers.get('X-Dataset-Lease'), {
+    context
+  });
+  requireEnabled(env, context);
   const stage = await stageFor(env, job, root),
-    { spec } = await taskPlan(env, job);
+    { spec } = await taskPlan(env, job, context);
   await assertRegistry(env, job.owner, spec.sources.registry);
   if (stage.id !== id(publicationId) || stage.status !== 'staging')
     fail('DATASET_PUBLICATION_CONFLICT', '产物不能新增分片', 409);
-  const parsed = await validateDatasetManifest(stage.manifest_text, root, spec),
+  const parsed = await validator(context)(stage.manifest_text, root, spec),
     component = parsed.components.get(componentId),
     descriptor = component?.parts[ordinal];
-  if (!descriptor || descriptor.ordinal !== ordinal)
-    fail('DATASET_PART', '分片不属于该清单');
+  if (!descriptor || descriptor.ordinal !== ordinal) fail('DATASET_PART', '分片不属于该清单');
   const raw = await readBytes(req, LIMITS.partBytes);
-  if (
-    raw.length !== descriptor.byteLength ||
-    (await hashBytes(raw)) !== descriptor.sha256
-  )
+  if (raw.length !== descriptor.byteLength || (await hashBytes(raw)) !== descriptor.sha256)
     fail('DATASET_PART', '原始分片与声明哈希或长度不一致');
   const key = `research-datasets/${job.owner}/${stage.id}/${componentId}/${ordinal}-${descriptor.sha256}`;
   // A same-key concurrent writer has identical verified bytes. Never delete a
   // winning immutable object after a lost D1 CAS; abandoned staging is retained.
   await env.ARTIFACTS.put(key, raw, {
-    httpMetadata: { contentType: 'application/octet-stream' },
+    httpMetadata: { contentType: 'application/octet-stream' }
   });
   const now = NOW();
   await env.DB.prepare(
     `INSERT OR IGNORE INTO quant_dataset_parts(stage_id,component_id,ordinal,sha256,byte_length,object_key)
-    SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM quant_dataset_stages s JOIN quant_dataset_jobs j ON j.id=s.job_id AND j.owner=s.owner WHERE s.id=? AND s.status='staging' AND j.status='running' AND j.lease_token=? AND j.lease_until>? AND j.deadline>?)`,
+    SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM quant_dataset_stages s JOIN quant_dataset_jobs j ON j.id=s.job_id AND j.owner=s.owner WHERE s.id=? AND s.status='staging' AND j.status='running' AND j.lease_token=? AND j.lease_until>? AND j.deadline>?)`
   )
     .bind(
       stage.id,
@@ -179,11 +168,11 @@ export async function putPart(
       stage.id,
       job.lease_token,
       now,
-      now,
+      now
     )
     .run();
   const actual = await env.DB.prepare(
-    'SELECT * FROM quant_dataset_parts WHERE stage_id=? AND component_id=? AND ordinal=?',
+    'SELECT * FROM quant_dataset_parts WHERE stage_id=? AND component_id=? AND ordinal=?'
   )
     .bind(stage.id, componentId, ordinal)
     .first();
@@ -198,7 +187,7 @@ export async function putPart(
     componentId,
     ordinal,
     sha256: descriptor.sha256,
-    byteLength: descriptor.byteLength,
+    byteLength: descriptor.byteLength
   };
 }
 export async function* componentPieces(env, stage, component, partRows) {
@@ -211,23 +200,14 @@ export async function* componentPieces(env, stage, component, partRows) {
       const row = partRows.get(component.componentId + '/' + d.ordinal);
       if (!row || row.sha256 !== d.sha256 || row.byte_length !== d.byteLength)
         fail('DATASET_INCOMPLETE', '组成分片不完整', 409);
-      const raw = await readObject(
-        env,
-        row.object_key,
-        d.sha256,
-        d.byteLength,
-        LIMITS.partBytes,
-      );
+      const raw = await readObject(env, row.object_key, d.sha256, d.byteLength, LIMITS.partBytes);
       length += raw.length;
       await writer.write(raw);
       yield raw;
     }
     await writer.close();
     closed = true;
-    if (
-      length !== component.byteLength ||
-      hex(await digest.digest) !== component.payloadSha256
-    )
+    if (length !== component.byteLength || hex(await digest.digest) !== component.payloadSha256)
       fail('DATASET_INTEGRITY', '组件完整哈希不匹配', 409);
   } finally {
     if (!closed) {
@@ -256,8 +236,7 @@ async function verifyRegistryPieces(pieces, expected) {
     buffer += decoder.decode(raw, { stream: true });
     if (!prefix) {
       if (buffer.length < 12) continue;
-      if (!buffer.startsWith('{"entries":['))
-        fail('DATASET_REGISTRY', '证据组件结构无效');
+      if (!buffer.startsWith('{"entries":[')) fail('DATASET_REGISTRY', '证据组件结构无效');
       buffer = buffer.slice(12);
       prefix = true;
     }
@@ -315,8 +294,7 @@ function coverageIndex(value, spec) {
     !Number.isInteger(value.marketRows) ||
     value.marketRows < 1 ||
     value.marketRows > LIMITS.marketRows ||
-    canonical(value.observedSymbols) !==
-      canonical(spec.sources.market.scope.symbols) ||
+    canonical(value.observedSymbols) !== canonical(spec.sources.market.scope.symbols) ||
     !Array.isArray(value.financial) ||
     value.financial.length !== spec.sources.financial.length
   )
@@ -326,8 +304,7 @@ function coverageIndex(value, spec) {
   value.financial.forEach((f, n) => {
     const expected = spec.sources.financial[n];
     for (const k of ['inputRoot', 'packRoot', 'preparedRoot', 'calendarRoot'])
-      if (f[k] !== expected.roots[k])
-        fail('DATASET_COVERAGE', '覆盖证据根与来源不一致');
+      if (f[k] !== expected.roots[k]) fail('DATASET_COVERAGE', '覆盖证据根与来源不一致');
     if (
       f.originalAsPublishedVerified !== false ||
       f.revisionTimeVerified !== false ||
@@ -371,8 +348,8 @@ function coverageIndex(value, spec) {
             rows: security.rows,
             inputId: expected.inputId,
             preparationId: expected.preparationId,
-            unitPolicy: expected.unitPolicy,
-          },
+            unitPolicy: expected.unitPolicy
+          }
         });
       }
     }
@@ -385,19 +362,21 @@ function coverageIndex(value, spec) {
       financialInputs: value.financial.length,
       selectedStateIds: [...new Set(entries.map((x) => x.stateId))].sort(),
       stateCoverage: entries.length,
-      availableStateCoverage: entries.filter((x) => x.status === 'available')
-        .length,
+      availableStateCoverage: entries.filter((x) => x.status === 'available').length,
       qualityFlags: [...quality].sort(),
       originalAsPublishedVerified: false,
       revisionTimeVerified: false,
       completeHistoricalVersionsVerified: false,
-      modelTrainingValidated: false,
-    },
+      modelTrainingValidated: false
+    }
   };
 }
-export async function completePublication(env, jobId, value) {
+export async function completePublication(env, jobId, value, context = LEGACY_DATASET) {
   object(value, ['leaseToken', 'publicationId', 'datasetRoot']);
-  const job = await leased(env, jobId, value.leaseToken, { terminal: true }),
+  const job = await leased(env, jobId, value.leaseToken, {
+      terminal: true,
+      context
+    }),
     stage = await stageFor(env, job, value.datasetRoot);
   if (stage.id !== id(value.publicationId))
     fail('DATASET_PUBLICATION_CONFLICT', '完成回执身份不一致', 409);
@@ -405,29 +384,24 @@ export async function completePublication(env, jobId, value) {
     return {
       ok: true,
       status: 'completed',
-      datasetRef: datasetRef({
-        id: stage.dataset_id,
-        dataset_root: stage.dataset_root,
-      }),
-      idempotent: true,
+      datasetRef: datasetRef(
+        {
+          id: stage.dataset_id,
+          dataset_root: stage.dataset_root
+        },
+        context
+      ),
+      idempotent: true
     };
-  await leased(env, jobId, value.leaseToken);
-  requireEnabled(env);
-  const { spec, row: plan } = await taskPlan(env, job);
+  await leased(env, jobId, value.leaseToken, { context });
+  requireEnabled(env, context);
+  const { spec, row: plan } = await taskPlan(env, job, context);
   await assertRegistry(env, job.owner, spec.sources.registry);
-  const parsed = await validateDatasetManifest(
-      stage.manifest_text,
-      stage.dataset_root,
-      spec,
-    ),
-    rows = await env.DB.prepare(
-      'SELECT * FROM quant_dataset_parts WHERE stage_id=?',
-    )
+  const parsed = await validator(context)(stage.manifest_text, stage.dataset_root, spec),
+    rows = await env.DB.prepare('SELECT * FROM quant_dataset_parts WHERE stage_id=?')
       .bind(stage.id)
       .all(),
-    parts = new Map(
-      rows.results.map((x) => [x.component_id + '/' + x.ordinal, x]),
-    );
+    parts = new Map(rows.results.map((x) => [x.component_id + '/' + x.ordinal, x]));
   if (rows.results.length !== parsed.partCount)
     fail('DATASET_INCOMPLETE', '组成分片数量不完整', 409);
   let coverage;
@@ -450,7 +424,7 @@ export async function completePublication(env, jobId, value) {
       }
       coverage = coverageIndex(
         parseStrictJson(new TextDecoder('utf-8', { fatal: true }).decode(raw)),
-        spec,
+        spec
       );
     } else
       for await (const piece of pieces) {
@@ -465,7 +439,7 @@ export async function completePublication(env, jobId, value) {
   const gate = `EXISTS(SELECT 1 FROM quant_dataset_jobs WHERE id=? AND owner=? AND status='running' AND lease_token=? AND lease_until>? AND deadline>?) AND NOT EXISTS(SELECT 1 FROM json_each(?) x WHERE NOT EXISTS(SELECT 1 FROM financial_registry_entries r WHERE r.id=json_extract(x.value,'$.ref') AND r.owner=? AND r.status='active' AND r.sha256=json_extract(x.value,'$.sha256') AND r.byte_length=json_extract(x.value,'$.byteLength') AND r.kind=json_extract(x.value,'$.kind')))`;
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT OR IGNORE INTO quant_research_datasets(id,owner,name,dataset_root,stage_id,status,scope,summary,created_at) SELECT ?,?,?,?,?,'ready',?,?,? WHERE ${gate}`,
+      `INSERT OR IGNORE INTO quant_research_datasets(id,owner,name,dataset_root,stage_id,status,scope,summary,created_at) SELECT ?,?,?,?,?,'ready',?,?,? WHERE ${gate}`
     ).bind(
       stage.dataset_id,
       job.owner,
@@ -481,33 +455,19 @@ export async function completePublication(env, jobId, value) {
       now,
       now,
       registry,
-      job.owner,
+      job.owner
     ),
     env.DB.prepare(
-      `INSERT OR IGNORE INTO quant_dataset_coverage(dataset_id,ordinal,symbol,state_id,status,metadata) SELECT ?,CAST(x.key AS INTEGER),json_extract(x.value,'$.symbol'),json_extract(x.value,'$.stateId'),json_extract(x.value,'$.status'),json_extract(x.value,'$.metadata') FROM json_each(?) x WHERE EXISTS(SELECT 1 FROM quant_research_datasets WHERE id=? AND stage_id=?)`,
-    ).bind(
-      stage.dataset_id,
-      JSON.stringify(coverage.entries),
-      stage.dataset_id,
-      stage.id,
-    ),
+      `INSERT OR IGNORE INTO quant_dataset_coverage(dataset_id,ordinal,symbol,state_id,status,metadata) SELECT ?,CAST(x.key AS INTEGER),json_extract(x.value,'$.symbol'),json_extract(x.value,'$.stateId'),json_extract(x.value,'$.status'),json_extract(x.value,'$.metadata') FROM json_each(?) x WHERE EXISTS(SELECT 1 FROM quant_research_datasets WHERE id=? AND stage_id=?)`
+    ).bind(stage.dataset_id, JSON.stringify(coverage.entries), stage.dataset_id, stage.id),
     env.DB.prepare(
-      "UPDATE quant_dataset_stages SET status='committed',summary=?,updated_at=? WHERE id=? AND EXISTS(SELECT 1 FROM quant_research_datasets WHERE id=? AND stage_id=?)",
+      "UPDATE quant_dataset_stages SET status='committed',summary=?,updated_at=? WHERE id=? AND EXISTS(SELECT 1 FROM quant_research_datasets WHERE id=? AND stage_id=?)"
     ).bind(summary, now, stage.id, stage.dataset_id, stage.id),
     env.DB.prepare(
-      "UPDATE quant_dataset_jobs SET status='completed',dataset_id=?,phase='writing_evidence',updated_at=? WHERE id=? AND lease_token=? AND status='running' AND EXISTS(SELECT 1 FROM quant_research_datasets WHERE id=? AND stage_id=?)",
-    ).bind(
-      stage.dataset_id,
-      now,
-      job.id,
-      job.lease_token,
-      stage.dataset_id,
-      stage.id,
-    ),
+      "UPDATE quant_dataset_jobs SET status='completed',dataset_id=?,phase='writing_evidence',updated_at=? WHERE id=? AND lease_token=? AND status='running' AND EXISTS(SELECT 1 FROM quant_research_datasets WHERE id=? AND stage_id=?)"
+    ).bind(stage.dataset_id, now, job.id, job.lease_token, stage.dataset_id, stage.id)
   ]);
-  const actual = await env.DB.prepare(
-    'SELECT status,dataset_id FROM quant_dataset_jobs WHERE id=?',
-  )
+  const actual = await env.DB.prepare('SELECT status,dataset_id FROM quant_dataset_jobs WHERE id=?')
     .bind(job.id)
     .first();
   if (actual.status !== 'completed' || actual.dataset_id !== stage.dataset_id)
@@ -515,9 +475,12 @@ export async function completePublication(env, jobId, value) {
   return {
     ok: true,
     status: 'completed',
-    datasetRef: datasetRef({
-      id: stage.dataset_id,
-      dataset_root: stage.dataset_root,
-    }),
+    datasetRef: datasetRef(
+      {
+        id: stage.dataset_id,
+        dataset_root: stage.dataset_root
+      },
+      context
+    )
   };
 }

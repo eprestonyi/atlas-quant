@@ -951,6 +951,20 @@
   font-size: 10px;
   line-height: 1.85;
 }
+.sq-shell .sq-family:disabled {
+  opacity: 1;
+  border-style: dashed;
+}
+.sq-family [data-mechanism-status] {
+  display: block;
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.sq-family [data-mechanism-status="blocked"] {
+  color: #d7b895;
+}
 .sq-family.selected {
   border-color: #97b5a4;
   background: #18281f;
@@ -2216,3 +2230,46 @@
 .ds-members{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:10px;margin:22px 0}
 .ds-members label{overflow-wrap:anywhere;min-width:0}
 @media(max-width:600px){.ds-steps{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ds-steps a{padding:11px;gap:7px}.ds-source-card{padding:16px}}
+
+/* Factor workbench hierarchy: mode → statistical module → independent factor steps. */
+.sq-mode-grid,.sq-module-hub{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin:28px 0}
+.sq-mode-card,.sq-module-card{position:relative;min-width:0;padding:28px;border:1px solid var(--border,#2c342c);border-radius:16px;background:var(--panel,#111711);color:inherit;text-decoration:none}
+.sq-mode-card>span,.sq-module-icon{display:flex;width:44px;height:44px;align-items:center;justify-content:center;border-radius:12px;background:#283225;color:#c3d4ae}
+.sq-mode-card h2,.sq-module-card h2{font-size:25px;font-weight:500;margin:24px 0 12px}
+.sq-mode-card p,.sq-module-card p{line-height:1.8;color:var(--muted,#9da69a);max-width:48ch;min-height:4em}
+.sq-mode-card strong{display:flex;gap:12px;align-items:center;color:#c3d4ae;font-weight:500;margin-top:28px}
+.sq-mode-card:hover,.sq-module-card.available{border-color:#697859}
+.sq-mode-card:focus-visible{outline:2px solid #c3d4ae;outline-offset:4px}
+.sq-module-card .sq-module-icon{margin-top:16px}
+.sq-module-card.planned{background:var(--panel,#111711)}
+.sq-module-card .sq-button{margin-top:12px}
+.sq-core-equation{font-size:28px;line-height:1.7;color:#dce8d2}
+.sq-core-equation small{font-size:19px;color:#aab79f}
+.sq-module-roadmap{margin:24px 0;padding-left:24px;line-height:2.4;color:#bdc6b8}
+.rq-filter-result-count{display:flex;gap:20px;align-items:center;padding:12px 0 16px}
+.rq-filter-result-count strong{font-size:36px;font-weight:500;font-variant-numeric:tabular-nums;color:#dce8d2}
+.rq-filter-result-count span{color:var(--muted,#9da69a)}
+.sq-universe .table-wrap table{width:100%}.sq-universe .table-wrap th,.sq-universe .table-wrap td{text-align:left;padding:12px 10px}
+@media(max-width:760px){.sq-mode-grid,.sq-module-hub{grid-template-columns:1fr;gap:14px}.sq-mode-card,.sq-module-card{padding:22px}.sq-module-card p,.sq-mode-card p{min-height:0}.sq-mode-card h2,.sq-module-card h2{font-size:22px}.sq-core-equation{font-size:23px}.rq-filter-result-count{gap:14px;flex-wrap:wrap}}
+.mfe-editor{margin:24px 0;padding-top:24px;border-top:1px solid var(--border,#2c342c);min-width:0}.mfe-editor textarea{width:100%;min-height:160px;resize:vertical;padding:12px;background:#0b100c;color:inherit;border:1px solid #354031;border-radius:8px;font-family:ui-monospace,monospace;font-size:13px}.mfe-editor .sq-table .sq-field{min-width:150px}.mfe-editor .sq-table input{max-width:240px}.mfe-editor code{overflow-wrap:anywhere}.mfe-editor .sq-core-equation{font-size:21px;overflow-wrap:anywhere}.mfe-editor .sq-key-values dd{overflow-wrap:anywhere}
+
+/* Full model scope stays available without displacing numerical controls. */
+.mfe-editor .sq-key-values dd { min-width: 0; }
+.mfe-scope { min-width: 0; max-width: 100%; margin-top: 8px; }
+.mfe-scope summary { cursor: pointer; overflow-wrap: anywhere; }
+.mfe-editor .mfe-scope textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 12rem;
+  max-height: 14rem;
+  margin-bottom: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mfe-scope [role="status"] { display: block; margin-top: 6px; }

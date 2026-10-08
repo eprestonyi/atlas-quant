@@ -9,7 +9,14 @@ import {
   assertTransport
 } from './storage.mjs';
 import { verifyDocuments } from './streams.mjs';
+import { assertRunMarket } from '../market-preparation/research.mjs';
+import { verifyMarketCoverage } from '../market-preparation/coverage.mjs';
 import { SORTED_SNAPSHOT, snapshotValidation, verifySnapshotReceipts } from './snapshot-index.mjs';
+import {
+  assertMarketBundle,
+  storedMarketAdmission,
+  verifyMarketSnapshot
+} from '../market-preparation/bundle.mjs';
 
 const invalid = (message) => {
   throw new ApiError('BUNDLE_INCOMPLETE', message, 409);
@@ -88,6 +95,16 @@ export async function verifyRecords(env, stage, parsed) {
     [stage.id],
     '成交或决策引用其他预测'
   );
+  if (!storedMarketAdmission(stage)) {
+    await rejectIfRows(
+      env,
+      `SELECT ordinal FROM quant_bundle_records WHERE stage_id=? AND collection='hedgeFits'
+       AND (json_type(metadata,'$.targetIds') IS NOT 'array' OR json_array_length(metadata,'$.targetIds')>50
+         OR json_type(metadata,'$.targetIndexPolicy') IS NOT NULL)`,
+      [stage.id],
+      '普通报告不能使用完整市场拟合索引'
+    );
+  }
   await rejectIfRows(
     env,
     `SELECT h.ordinal FROM quant_bundle_records h,json_each(h.metadata,'$.targetIds') ids
@@ -120,7 +137,12 @@ export async function verifyRecords(env, stage, parsed) {
 export async function finalizeBundle(
   env,
   input,
-  { expectedFormat = 'atlas.quant.bundle', authorize = null, verifySource = null } = {}
+  {
+    expectedFormat = 'atlas.quant.bundle',
+    expectedVersion = 1,
+    authorize = null,
+    verifySource = null
+  } = {}
 ) {
   const job = await leasedJob(env, input);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
@@ -128,7 +150,7 @@ export async function finalizeBundle(
   if (stage.bundle_id !== input.bundleId)
     throw new ApiError('BUNDLE_CONFLICT', '传输身份不匹配', 409);
   const parsed = await parsedStage(stage);
-  assertTransport(parsed, expectedFormat);
+  assertTransport(parsed, expectedFormat, expectedVersion);
   if (stage.status === 'committed')
     return {
       ok: true,
@@ -138,6 +160,8 @@ export async function finalizeBundle(
     };
   if (stage.status === 'aborted' || job.status !== 'running') invalid('终态任务不能验证新增产物');
   if (authorize) await authorize(env, job, parsed);
+  const marketAdmission = storedMarketAdmission(stage);
+  if (marketAdmission) await assertMarketBundle(env, job, parsed, marketAdmission);
   const receipts = await env.DB.prepare(
     'SELECT collection,ordinal,sha256,byte_length,row_count,start_row,object_key FROM quant_bundle_chunks WHERE stage_id=?'
   )
@@ -161,9 +185,20 @@ export async function finalizeBundle(
   await verifyDocuments(parsed, (collection, descriptor) =>
     readChunk(env, stage, collection, descriptor, byKey)
   );
-  if (verifySource)
-    await verifySource(parsed, (collection, descriptor) =>
+  await verifyMarketSnapshot(stage, parsed, (collection, descriptor) =>
+    readChunk(env, stage, collection, descriptor, byKey)
+  );
+  if (marketAdmission) {
+    const admission = await assertRunMarket(env, job);
+    await verifyMarketCoverage(env, stage, parsed, admission, (collection, descriptor) =>
       readChunk(env, stage, collection, descriptor, byKey)
+    );
+  }
+  if (verifySource)
+    await verifySource(
+      parsed,
+      (collection, descriptor) => readChunk(env, stage, collection, descriptor, byKey),
+      { env, stage }
     );
   await env.ARTIFACTS.put(stage.manifest_key, stage.manifest_text, {
     sha256: stage.bundle_id,

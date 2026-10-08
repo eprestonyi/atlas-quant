@@ -2,15 +2,20 @@
 import { ApiError } from '../errors.mjs';
 import { BUNDLE_PROFILE, COLLECTION_PATHS } from './profile.mjs';
 import { readChunk } from './storage.mjs';
+import { FINANCIAL_GRAPH_PROTOCOL } from '../financial-graph-bundles/manifest.mjs';
+const archivePaths = (parsed) =>
+  parsed.manifest.format === FINANCIAL_GRAPH_PROTOCOL.format && parsed.manifest.version === 2
+    ? FINANCIAL_GRAPH_PROTOCOL.collectionPaths
+    : COLLECTION_PATHS;
 
 const encoder = new TextEncoder();
 const block = 512;
 const padding = (length) => (block - (length % block)) % block;
 const invalid = () => new ApiError('BUNDLE_INTEGRITY', '复现包文件或字节不符合已提交清单', 503);
 
-export function tarHeader(name, size) {
+export function tarHeader(name, size, collectionPaths = COLLECTION_PATHS) {
   const match = /^chunks\/([A-Za-z][A-Za-z0-9]*)\/(0|[1-9][0-9]*)\.json$/.exec(name);
-  if (name !== 'manifest.json' && (!match || !Object.hasOwn(COLLECTION_PATHS, match[1])))
+  if (name !== 'manifest.json' && (!match || !Object.hasOwn(collectionPaths, match[1])))
     throw invalid();
   if (name.length > 100 || !Number.isSafeInteger(size) || size < 0 || size > BUNDLE_PROFILE.bytes)
     throw invalid();
@@ -54,7 +59,7 @@ export function archiveEntries(stage, parsed) {
   for (const entry of entries) {
     if (names.has(entry.name)) throw invalid();
     names.add(entry.name);
-    tarHeader(entry.name, entry.size);
+    tarHeader(entry.name, entry.size, archivePaths(parsed));
   }
   return entries;
 }
@@ -64,7 +69,7 @@ export function archiveLength(entries) {
 }
 
 /** Zero prefetch; at most the currently requested verified chunk is retained. */
-export function archiveStream(entries, load) {
+export function archiveStream(entries, load, { collectionPaths = COLLECTION_PATHS } = {}) {
   let cancelled = false;
   async function* pieces() {
     for (const entry of entries) {
@@ -72,7 +77,7 @@ export function archiveStream(entries, load) {
       const raw = entry.raw ?? (await load(entry.collection, entry.descriptor));
       if (cancelled) return;
       if (!(raw instanceof Uint8Array) || raw.byteLength !== entry.size) throw invalid();
-      yield tarHeader(entry.name, entry.size);
+      yield tarHeader(entry.name, entry.size, collectionPaths);
       yield raw;
       if (padding(raw.byteLength)) yield new Uint8Array(padding(raw.byteLength));
     }
@@ -105,22 +110,22 @@ export function bundleArchiveResponse(env, stage, parsed, runId) {
   // parsedStage has already verified the exact raw manifest SHA and all paths.
   const entries = archiveEntries(stage, parsed);
   const length = archiveLength(entries);
-  const source = archiveStream(entries,
-    (collection, descriptor) => readChunk(env, stage, collection, descriptor));
+  const source = archiveStream(
+    entries,
+    (collection, descriptor) => readChunk(env, stage, collection, descriptor),
+    { collectionPaths: archivePaths(parsed) }
+  );
   // Workers ignores a manually set Content-Length on an arbitrary stream.
   // A native fixed-length stream also makes truncation visible to HTTP clients.
   const fixed = new FixedLengthStream(length);
   source.pipeTo(fixed.writable).catch(() => {}); // The readable carries any failure.
-  return new Response(
-    fixed.readable,
-    {
-      headers: {
-        'content-type': 'application/x-tar',
-        'content-disposition': `attachment; filename="atlas-quant-${runId}-bundle.tar"`,
-        'cache-control': 'private, no-store',
-        'x-content-type-options': 'nosniff',
-        'x-atlas-quant-bundle-id': stage.bundle_id
-      }
+  return new Response(fixed.readable, {
+    headers: {
+      'content-type': 'application/x-tar',
+      'content-disposition': `attachment; filename="atlas-quant-${runId}-bundle.tar"`,
+      'cache-control': 'private, no-store',
+      'x-content-type-options': 'nosniff',
+      'x-atlas-quant-bundle-id': stage.bundle_id
     }
-  );
+  });
 }

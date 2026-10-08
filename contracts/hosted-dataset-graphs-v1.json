@@ -1,0 +1,123 @@
+{
+  "protocol": "research-dataset-graph/1",
+  "profile": "financial_snapshot_graph_50_v1",
+  "datasetFormat": "atlas.quant.research_dataset",
+  "datasetVersion": 3,
+  "resultTransport": "atlas.quant.financial_bundle/2",
+  "featureFlag": "RESEARCH_DATASET_GRAPHS_ENABLED",
+  "researchFlag": "FINANCIAL_GRAPH_RESEARCH_ENABLED",
+  "limits": {
+    "inputMetadataBytes": 262144,
+    "sourceManifestBytes": 524288,
+    "sourceSnapshotBytes": 25165824,
+    "sourceChunkBytes": 8388608,
+    "registryEntryBytes": 262144,
+    "registryTotalBytes": 33554432,
+    "packageBytes": 25165824,
+    "closureBytes": 67108864,
+    "manifestBytes": 262144,
+    "partBytes": 524288,
+    "parts": 256,
+    "components": 32,
+    "financialInputs": 8,
+    "marketRows": 110000,
+    "symbols": 50,
+    "leaseSeconds": 120,
+    "heartbeatSeconds": 20,
+    "deadlineSeconds": 600,
+    "registryEntries": 2057
+  },
+  "phases": [
+    "checking_sources",
+    "deriving_scope",
+    "composing_states",
+    "writing_evidence"
+  ],
+  "paths": {
+    "runner": "/quant/api/runner/dataset-graphs",
+    "researchReader": "/quant/api/runner/research-datasets",
+    "leaseHeader": "X-Dataset-Lease"
+  },
+  "inputKeys": ["job", "planRoot", "plan", "sources", "registry", "limits"],
+  "inputJobKeys": ["id", "kind", "planId", "deadline"],
+  "inputSourceKeys": ["market", "financial"],
+  "inputRegistryKeys": ["count", "totalBytes", "listUrl"],
+  "publicationBeginKeys": ["leaseToken", "datasetRoot", "manifestText"],
+  "publicationCompleteKeys": ["leaseToken", "publicationId", "datasetRoot"],
+  "claimKeys": ["requestId", "capability", "engineVersion"],
+  "heartbeatKeys": [
+    "capability",
+    "engineVersion",
+    "state",
+    "jobId",
+    "leaseToken",
+    "phase"
+  ],
+  "failKeys": ["leaseToken", "error"],
+  "publicPlanKeys": [
+    "requestId",
+    "name",
+    "profile",
+    "marketSource",
+    "financialInputs"
+  ],
+  "financialRefKeys": [
+    "inputId",
+    "preparationId",
+    "inputRoot",
+    "packRoot",
+    "preparedRoot",
+    "calendarRoot"
+  ],
+  "marketSourceKeys": [
+    "kind",
+    "runId",
+    "expectedBundleId",
+    "expectedSnapshotSha256",
+    "transform"
+  ],
+  "transformKeys": ["kind", "version", "mode", "symbols", "start", "end"],
+  "researchClaimCapabilities": {
+    "datasetFormats": ["atlas.quant.research_dataset/3"],
+    "snapshotFormats": ["financial_column_snapshot_v1"],
+    "transportFormats": ["atlas.quant.financial_bundle/2"],
+    "financialResearchProfiles": ["financial_fundamental_graph_auto_50_v1"]
+  },
+  "researchInputKeys": [
+    "job",
+    "datasetRef",
+    "admissionProfile",
+    "sourceEvidence",
+    "manifest",
+    "partUrlTemplate",
+    "registry",
+    "limits"
+  ],
+  "researchInputJobKeys": ["id", "kind"],
+  "researchRegistryPageKeys": ["items", "total", "offset", "nextOffset"],
+  "researchRegistryItemKeys": ["ref", "kind", "sha256", "byteLength", "url"],
+  "researchDatasetRefKeys": ["datasetId", "datasetRoot", "format", "version"],
+  "researchSourceEvidenceKeys": ["datasetRef", "admissionProfile"],
+  "researchManifestKeys": ["sha256", "byteLength", "url"],
+  "researchAdmissionProfiles": ["financial_fundamental_graph_auto_50_v1"],
+  "inputJobKind": "dataset_graph_compose",
+  "publicPaths": {
+    "capabilities": "/quant/api/dataset-graphs/capabilities",
+    "marketSources": "/quant/api/dataset-graphs/sources/markets",
+    "financialSources": "/quant/api/dataset-graphs/sources/financial",
+    "plans": "/quant/api/dataset-graphs/plans",
+    "plan": "/quant/api/dataset-graphs/plans/{planId}",
+    "start": "/quant/api/dataset-graphs/plans/{planId}/start",
+    "job": "/quant/api/dataset-graphs/jobs/{jobId}",
+    "cancel": "/quant/api/dataset-graphs/jobs/{jobId}/cancel",
+    "list": "/quant/api/dataset-graphs",
+    "detail": "/quant/api/dataset-graphs/{datasetId}?datasetRoot={datasetRoot}",
+    "manifest": "/quant/api/dataset-graphs/{datasetId}/manifest?datasetRoot={datasetRoot}",
+    "coverage": "/quant/api/dataset-graphs/{datasetId}/coverage?datasetRoot={datasetRoot}&page={page}&pageSize={pageSize}",
+    "archive": "/quant/api/dataset-graphs/{datasetId}/download?datasetRoot={datasetRoot}"
+  },
+  "startKeys": ["requestId", "expectedPlanRoot"],
+  "resultNamespace": "/quant/api/runner/financial-graph-bundles",
+  "sourceAuthority": "same-owner committed preparation, exact original canonical package and active registry; no uploaded prepared rows or self-certified inputPackage",
+  "legacyProfileImplied": false
+}

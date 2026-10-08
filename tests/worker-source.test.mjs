@@ -6,7 +6,7 @@ import path from 'node:path';
 import {Miniflare} from 'miniflare';
 import {loadWebAssets,buildWorkerSource} from '../scripts/worker-source.mjs';
 
-test('recursive assets preserve native imports, binary bytes and an entry graph revision',async()=>{
+test('recursive assets bundle the browser entry, preserve binary bytes and revise entry URLs',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'atlas-assets-'));
  try {
   await fs.mkdir(path.join(dir,'quant-workspace'));await fs.mkdir(path.join(dir,'tests'));
@@ -15,7 +15,7 @@ test('recursive assets preserve native imports, binary bytes and an entry graph 
   await fs.writeFile(path.join(dir,'quant-workspace/model.js'),'export const model=1;');
   await fs.writeFile(path.join(dir,'tests/hidden.js'),'MUST_NOT_PUBLISH');
   const binary=Buffer.from([0,1,255,128,32]);await fs.writeFile(path.join(dir,'quant-workspace/icon.png'),binary);
-  const first=await loadWebAssets(dir);assert.ok(!first['tests/hidden.js']);assert.equal(first['main.js'].body,"import './quant-workspace/model.js';\n");
+  const first=await loadWebAssets(dir);assert.ok(!first['tests/hidden.js']);assert.doesNotMatch(first['main.js'].body, /import ['"]/);
   await fs.writeFile(path.join(dir,'quant-workspace/model.js'),'export const model=2;');const second=await loadWebAssets(dir);
   assert.notEqual(first['index.html'].body,second['index.html'].body);
   const mf=new Miniflare({modules:true,script:await buildWorkerSource({assets:second}),compatibilityDate:'2026-08-01'});

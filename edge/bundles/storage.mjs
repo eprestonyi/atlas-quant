@@ -5,6 +5,14 @@ import { BUNDLE_PROFILE, HASH } from './profile.mjs';
 import { byteLength } from './json.mjs';
 import { validateManifest, validateChunk } from './manifest.mjs';
 import { FINANCIAL_FORMAT, validateFinancialManifest } from '../financial-bundles/manifest.mjs';
+import { validateFinancialGraphManifest } from '../financial-graph-bundles/manifest.mjs';
+import {
+  assertMarketBundle,
+  storedMarketAdmission,
+  validateMarketBundle
+} from '../market-preparation/bundle.mjs';
+import { assertRunMarket } from '../market-preparation/research.mjs';
+import { marketAssetTargets } from '../market-preparation/hedge-index.mjs';
 import { indexStatements, recordIndex } from './records.mjs';
 import {
   INDEXED_SNAPSHOT,
@@ -92,9 +100,14 @@ export async function loadStage(env, stageId, job = null) {
   return stage;
 }
 export async function parsedStage(stage) {
-  const format = parse(stage.manifest_text)?.format;
-  if (format === FINANCIAL_FORMAT)
-    return validateFinancialManifest(stage.manifest_text, stage.bundle_id);
+  if (storedMarketAdmission(stage))
+    return validateMarketBundle(stage.manifest_text, stage.bundle_id);
+  const { format, version } = parse(stage.manifest_text) || {};
+  if (format === FINANCIAL_FORMAT) {
+    if (version === 1) return validateFinancialManifest(stage.manifest_text, stage.bundle_id);
+    if (version === 2) return validateFinancialGraphManifest(stage.manifest_text, stage.bundle_id);
+    throw new ApiError('BUNDLE_FORMAT', '未登记金融传输版本', 409);
+  }
   return validateManifest(stage.manifest_text, stage.bundle_id);
 }
 export async function sourceStage(env, job) {
@@ -109,6 +122,8 @@ export async function sourceStage(env, job) {
     .first();
   if (!source) throw new ApiError('BUNDLE_SOURCE_UNAVAILABLE', '来源不是已提交的分片产物', 409);
   const stage = await loadStage(env, source.stage_id);
+  if (storedMarketAdmission(stage))
+    throw new ApiError('MARKET_EXECUTION_DISABLED', '完整市场研究目前仅支持预测', 409);
   if ((await parsedStage(stage)).manifest.format !== 'atlas.quant.bundle')
     throw new ApiError('FINANCIAL_EXECUTION_DISABLED', '金融来源尚不支持独立执行', 409);
   return stage;
@@ -127,9 +142,10 @@ export async function ownedStageForRun(env, owner, jobId) {
 async function assertJobContent(env, job, link, parsed) {
   const { manifest, metadata } = parsed;
   if (manifest.kind !== link.kind) conflict('研究任务与传输种类不一致');
-  const strategy = validateStoredStatisticalQuant(parse(job.spec));
-  const reported = validateStoredStatisticalQuant(metadata.report.strategy);
-  const source = validateStoredStatisticalQuant(metadata.forecast.sourceStrategy);
+  const options = job.data_source === 'ready_market' ? { scopeSymbolLimit: 1000 } : {};
+  const strategy = validateStoredStatisticalQuant(parse(job.spec), options);
+  const reported = validateStoredStatisticalQuant(metadata.report.strategy, options);
+  const source = validateStoredStatisticalQuant(metadata.forecast.sourceStrategy, options);
   if (!same(strategy, reported) || !same(prediction(strategy), prediction(source)))
     conflict('报告配置或预测来源与领取任务不一致');
   if (metadata.report.execution?.forecastArtifactId !== manifest.forecastArtifactId)
@@ -178,8 +194,12 @@ async function assertJobContent(env, job, link, parsed) {
     conflict('纯预测不能返回执行曲线或成交');
 }
 
-export function assertTransport(parsed, expectedFormat = 'atlas.quant.bundle') {
-  if (parsed.manifest.format !== expectedFormat)
+export function assertTransport(
+  parsed,
+  expectedFormat = 'atlas.quant.bundle',
+  expectedVersion = 1
+) {
+  if (parsed.manifest.format !== expectedFormat || parsed.manifest.version !== expectedVersion)
     throw new ApiError('BUNDLE_FORMAT', '此入口不接受该传输格式', 409);
 }
 export async function beginBundle(
@@ -191,11 +211,26 @@ export async function beginBundle(
   const job = await leasedJob(env, input),
     link = await researchLink(env, job);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
-  const parsed = await validate(input.manifestText, input.bundleId);
-  await assertJobContent(env, job, link, parsed);
   let stage = await env.DB.prepare('SELECT * FROM quant_bundle_stages WHERE job_id=?')
     .bind(job.id)
     .first();
+  // Only the persisted owner/job binding may select the larger numerical gate.
+  const market = job.data_source === 'ready_market';
+  if (market && job.status === 'running') await assertRunMarket(env, job);
+  const parsed = await (market ? validateMarketBundle : validate)(
+    input.manifestText,
+    input.bundleId
+  );
+  const marketAdmission = market
+    ? job.status === 'running'
+      ? await assertMarketBundle(env, job, parsed)
+      : stage?.status === 'committed'
+        ? storedMarketAdmission(stage)
+        : null
+    : null;
+  if (market && !marketAdmission) conflict('终态市场任务没有已提交的来源准入');
+  if (marketAdmission) parsed.metadata._marketAdmission = marketAdmission;
+  await assertJobContent(env, job, link, parsed);
   if (
     stage &&
     requestedStrategy !== null &&
@@ -216,7 +251,8 @@ export async function beginBundle(
     const id = random(),
       now = NOW(),
       key = `bundle/${job.owner}/${id}/manifest.json`;
-    const strategy = requestedStrategy ?? INDEXED_SNAPSHOT;
+    const strategy = requestedStrategy ?? (market ? SORTED_SNAPSHOT : INDEXED_SNAPSHOT);
+    if (market && strategy !== SORTED_SNAPSHOT) conflict('完整市场研究必须使用有序行情校验');
     if (strategy === SORTED_SNAPSHOT && env.BUNDLE_SNAPSHOT_SORTED_V1 !== 'true')
       throw new ApiError('BUNDLE_POLICY_UNAVAILABLE', '服务端尚未启用有序行情索引策略', 409);
     const metadata = stageMetadata(parsed, strategy);
@@ -313,7 +349,12 @@ export async function uploadChunk(
   collectionId,
   ordinal,
   text,
-  { expectedFormat = 'atlas.quant.bundle', authorize = null } = {}
+  {
+    expectedFormat = 'atlas.quant.bundle',
+    expectedVersion = 1,
+    authorize = null,
+    validateRows = null
+  } = {}
 ) {
   const job = await leasedJob(env, input);
   if (['failed', 'cancelled'].includes(job.status)) return terminalDiscard(job);
@@ -324,10 +365,11 @@ export async function uploadChunk(
     descriptor = collection?.chunks[ordinal];
   if (!descriptor || !Number.isInteger(ordinal) || ordinal < 0)
     throw new ApiError('BUNDLE_CHUNK', '分片位置未在 manifest 声明');
-  assertTransport(parsed, expectedFormat);
+  assertTransport(parsed, expectedFormat, expectedVersion);
   if (job.status === 'running' && authorize) await authorize(env, job, parsed);
   const codec = parsed.manifest.documents[collection.document].codec ?? 'forecast_json_v1';
   const rows = await validateChunk(text, descriptor, codec);
+  if (validateRows) validateRows(collectionId, rows, parsed);
   const sortedSnapshot =
     collectionId === 'snapshotRows' && snapshotValidation(stage).strategy === SORTED_SNAPSHOT;
   const snapshotReceipt = sortedSnapshot ? summarizeSnapshot(rows, descriptor) : null;
@@ -359,11 +401,25 @@ export async function uploadChunk(
   }
   if (stage.status !== 'staging' || job.status !== 'running')
     conflict('已验证或终态传输不能新增分片');
+  // Existing exact receipts remain acknowledgeable after revocation; new
+  // market writes require the current server-side scope and feature gate.
+  if (job.data_source === 'ready_market')
+    await assertMarketBundle(env, job, parsed, storedMarketAdmission(stage));
+  // The strategy was just compared to the owner-scoped immutable source above.
+  // Only this admitted market route can use compact all-asset hedge references.
+  const marketHedgeTargets =
+    job.data_source === 'ready_market' && collectionId === 'hedgeFits'
+      ? (await marketAssetTargets(parsed.metadata.report.strategy.universe.symbols)).map(
+          (t) => t.id
+        )
+      : null;
   const indexes = [];
   if (!sortedSnapshot)
     for (let index = 0; index < rows.length; index++)
       indexes.push(
-        await recordIndex(collectionId, rows[index], descriptor.start + index, ordinal, index)
+        await recordIndex(collectionId, rows[index], descriptor.start + index, ordinal, index, {
+          marketHedgeTargets
+        })
       );
   const key = `bundle/${job.owner}/${stage.id}/${collectionId}/${ordinal}-${descriptor.sha256}.json`;
   await env.ARTIFACTS.put(key, text, {

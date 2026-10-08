@@ -34,5 +34,23 @@
     "snapshotBytes": 25165824,
     "jsonDepth": 64
   },
-  "executionEnabled": false
+  "executionEnabled": false,
+  "researchAdmissions": {
+    "financial_compose_50_v1": {
+      "datasetVersion": 1,
+      "compositionProfile": "financial_compose_50_v1",
+      "estimator": "ridge"
+    },
+    "financial_snapshot_view_50_v1": {
+      "datasetVersion": 2,
+      "compositionProfile": "financial_snapshot_view_50_v1",
+      "estimator": "ridge"
+    },
+    "financial_fundamental_auto_50_v1": {
+      "datasetVersion": 2,
+      "compositionProfile": "financial_snapshot_view_50_v1",
+      "estimator": "auto",
+      "contract": "financial-research-auto-v1.json"
+    }
+  }
 }

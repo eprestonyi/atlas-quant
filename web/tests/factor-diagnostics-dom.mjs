@@ -1,0 +1,85 @@
+/** Frozen diagnostic fixture only; this test does not produce statistical evidence. */
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { JSDOM } from 'jsdom';
+import { createForms } from '../quant-workspace/forms.js';
+import { createFactorDiagnostics } from '../quant-workspace/factor-diagnostics.js';
+import { FINANCIAL_FEATURE_LABELS, createFeatureLabeler } from '../quant-workspace/feature-labels.js';
+import { jointFrequencyViews } from '../quant-workspace/joint-table.js';
+const dom = new JSDOM('<main></main>');
+const e = x => String(x ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+const fmt = (x, n = 2) => x == null ? '—' : Number(x).toFixed(n);
+const C = { state: {}, esc: e, icon: () => '', fmt, pct: x => x == null ? '—' : (x * 100).toFixed(1) + '%', dateText: x => x || '—' };
+const F = createForms(C);
+const table = (headers, rows) => `<table><thead><tr>${headers.map(x => `<th>${e(x)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
+const feature = { name: '<img src=x>', kind: 'factor', distribution: { count: 4, mean: 2, std: 1, median: 2, q25: 1, q75: 3 }, missing: { count: 1, total: 5, fraction: .2 }, ic: { status: 'unavailable', dates: 0, unavailableReason: 'insufficient_cross_section', mean: null }, rankIc: { status: 'unavailable', dates: 0, mean: null }, timeSeriesCorrelation: { perTarget: [{ targetId: 'one-asset', n: 4, pearson: .2, spearman: .1, pValue: null }], totalTargets: 1, omittedTargets: 0 }, descriptiveFit: { rSquared: .04, fitSample: 'reported_terminal_pairs', outOfSampleFit: false } };
+const pair = { x: 'x', y: 'y', status: 'available', xEdges: [null, 1, null], yEdges: [null, 2, null], counts: [[1,2],[3,4]], probabilities: [[.1,.2],[.3,.4]], sampleCount: 10, missingPairCount: 1, firstDate: '20250101', lastDate: '20250120', edgeSource: 'pre_terminal_development_feature_quantiles', intervalConvention: 'test fixture' };
+const diagnostics = { firstDate: '20250101', lastDate: '20250120', origins: 5, maturedValidOrigins: 4, targetDefinition: '(realizedFuture-currentState)/scale', features: [feature], dependence: { featureNames: ['x','y'], correlation: [[1,.2],[.2,1]], covariance: [[1,.1],[.1,2]], pairCounts: [[4,3],[3,4]], jointDistributions: [pair], jointPairBudget: 6, totalPossiblePairs: 1, omittedPairs: 0, jointPairSelection: 'declared_factor_order_then_derived_states_no_outcome_ranking' }, significance: { reason: 'overlapping_labels_and_cross_sectional_temporal_dependence_not_adjusted_for_factor_tests' } };
+const report = { forecasts: { factorResearch: { diagnostics } } };
+let remoteMode = false, pageCalls = [], featureRows = [feature], pairRows = [pair];
+const remote = { enabled: () => remoteMode, page(name) { pageCalls.push(name); return { loaded: true, items: name === 'factorFeatures' ? featureRows : pairRows }; } };
+const renderer = createFactorDiagnostics(C, F, { remote, table, remoteState: (_page, html) => html });
+const original = JSON.stringify(report), main = dom.window.document.querySelector('main');
+main.innerHTML = renderer.render(report);
+assert(!main.querySelector('img'), 'untrusted factor name is escaped');
+assert(main.textContent.includes('不是因子加入 F 后的样本外增量'));
+assert(main.textContent.includes('单一标的的时间序列相关不称为横截面 IC'));
+assert(main.textContent.includes('X 边际频数'));
+assert(main.textContent.includes('Y 边际频数'));
+assert(main.textContent.includes('条件分布 P(Y 分箱 | X 分箱)'));
+assert(main.textContent.includes('条件分布 P(X 分箱 | Y 分箱)'));
+assert.deepEqual(jointFrequencyViews(pair), {
+  rowCounts:[3,7], columnCounts:[4,6], rowProbabilities:[.3,.7], columnProbabilities:[.4,.6],
+  yGivenX:[[1/3,2/3],[3/7,4/7]], xGivenY:[[1/4,2/6],[3/4,4/6]]
+});
+assert.deepEqual(jointFrequencyViews({...pair,counts:[[0,0],[0,2]],sampleCount:2}).yGivenX,[[null,null],[0,1]]);
+assert.deepEqual(jointFrequencyViews({...pair,counts:[[0,0],[0,2]],sampleCount:2}).xGivenY,[[null,0],[null,1]]);
+for(const counts of [[[1,2],[3]], [[1,-2],[3,4]], [[1,true],[3,4]], [[1,2],[3,5]]])
+  assert.equal(jointFrequencyViews({...pair,counts}),null,'malformed count tables cannot create conditional evidence');
+assert(main.textContent.includes('40.0%'));
+assert(main.textContent.includes('10'));
+assert(main.textContent.includes('不保证半正定'));
+assert(main.textContent.includes('未校正标签重叠及横截面、时序依赖，暂不报告因子显著性'));
+assert(main.textContent.includes('按预先声明的因子顺序，再列内置状态；不按结果挑选'));
+for (const token of [diagnostics.significance.reason, diagnostics.dependence.jointPairSelection]) {
+  const records=[...main.querySelectorAll('pre')].filter(node=>node.textContent.includes(token));
+  assert.equal(records.length,1,'machine-readable code stays available once in raw details');
+  assert(records[0].closest('details') && !records[0].closest('details').open);
+  assert(![...main.querySelectorAll('p')].some(node=>node.textContent.includes(token)),'raw status code does not leak into prose');
+}
+assert.equal(JSON.stringify(report), original, 'view never mutates frozen diagnostics');
+remoteMode = true;
+main.innerHTML = renderer.render({ forecasts: { factorResearch: { diagnostics: { ...diagnostics, features: undefined, dependence: { ...diagnostics.dependence, jointDistributions: undefined } } } } });
+assert.deepEqual(pageCalls, ['factorFeatures', 'factorJointDistributions']);
+assert(main.textContent.includes('one-asset'));
+const registered=JSON.parse(await fs.readFile(new URL('../../edge/financial/definitions.json',import.meta.url),'utf8')).items;
+assert.deepEqual(FINANCIAL_FEATURE_LABELS,Object.fromEntries(registered.map(x=>[x.expression,x.name])),'display catalogue matches registered financial formula names');
+const factors=registered.map(x=>({id:x.id,expression:x.expression,direction:1,role:'predictor'}));
+featureRows=[...factors.map(definition=>({...feature,name:'factor:'+definition.id,definition})),...['volatility20','change1','change5'].map(name=>({...feature,name,kind:'derived_state',definition:null}))];
+pairRows=[{...pair,x:featureRows[2].name,y:featureRows[3].name},{...pair,x:featureRows[0].name,y:'volatility20',counts:[],status:'insufficient_pairs'}];
+const financial={strategy:{factors:[{id:factors[2].id,expression:'unrelated',name:'当前草稿不应渗入'}]},forecasts:{sourceStrategy:{factors},factorResearch:{diagnostics:{...diagnostics,features:undefined,dependence:{...diagnostics.dependence,featureNames:featureRows.map(x=>x.name),jointDistributions:undefined,jointPairBudget:256,totalPossiblePairs:171,omittedPairs:0}}}}};
+const frozen=JSON.stringify(financial), rowsBefore=JSON.stringify(featureRows), pairsBefore=JSON.stringify(pairRows);
+for(const mode of ['easy','studio']) {
+  C.state.quantMode=mode;main.innerHTML=renderer.render(financial);
+  const cells=[...main.querySelector('table tbody').querySelectorAll('tr td:first-child')];
+  assert.deepEqual(cells.map(x=>x.firstChild.textContent),[...registered.map(x=>x.name),'20日状态变化波动','1日状态变化','5日状态变化']);
+  const titles=[...main.querySelectorAll('summary')].map(x=>x.textContent);
+  assert(titles.some(x=>x.includes('经营利润率 · 定义与统计口径')));
+  assert(titles.some(x=>x.includes('经营利润率 × 归母净利率')));
+  assert(titles.some(x=>x.includes('收入季度同比 × 20日状态变化波动')));
+  assert(!titles.some(x=>x.includes('factor:model_fin_')),'human summaries do not expose internal IDs');
+  assert(!main.textContent.includes('当前草稿不应渗入'));
+  assert(main.textContent.includes('256'),'joint budget comes from the frozen report');
+  assert([...main.querySelectorAll('code')].some(x=>x.textContent==='factor:model_fin_operating_margin'&&x.closest('details')),'single-factor detail preserves exact model feature key');
+  assert([...main.querySelectorAll('pre')].some(x=>x.textContent.includes(pairRows[1].x)),'unavailable joint table also retains input identifiers');
+}
+assert.equal(JSON.stringify(financial),frozen);assert.equal(JSON.stringify(featureRows),rowsBefore);assert.equal(JSON.stringify(pairRows),pairsBefore);
+const names=createFeatureLabeler({factors:[{id:'named',name:'冻结名称',expression:'old',direction:1},{id:'known',expression:'close',direction:1,version:1},{id:'changed',expression:'open',direction:1},{id:'model_fin_operating_margin',expression:'close',direction:1},{id:'inverse',expression:'model_fin_operating_margin',direction:-1}],catalog:[{id:'known',name:'已注册因子',expression:'close',version:1},{id:'changed',name:'错误的新定义',expression:'close'}]});
+assert.equal(names('factor:named'),'冻结名称');assert.equal(names('factor:known'),'已注册因子');assert.equal(names('factor:changed'),'factor:changed');
+assert.equal(names('factor:model_fin_operating_margin'),'factor:model_fin_operating_margin','reuse of a known ID with a different formula is not mislabeled');
+assert.equal(names('factor:inverse'),'经营利润率（反向）');assert.equal(names('factor:unknown'),'factor:unknown');
+main.innerHTML = renderer.render({ forecasts: {} });
+assert(main.textContent.includes('旧结果不会补造'));
+assert(!main.querySelector('table'));
+console.log(JSON.stringify({ chineseStatisticalMethodNotes: true, financialLabelCatalogueParity: true, frozenLabelsAcrossModes: true, sourceDefinitionPrecedence: true, unknownAndChangedFormulaFallback: true, originalFeatureOrderAndKeysPreserved: true, dynamicJointBudget: true, rawCodesInClosedDetails: true, frozenInputs: true, descriptiveNotOos: true, icNotTimeSeries: true, jointFrequencyProbabilityMargins: true, boundedRemoteCollections: true, absentEvidenceNotInvented: true, escapedNames: true, providerEvidence: false }));
+dom.window.close();

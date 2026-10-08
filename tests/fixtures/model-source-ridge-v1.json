@@ -1,0 +1,293 @@
+{
+  "note": "Synthetic fitted Ridge audit from test_model_function.fitted; paired with existing numeric golden, no research edge evidence.",
+  "strategy": {
+    "schemaVersion": 2,
+    "name": "Forecast research",
+    "universe": {
+      "symbols": [
+        "000001.SZ",
+        "600000.SH",
+        "600036.SH"
+      ],
+      "start": "20220101",
+      "end": "20250930"
+    },
+    "research": {
+      "mode": "statistical_quant",
+      "observationDays": 1
+    },
+    "target": {
+      "kind": "asset_price",
+      "horizonSessions": 5
+    },
+    "model": {
+      "family": "mean_reversion",
+      "estimator": "auto",
+      "trainWindow": 504,
+      "refitDays": 20
+    },
+    "execution": {
+      "enabled": false,
+      "side": "long_short",
+      "shorting": "theoretical",
+      "minEdgeBps": 10.0,
+      "maxPositions": 5
+    },
+    "dataBindings": {
+      "pcd": {}
+    },
+    "factors": [],
+    "preprocess": {
+      "winsorize": true,
+      "standardize": true,
+      "decorrelation": "drop_correlated",
+      "correlationThreshold": 0.9
+    },
+    "validation": {
+      "holdoutFraction": 0.2,
+      "minTrainDates": 80,
+      "innerFolds": 2,
+      "outerFolds": 2
+    },
+    "portfolio": {
+      "initialCapital": 1000000.0,
+      "grossExposure": 1.0,
+      "maxWeight": 0.3,
+      "rebalanceDays": 1,
+      "rebalanceThresholdBps": 25.0,
+      "netExposureLimit": 2.0,
+      "sizingMode": "fixed",
+      "targetAnnualVolatility": 0.1,
+      "volatilityLookback": 60,
+      "factorExposureLimits": []
+    },
+    "costs": {
+      "commissionBps": 2.5,
+      "slippageBps": 3.0,
+      "sellTaxBps": 5.0,
+      "transferBps": 0.1,
+      "minCommission": 5.0,
+      "borrowAnnualBps": 300.0
+    }
+  },
+  "fit": {
+    "trainRows": 140,
+    "featureNames": [
+      "state_deviation20",
+      "factor:利润",
+      "risk"
+    ],
+    "decorrelation": {
+      "mode": "drop_correlated",
+      "threshold": 0.9,
+      "method": "absolute_pearson_pairwise_training_min10_stable_input_order",
+      "fitOnTrainOnly": true,
+      "retained": [
+        "state_deviation20",
+        "factor:利润",
+        "risk"
+      ],
+      "dropped": [],
+      "trainRows": 140
+    },
+    "estimator": "ridge",
+    "params": {
+      "alpha": 1.0
+    },
+    "outputs": [
+      "entry_level_change_over_known_gross",
+      "exit_level_change_over_known_gross"
+    ],
+    "imputerMedian": [
+      -0.07784631317760317,
+      -0.042839174999853666,
+      0.018638290983285614
+    ],
+    "winsorLower": [
+      -2.4499061422500814,
+      -2.237078693432091,
+      -2.4815986356927975
+    ],
+    "winsorUpper": [
+      2.4607980865598966,
+      1.8568508672034554,
+      2.2548443591533722
+    ],
+    "scalerMean": [
+      -0.08019355185256165,
+      -0.06530472993345555,
+      -0.00968380244548849
+    ],
+    "scalerScale": [
+      0.9679158966643882,
+      0.9825902698540234,
+      0.9610671789530096
+    ],
+    "coefficients": [
+      [
+        -0.0024617694789967038,
+        0.0028106855976331043,
+        0.0049778203198054755
+      ],
+      [
+        -0.09744028717514948,
+        0.019762747346729535,
+        -0.0005684410733501012
+      ]
+    ],
+    "intercepts": [
+      0.029029235955659115,
+      0.0070053147377377315
+    ],
+    "stateEffects": [
+      {
+        "feature": "state_deviation20",
+        "low": -0.6179953222554144,
+        "high": 0.47920799447456275,
+        "remainingChangeEffect": -0.10766508225915558,
+        "negativeEffectObserved": true
+      }
+    ],
+    "stateEffectInterpretation": "Training conditional IQR perturbation, not causal attribution or proof of mean reversion.",
+    "trainStart": "20240101",
+    "trainEnd": "20240701",
+    "informationCutoff": "20240710",
+    "labelEndMax": "20240709",
+    "trainDates": 140,
+    "id": "m",
+    "fitDate": "20240710",
+    "status": "valid",
+    "functionArtifact": {
+      "schema": "atlas-model-function/1",
+      "hashAlgorithm": "sha256-canonical-f64-json/1",
+      "inputSchema": [
+        {
+          "name": "state_deviation20",
+          "type": "finite_number_or_null"
+        },
+        {
+          "name": "factor:利润",
+          "type": "finite_number_or_null"
+        },
+        {
+          "name": "risk",
+          "type": "finite_number_or_null"
+        }
+      ],
+      "transforms": {
+        "imputeMedian": [
+          -0.07784631317760317,
+          -0.042839174999853666,
+          0.018638290983285614
+        ],
+        "winsorLower": [
+          -2.4499061422500814,
+          -2.237078693432091,
+          -2.4815986356927975
+        ],
+        "winsorUpper": [
+          2.4607980865598966,
+          1.8568508672034554,
+          2.2548443591533722
+        ],
+        "scaleMean": [
+          -0.08019355185256165,
+          -0.06530472993345555,
+          -0.00968380244548849
+        ],
+        "scaleScale": [
+          0.9679158966643882,
+          0.9825902698540234,
+          0.9610671789530096
+        ]
+      },
+      "estimator": {
+        "kind": "linear",
+        "coefficients": [
+          [
+            -0.0024617694789967038,
+            0.0028106855976331043,
+            0.0049778203198054755
+          ],
+          [
+            -0.09744028717514948,
+            0.019762747346729535,
+            -0.0005684410733501012
+          ]
+        ],
+        "intercepts": [
+          0.029029235955659115,
+          0.0070053147377377315
+        ]
+      },
+      "featureConstruction": {
+        "schema": "origin-state-features/1",
+        "family": "mean_reversion",
+        "factors": [],
+        "preprocess": {
+          "winsorize": true,
+          "standardize": true,
+          "decorrelation": "drop_correlated",
+          "correlationThreshold": 0.9
+        },
+        "targetSpecification": {
+          "kind": "asset_price",
+          "horizonSessions": 5
+        },
+        "quantityPolicy": "origin_specific_frozen_quantities"
+      },
+      "training": {
+        "trainStart": "20240101",
+        "trainEnd": "20240701",
+        "informationCutoff": "20240710",
+        "labelEndMax": "20240709",
+        "trainRows": 140,
+        "trainDates": 140
+      },
+      "scope": {
+        "family": "mean_reversion",
+        "targetKind": "asset_price",
+        "horizonSessions": 5,
+        "symbols": [
+          "000001.SZ",
+          "600000.SH",
+          "600036.SH"
+        ],
+        "observationDays": 1,
+        "researchStart": "20220101",
+        "researchEnd": "20250930",
+        "generalizationOutsideScopeValidated": false
+      },
+      "outputs": [
+        "entry_level_change_over_known_gross",
+        "exit_level_change_over_known_gross"
+      ],
+      "identity": {
+        "entry": "currentState + scale * output[0]",
+        "future": "currentState + scale * output[1]",
+        "e": "currentState - expectedFuture",
+        "expectedChange": "-e",
+        "scale": "origin_known_gross_absolute_leg_value"
+      },
+      "provenance": {
+        "estimator": "ridge",
+        "parameters": {
+          "alpha": 1.0
+        },
+        "sklearnVersion": "1.9.1"
+      },
+      "editPolicy": {
+        "allowed": [
+          "estimator_numeric_parameters"
+        ],
+        "arbitraryCode": false,
+        "editedEvidenceStatus": "UNVALIDATED_USER_EDIT"
+      },
+      "lineage": {
+        "parentArtifactId": null,
+        "status": "fitted"
+      },
+      "artifactId": "e60a0c3ad5019fe362afae7cef775422800555b8f51c2e62f1a1d99019171c0e"
+    }
+  }
+}

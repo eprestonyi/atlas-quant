@@ -17,7 +17,7 @@ def _error(code, message):
     return RunnerError(code, message)
 
 
-def claim_request(request_id, *, financial_datasets=False):
+def claim_request(request_id, *, financial_datasets=False, market_datasets=False, financial_graphs=False, market_trend_auto=False):
     from . import __version__
     request = {"requestId": request_id, "runnerVersion": "atlas-quant-runner/" + __version__,
             "engineVersion": __version__, "transportFormats": ["atlas.quant.bundle/1"]}
@@ -25,6 +25,20 @@ def claim_request(request_id, *, financial_datasets=False):
         request["transportFormats"].append("atlas.quant.financial_bundle/1")
         request["datasetFormats"] = ["atlas.quant.research_dataset/2"]
         request["snapshotFormats"] = ["financial_json_v1"]
+        from .research_dataset.research_profile import AUTO_PROFILE, SOURCE_PROFILES
+        request["financialResearchProfiles"] = [SOURCE_PROFILES[2], AUTO_PROFILE]
+    if financial_graphs is True:
+        from .research_dataset.graph_v3.snapshot import RESEARCH_PROFILE
+        request["transportFormats"].append("atlas.quant.financial_bundle/2")
+        request.setdefault("datasetFormats", []).append("atlas.quant.research_dataset/3")
+        request.setdefault("snapshotFormats", []).append("financial_column_snapshot_v1")
+        request.setdefault("financialResearchProfiles", []).append(RESEARCH_PROFILE)
+    if market_datasets is True:
+        from .capacity.profiles import FULL_FILTER_PROFILE_ID,AUTO_FILTER_CANDIDATE_ID
+        request['marketResearchProfiles']=[FULL_FILTER_PROFILE_ID,AUTO_FILTER_CANDIDATE_ID]
+        if market_trend_auto is True:
+            from .capacity.profiles import TREND_AUTO_PROFILE_ID
+            request['marketResearchProfiles'].append(TREND_AUTO_PROFILE_ID)
     return request
 
 
@@ -118,7 +132,10 @@ class ClaimIntent:
         current = self.read()
         if current != intent or intent["phase"] != "pending_claim":
             raise _error("CLAIM_INTEGRITY", "领取意图发生变化；停止执行。")
-        extra = {"sourceKind": "ready_dataset"} if job.get("dataSource") == "ready_dataset" else {}
+        extra = {"sourceKind": job['dataSource']} if job.get("dataSource") in {'ready_dataset','ready_market'} else {}
+        from .graph_research_runner.protocol import requested as graph_requested
+        if graph_requested(job):
+            extra["sourceFormat"] = "atlas.quant.research_dataset/3"
         return self._write(dict(intent, **extra, phase="executing", jobId=job["id"], leaseToken=job["leaseToken"]))
 
     def clear(self, expected):

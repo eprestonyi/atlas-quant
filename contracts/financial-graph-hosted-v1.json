@@ -1,0 +1,144 @@
+{
+  "contractVersion": 1,
+  "status": "PROPOSED_HOSTED_INCREMENT_NOT_ENABLED",
+  "sourceComposition": {
+    "capability": "research-dataset-graph/1",
+    "profile": "financial_snapshot_graph_50_v1",
+    "datasetFormat": "atlas.quant.research_dataset/3",
+    "publicNamespace": "dataset-graphs",
+    "runnerNamespace": "dataset-graphs",
+    "planSpec": [
+      "profile",
+      "request",
+      "sources"
+    ],
+    "planRootRule": "sha256 existing canonical planSpec bytes, including explicit graph profile",
+    "tableReuse": "quant_dataset_plans/jobs/stages/dependencies with exact plan.spec.profile fencing; legacy composer claims explicitly exclude graph plans",
+    "inputAuthority": "fixed owner-scoped frozen market origin and raw financial input packages, resolved exact current active registry bytes before admission",
+    "providerCalls": 0,
+    "workerFlag": "RESEARCH_DATASET_GRAPHS_ENABLED",
+    "flagDefault": false,
+    "jobKind": "dataset_graph_compose",
+    "pythonFlag": "graph_dataset_enabled",
+    "pythonDeliveryDirectory": "graph_dataset_delivery_dir",
+    "serviceEntrypoint": "python -m atlas_quant.graph_dataset_runner",
+    "serviceTopology": "separate sixth service with independent private config, queue namespace, durable claims and authenticated spool; shares host compute slot",
+    "deadlineSeconds": 600
+  },
+  "research": {
+    "dataSource": "ready_dataset",
+    "admissionProfile": "financial_fundamental_graph_auto_50_v1",
+    "sourceCompositionProfile": "financial_snapshot_graph_50_v1",
+    "pythonFlag": "financial_graph_research_enabled",
+    "flagDefault": false,
+    "requiredCapabilitiesAll": {
+      "transportFormats": "atlas.quant.financial_bundle/2",
+      "datasetFormats": "atlas.quant.research_dataset/3",
+      "snapshotFormats": "financial_column_snapshot_v1",
+      "financialResearchProfiles": "financial_fundamental_graph_auto_50_v1"
+    },
+    "legacyCapabilitiesImplied": false,
+    "claimMetadata": {
+      "datasetRef": {
+        "datasetId": "lowercase UUID",
+        "datasetRoot": "64 lowercase hex",
+        "format": "atlas.quant.research_dataset",
+        "version": 3
+      },
+      "admissionProfile": "financial_fundamental_graph_auto_50_v1",
+      "sourceEvidence": "exact {datasetRef, admissionProfile}",
+      "datasetInputUrl": "/quant/api/runner/research-datasets/{jobId}/input",
+      "resultTransport": {
+        "format": "atlas.quant.financial_bundle",
+        "version": 2
+      }
+    },
+    "claimPredicate": "((data_source<>'ready_dataset' AND NOT EXISTS(SELECT 1 FROM quant_run_datasets rd WHERE rd.job_id=jobs.id)) OR (data_source='ready_dataset' AND EXISTS(SELECT 1 FROM quant_run_datasets rd WHERE rd.job_id=jobs.id AND rd.owner=jobs.owner AND rd.profile IN(SELECT value FROM json_each(?)))))",
+    "claimPredicateArgument": "exact acceptedFinancialProfiles: each profile requires its own full capability tuple plus its own server enable flag; unknown profiles and missing owner-linked rows excluded",
+    "durableRetry": "same requestId/job/lease; revalidate the selected row against acceptedFinancialProfiles before returning existing running lease",
+    "inputMetadataKeys": [
+      "job",
+      "datasetRef",
+      "admissionProfile",
+      "sourceEvidence",
+      "manifest",
+      "partUrlTemplate",
+      "registry",
+      "limits"
+    ],
+    "inputWireLimits": "unchanged dataset_runner.protocol.LIMITS; physical closure 64MiB, registry entries separately bounded, manifest 256KiB, parts 512KiB; new graph expanded limits remain fixed internally",
+    "inputManifestValidator": "graph_v3.manifest.validate_manifest only",
+    "resultNamespace": "financial-graph-bundles",
+    "resultManifestValidator": "financial_bundle_v2.validate_manifest only",
+    "sourceSpool": {
+      "directory": "research-graph-inputs",
+      "magic": "AQG3",
+      "aadTag": ":research-graph-input-v3:"
+    },
+    "resultSpool": {
+      "directory": "financial-graph-bundles",
+      "magic": "AQF2",
+      "aadTag": ":financial-bundle-v2:"
+    },
+    "sameChild": [
+      "acquire shared compute slot",
+      "decrypt immutable source and independently downloaded registry bytes",
+      "restore raw financial packages and exact graph closure",
+      "register exact frame locally after all source and 24MiB checks",
+      "freeze schema3 column snapshot",
+      "run declared full F and factor-free baseline within fixed wall/RSS/disk/fit limits",
+      "source-derived full forecast domain verification",
+      "write encrypted financial_bundle/2 only after full validation"
+    ],
+    "execution": false,
+    "workerFlag": "FINANCIAL_GRAPH_RESEARCH_ENABLED"
+  },
+  "guards": {
+    "wallSeconds": 900,
+    "rssBytes": 3221225472,
+    "minimumFreeDiskBytes": 524288000,
+    "logicalJoinedBytes": 25165824,
+    "logicalExpandedSnapshotBytes": 25165824,
+    "failClosedLegacyParsers": true,
+    "noRefitDuringAuditOrDeliveryRecovery": true,
+    "legacyFlagsNeverEnableGraph": [
+      "RESEARCH_DATASETS_ENABLED",
+      "FINANCIAL_DATASET_RESEARCH_ENABLED"
+    ]
+  },
+  "owners": {
+    "factor_model_lab": [
+      "independent Python graph input client/spool/compute",
+      "financial_graph_bundle_spool.py",
+      "Python graph composition protocol/runtime",
+      "targeted Python tests",
+      "shared Python runner dispatch only after merge coordination"
+    ],
+    "atlas_quant_history": [
+      "shared edge runner claims",
+      "edge research input routes",
+      "edge result upload and scope coverage",
+      "versioned graph source composition edge routes"
+    ],
+    "root": [
+      "UI source selection",
+      "feature flags and migration integration",
+      "release and local HTTP/browser integration"
+    ]
+  },
+  "beforeHostedEnable": [
+    "independent source-derived full-domain audit and coordinated-removal attacks pass",
+    "new client rejects legacy/partial capabilities and all mismatched metadata",
+    "encrypted spool cross-owner/profile/format substitution rejection",
+    "real isolated HTTP two-owner source/result upload, loss and resume verification",
+    "complete dataset3 and financial_bundle2 downloads independently audited with external pins",
+    "same-child local hosted F explicit new job only if needed and predeclared, no replay of retained 50 run"
+  ],
+  "production": false,
+  "localSourceDomainGate": {
+    "status": "PASS",
+    "evidenceContract": "financial-graph-auto-v1.json#/localFullScopeEvidence/independentPairedAudit",
+    "hostedAcceptanceImplied": false,
+    "newModelFitPerformed": false
+  }
+}

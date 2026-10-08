@@ -487,6 +487,8 @@ async function readyFixture(f, o) {
     text = canonical(manifest),
     root = h(text),
     spec = {
+      profile: 'financial_snapshot_view_50_v1',
+      request: { profile: 'financial_snapshot_view_50_v1' },
       sources: {
         registry: [],
         financial: [
@@ -653,7 +655,6 @@ test('ready financial dataset has exact owner/scope/profile, isolated claims, ro
   for (const partial of [
     {},
     { transportFormats: ['atlas.quant.bundle/1'] },
-    { ...financialCapabilities, snapshotFormats: 'financial_json_v1' },
   ]) {
     const old = await json(
       await f.call('/runner/claim', {
@@ -663,6 +664,19 @@ test('ready financial dataset has exact owner/scope/profile, isolated claims, ro
     );
     assert.equal(old.job, null);
   }
+  const malformedRequestId = randomUUID();
+  await json(
+    await f.call('/runner/claim', {
+      method: 'POST',
+      data: { ...financialCapabilities, requestId: malformedRequestId,
+        snapshotFormats: 'financial_json_v1' },
+    }),
+    400,
+  );
+  assert.equal(await f.db.prepare('SELECT request_id FROM runner_claims WHERE request_id=?')
+    .bind(malformedRequestId).first(), null);
+  assert.equal((await f.db.prepare('SELECT status FROM jobs WHERE id=?')
+    .bind(queued.job.id).first()).status, 'queued');
   const requestId = randomUUID(),
     claimed = await json(
       await f.call('/runner/claim', {

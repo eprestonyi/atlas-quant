@@ -1,0 +1,139 @@
+{
+  "admissionProfile": "financial_fundamental_auto_50_v1",
+  "sourceDataset": {
+    "format": "atlas.quant.research_dataset",
+    "version": 2,
+    "compositionProfile": "financial_snapshot_view_50_v1",
+    "exactScopeRequired": true,
+    "newProviderCalls": false,
+    "sameChildRecompositionRequired": true
+  },
+  "model": {
+    "family": "fundamental",
+    "estimator": "auto",
+    "targetKind": "asset_price",
+    "executionEnabled": false,
+    "factorRoles": [
+      "predictor"
+    ],
+    "temporaryBindingsAllowed": false
+  },
+  "limits": {
+    "symbols": 50,
+    "calendarDays": 366,
+    "factors": 16,
+    "innerFolds": 2,
+    "outerFolds": 2,
+    "minRefitDays": 20,
+    "resultTransport": "atlas.quant.financial_bundle/1",
+    "unchangedSourceTransportLimits": "hosted-datasets-v1.json"
+  },
+  "runnerRequires": {
+    "datasetFormats": [
+      "atlas.quant.research_dataset/2"
+    ],
+    "snapshotFormats": [
+      "financial_json_v1"
+    ],
+    "transportFormats": [
+      "atlas.quant.financial_bundle/1"
+    ],
+    "financialResearchProfiles": [
+      "financial_fundamental_auto_50_v1"
+    ]
+  },
+  "selection": {
+    "declaredCandidates": [
+      {
+        "estimator": "no_change",
+        "params": {}
+      },
+      {
+        "estimator": "historical_drift",
+        "params": {}
+      },
+      {
+        "estimator": "ridge",
+        "params": {
+          "alpha": 1
+        }
+      },
+      {
+        "estimator": "ridge",
+        "params": {
+          "alpha": 10
+        }
+      },
+      {
+        "estimator": "elastic_net",
+        "params": {
+          "alpha": 0.0001,
+          "l1_ratio": 0.2
+        }
+      },
+      {
+        "estimator": "elastic_net",
+        "params": {
+          "alpha": 0.001,
+          "l1_ratio": 0.5
+        }
+      },
+      {
+        "estimator": "hist_gradient_boosting",
+        "params": {
+          "max_leaf_nodes": 7,
+          "l2_regularization": 1
+        }
+      },
+      {
+        "estimator": "hist_gradient_boosting",
+        "params": {
+          "max_leaf_nodes": 15,
+          "l2_regularization": 5
+        }
+      }
+    ],
+    "mechanismFixedBeforeSelection": true,
+    "purgedNestedTimeValidation": true,
+    "terminalMetricsUsedForSelection": false,
+    "factorFreeBaselineRequired": true,
+    "fitBudgetIncludesBaseline": true,
+    "eliminatesBiasOrOverfitting": false,
+    "reinforcementLearningIncluded": false,
+    "productContract": "factor-research-model-v1.json"
+  },
+  "datasetDetail": {
+    "researchAdmissions": "additive list; legacy researchAdmission retained",
+    "preferredResearchAdmission": "auto only when frozen scope eligible and fresh capable runner available, otherwise null",
+    "sampleStatus": "not_checked",
+    "scopeBlockedReason": "DATASET_SCOPE_EXCEEDS_AUTO_PROFILE"
+  },
+  "evidence": {
+    "localAcceptanceOnly": true,
+    "validatedFrozenScope": {
+      "symbols": 1,
+      "marketRows": 262,
+      "selectedFinancialStates": 16
+    },
+    "capacityAtAllUpperBoundsEstablished": false,
+    "deploymentQualified": false,
+    "predictiveEdgeEstablished": false,
+    "maximumScopeAttempt": {
+      "status": "FAILED_BEFORE_FIT",
+      "code": "PREPARED_BYTE_BUDGET",
+      "synthetic": true,
+      "symbols": 50,
+      "calendarDaysInclusive": 366,
+      "tradingSessions": 262,
+      "financialStates": 16,
+      "sourcePackages": 2,
+      "actualPreparedBytes": 67765427,
+      "entireClosureBudgetBytes": 67108864,
+      "joinedRowsOnlyBytes": 24802815,
+      "joinedDocumentBudgetBytes": 25165824,
+      "modelsFitted": 0,
+      "providerCalls": 0
+    },
+    "productionAuto50Enabled": false
+  }
+}

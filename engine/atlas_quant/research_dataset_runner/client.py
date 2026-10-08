@@ -15,6 +15,7 @@ from ..dataset_runner.protocol import (
     require,
 )
 from ..research_dataset.snapshot import dataset_reference
+from ..research_dataset.research_profile import admit_profile
 from ..research_dataset import DatasetReader
 from .spool import ResearchDatasetSpool
 
@@ -29,6 +30,26 @@ class ResearchDatasetClient(DatasetClient):
         require(method == "GET", "DATASET_ROUTE")
         return super()._request(method, route, **kwargs)
 
+    @staticmethod
+    def source_contract(job):
+        """Legacy dataset/2 stays explicit; graph/3 uses a separate subclass."""
+        reference = dataset_reference(job.get("datasetRef"))
+        require(reference["version"] == 2)
+        profile = admit_profile(job.get("admissionProfile"), 2)
+        require(job.get("admissionProfile") == profile, "DATASET_INPUT_IDENTITY")
+        require(job.get("resultTransport") == {"format": "atlas.quant.financial_bundle", "version": 1},
+                "DATASET_INPUT_IDENTITY")
+        return reference, profile
+
+    def source_store(self, spool, job):
+        return ResearchDatasetSpool.from_spool(spool, job)
+
+    def source_reader(self, manifest, store, reference, job):
+        reader = DatasetReader(manifest, lambda c, n: store.read(store.part_name(c, n)),
+                               expected_root=reference["datasetRoot"])
+        require(reader.manifest["version"] == 2 and reader.manifest["profile"] == PROFILE)
+        return reader
+
     def prepare(self, job, spool, *, deadline, check):
         # Only a small control envelope is ever passed to multiprocessing.spawn.
         require(len(encode(job)) <= LIMITS["inputMetadataBytes"], "DATASET_BYTE_BUDGET")
@@ -40,9 +61,8 @@ class ResearchDatasetClient(DatasetClient):
             and job.get("dataset") is None,
             "DATASET_INPUT_IDENTITY",
         )
-        reference = dataset_reference(job.get("datasetRef"))
-        require(reference["version"] == 2 and job.get("admissionProfile") == PROFILE)
-        evidence = {"datasetRef": reference, "admissionProfile": PROFILE}
+        reference, research_profile = self.source_contract(job)
+        evidence = {"datasetRef": reference, "admissionProfile": research_profile}
         require(job.get("sourceEvidence") == evidence, "DATASET_INPUT_IDENTITY")
         route = job["id"] + "/"
         require(
@@ -79,7 +99,7 @@ class ResearchDatasetClient(DatasetClient):
             meta["job"] == {"id": job["id"], "kind": "forecast"}
             and meta["datasetRef"] == reference
             and meta["sourceEvidence"] == evidence
-            and meta["admissionProfile"] == PROFILE,
+            and meta["admissionProfile"] == research_profile,
             "DATASET_INPUT_IDENTITY",
         )
         require(meta["limits"] == LIMITS, "DATASET_LIMITS")
@@ -114,15 +134,8 @@ class ResearchDatasetClient(DatasetClient):
         manifest = descriptor(
             meta["manifest"], "manifest" + query, LIMITS["manifestBytes"]
         )
-        store = ResearchDatasetSpool.from_spool(spool, job)
-        reader = DatasetReader(
-            manifest,
-            lambda c, n: store.read(store.part_name(c, n)),
-            expected_root=reference["datasetRoot"],
-        )
-        require(
-            reader.manifest["version"] == 2 and reader.manifest["profile"] == PROFILE
-        )
+        store = self.source_store(spool, job)
+        reader = self.source_reader(manifest, store, reference, job)
         # Complete registry page admission precedes any source payload download.
         index, refs, total, offset = [], set(), 0, 0
         while offset < count:

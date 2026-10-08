@@ -3,6 +3,7 @@ import { ApiError } from '../errors.mjs';
 import { sha } from '../runtime.mjs';
 import { DATE, BUNDLE_PROFILE } from './profile.mjs';
 import { byteLength, object } from './json.mjs';
+import { marketHedgeMetadata } from '../market-preparation/hedge-index.mjs';
 
 const fail = (message) => {
   throw new ApiError('BUNDLE_RECORD', message);
@@ -46,7 +47,14 @@ export function targetLabel(row) {
     : symbols;
 }
 
-export async function recordIndex(collection, row, ordinal, chunkOrdinal, itemIndex) {
+export async function recordIndex(
+  collection,
+  row,
+  ordinal,
+  chunkOrdinal,
+  itemIndex,
+  { marketHedgeTargets = null } = {}
+) {
   if (!object(row)) fail('记录须为对象');
   let rowId = null,
     day = null,
@@ -147,6 +155,9 @@ export async function recordIndex(collection, row, ordinal, chunkOrdinal, itemIn
       status: row.status ?? null
     };
     status = identifier(row.status, '拟合状态', true);
+  } else if (collection === 'snapshotColumns') {
+    rowId = identifier(row.name, '冻结数据列');
+    metadata = { kind: row.kind };
   } else if (collection === 'snapshotRows') {
     rowId = snapshotRecordKey(row);
     day = row.trade_date;
@@ -183,9 +194,13 @@ export async function recordIndex(collection, row, ordinal, chunkOrdinal, itemIn
     rowId = day;
   } else if (collection === 'hedgeFits') {
     day = date(row.date);
-    if (!Array.isArray(row.targetIds) || row.targetIds.length > 50) fail('对冲拟合目标引用无效');
-    row.targetIds.forEach((id) => identifier(id, '对冲目标'));
-    metadata = { targetIds: row.targetIds };
+    if (marketHedgeTargets !== null) {
+      metadata = await marketHedgeMetadata(row, marketHedgeTargets);
+    } else {
+      if (!Array.isArray(row.targetIds) || row.targetIds.length > 50) fail('对冲拟合目标引用无效');
+      row.targetIds.forEach((id) => identifier(id, '对冲目标'));
+      metadata = { targetIds: row.targetIds };
+    }
   } else if (collection === 'outerFolds') {
     rowId = String(ordinal);
   } else if (row.id !== undefined) rowId = identifier(row.id, '记录');

@@ -292,8 +292,8 @@ def restore_dataset(reader, authorized_registry):
     return publication.result
 
 
-def restore_dataset_for_research(strategy, reader, authorized_registry):
+def restore_dataset_for_research(strategy, reader, authorized_registry, *, research_profile=None):
     from .snapshot import validate_research_profile
 
-    validate_research_profile(strategy, reader.manifest["scope"])
+    validate_research_profile(strategy, reader.manifest["scope"], research_profile=research_profile, dataset_version=reader.manifest["version"])
     return restore_dataset(reader, authorized_registry)

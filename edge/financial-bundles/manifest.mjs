@@ -3,6 +3,7 @@ import { HASH } from '../bundles/profile.mjs';
 import { keys, object } from '../bundles/json.mjs';
 import { validateManifestLayout } from '../bundles/manifest.mjs';
 import { validateStoredStatisticalQuant } from '../statistical-quant/validation.mjs';
+import {registeredFinancialProfile,assertFinancialResearchConfig} from '../datasets/research-profile.mjs';
 
 export const FINANCIAL_FORMAT = 'atlas.quant.financial_bundle';
 export const FINANCIAL_CAPABILITY = FINANCIAL_FORMAT + '/1';
@@ -54,7 +55,7 @@ export function validateSourceEvidence(value) {
     ref.format !== 'atlas.quant.research_dataset' ||
     !Number.isInteger(ref.version) ||
     !Object.hasOwn(profiles, ref.version) ||
-    value.admissionProfile !== profiles[ref.version]
+    !registeredFinancialProfile(value.admissionProfile, ref.version)
   )
     fail('财务来源引用无效');
   return value;
@@ -96,12 +97,7 @@ export async function validateFinancialManifest(text, expectedId = null) {
   for (const source of [report.strategy, forecast.sourceStrategy]) {
     if (!object(source) || source.execution?.enabled !== false) fail('金融研究必须显式关闭执行');
     const config = validateStoredStatisticalQuant(source);
-    if (
-      config.target.kind !== 'asset_price' ||
-      config.model.family !== 'fundamental' ||
-      config.model.estimator !== 'ridge'
-    )
-      fail('金融研究配置不符合注册 profile');
+    assertFinancialResearchConfig(config, manifest.sourceEvidence.admissionProfile, manifest.sourceEvidence.datasetRef.version);
   }
   if (
     !same(report.strategy, forecast.sourceStrategy) ||
