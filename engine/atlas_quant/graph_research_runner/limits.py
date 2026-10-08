@@ -11,6 +11,15 @@ class GraphProcessBudget:
     def __init__(self, context):
         self.store=GraphResearchSpool(context)
         self.next_check=0.0
+        self.progress_enabled=True
+
+    @classmethod
+    def for_composer(cls,store):
+        budget=cls.__new__(cls)
+        budget.store=store
+        budget.next_check=0.0
+        budget.progress_enabled=False
+        return budget
 
     def check(self,pid):
         now=time.monotonic()
@@ -28,7 +37,7 @@ class GraphProcessBudget:
         except OSError:require(False,'CAPACITY_MONITOR')
         require(free>=500*1024**2,'CAPACITY_DISK')
         path=self.store.root/'progress.enc'
-        if path.exists() or path.is_symlink():
+        if self.progress_enabled and (path.exists() or path.is_symlink()):
             event=decode(self.store.read('progress'),limit=262144)
             require(isinstance(event,dict),'CAPACITY_MONITOR')
             if event.get('phase')=='fit_started':

@@ -17,7 +17,13 @@
     "inputAuthority": "fixed owner-scoped frozen market origin and raw financial input packages, resolved exact current active registry bytes before admission",
     "providerCalls": 0,
     "workerFlag": "RESEARCH_DATASET_GRAPHS_ENABLED",
-    "flagDefault": false
+    "flagDefault": false,
+    "jobKind": "dataset_graph_compose",
+    "pythonFlag": "graph_dataset_enabled",
+    "pythonDeliveryDirectory": "graph_dataset_delivery_dir",
+    "serviceEntrypoint": "python -m atlas_quant.graph_dataset_runner",
+    "serviceTopology": "separate sixth service with independent private config, queue namespace, durable claims and authenticated spool; shares host compute slot",
+    "deadlineSeconds": 600
   },
   "research": {
     "dataSource": "ready_dataset",

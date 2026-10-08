@@ -20,8 +20,9 @@ def timestamp(value):
 
 
 class LeaseMonitor:
-    def __init__(self, client, job, *, stop_requested=None, interval=20):
+    def __init__(self, client, job, *, stop_requested=None, interval=20, capability=CAPABILITY):
         self.client, self.job = client, dict(job)
+        self.capability = capability
         self.stop_requested = stop_requested or (lambda: False)
         self.interval = interval
         now = time.monotonic()
@@ -50,7 +51,7 @@ class LeaseMonitor:
             response = self.client.post(
                 "heartbeat",
                 {
-                    "capability": CAPABILITY,
+                    "capability": self.capability,
                     "engineVersion": __version__,
                     "state": "busy",
                     "jobId": self.job["id"],

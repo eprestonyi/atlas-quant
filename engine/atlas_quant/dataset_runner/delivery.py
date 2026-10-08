@@ -6,21 +6,21 @@ from .compute import safe_error
 from .protocol import digest, encode, identifier, keys, require, sha
 
 
-def dataset_ref(value, expected_root=None):
+def dataset_ref(value, expected_root=None, *, dataset_version=2):
     keys(value, {"datasetId", "datasetRoot", "format", "version"})
     identifier(value["datasetId"])
     digest(value["datasetRoot"])
     require(
         value["format"] == "atlas.quant.research_dataset"
         and type(value["version"]) is int
-        and value["version"] == 2
+        and value["version"] == dataset_version
         and (expected_root is None or value["datasetRoot"] == expected_root),
         "DATASET_COMPLETION_IDENTITY",
     )
     return value
 
 
-def terminal_status(client, state):
+def terminal_status(client, state, *, dataset_version=2):
     job = state["job"]
     response = client.get("jobs/" + job["id"] + "/status", job["leaseToken"])
     row = response.get("job")
@@ -34,14 +34,14 @@ def terminal_status(client, state):
     ref = response.get("datasetRef")
     if row["status"] == "completed":
         expected = state.get("publication", {}).get("datasetRoot")
-        dataset_ref(ref, expected)
+        dataset_ref(ref, expected, dataset_version=dataset_version)
     else:
         require(ref is None, "DATASET_STATUS_IDENTITY")
     return row["status"], ref
 
 
-def settle_failure(client, spool, state):
-    status, _ = terminal_status(client, state)
+def settle_failure(client, spool, state, *, dataset_version=2):
+    status, _ = terminal_status(client, state, dataset_version=dataset_version)
     if status not in TERMINAL:
         error = state["error"]
         if status == "cancel_requested" and error["code"] != "CANCELLED":
@@ -52,7 +52,7 @@ def settle_failure(client, spool, state):
             "jobs/" + job["id"] + "/fail",
             {"leaseToken": job["leaseToken"], "error": error},
         )
-        status, _ = terminal_status(client, state)
+        status, _ = terminal_status(client, state, dataset_version=dataset_version)
     require(status in TERMINAL, "DATASET_TERMINAL_ACK")
     spool.acknowledge(state, status)
 
@@ -91,7 +91,7 @@ def missing_parts(response, manifest):
     return [(name, allowed[name, ordinal]) for name, ordinal in sorted(seen)]
 
 
-def deliver(client, spool, state, monitor):
+def deliver(client, spool, state, monitor, *, dataset_version=2):
     job, old = state["job"], state.get("publication")
     publication = spool.publication(job)
     manifest = publication.manifest()
@@ -148,8 +148,8 @@ def deliver(client, spool, state, monitor):
         response.get("ok") is True and response.get("status") == "completed",
         "DATASET_TERMINAL_ACK",
     )
-    completed_ref = dataset_ref(response.get("datasetRef"), root)
-    status, readback_ref = terminal_status(client, state)
+    completed_ref = dataset_ref(response.get("datasetRef"), root, dataset_version=dataset_version)
+    status, readback_ref = terminal_status(client, state, dataset_version=dataset_version)
     require(
         status == "completed" and readback_ref == completed_ref, "DATASET_TERMINAL_ACK"
     )
