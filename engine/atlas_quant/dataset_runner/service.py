@@ -9,7 +9,9 @@ from ..financial_runner.spool import TERMINAL
 from ..runner import RunnerError
 from .client import DatasetClient
 from .compute import execute_bounded, safe_error
-from .delivery import deliver, settle_failure, terminal_status
+from .delivery import (
+    deliver, settle_failure, terminal_status, terminal_rejection, TERMINAL_REJECTIONS,
+)
 from .lease import LeaseMonitor, timestamp
 from .protocol import CAPABILITY, encode, identifier, require
 from .spool import DatasetSpool
@@ -69,11 +71,20 @@ def validate_claim(response, state, base, *, namespace="datasets", job_kind="dat
     return status, job
 
 
-def _retain(error):
+def _retain(error, phase=None):
     """Transport ambiguity and corrupt private evidence cannot clear a claim."""
     code = error.code
     return (
         "SPOOL" in code
+        # The lease monitor also decodes successful HTTP receipts before
+        # delivery starts. Shared decoder codes are not a failed computation
+        # when a complete publication already exists.
+        or (phase == "publishing" and code in {
+            "FINANCIAL_JSON", "FINANCIAL_IDENTITY", "FINANCIAL_BYTE_BUDGET",
+            "DATASET_PROTOCOL",
+            "DATASET_ENCODING", "DATASET_BYTE_BUDGET", "DATASET_INTEGRITY",
+            "DATASET_LEASE",
+        })
         or code
         in {
             "DATASET_MANIFEST",
@@ -85,10 +96,12 @@ def _retain(error):
             "DATASET_COMPLETION_IDENTITY",
             "DATASET_TERMINAL_ACK",
             "DATASET_PART_ACK",
+            "DATASET_PUBLICATION_UNCERTAIN",
         }
         or (
             code == "DATASET_HTTP"
-            and error.http_status not in {400, 403, 404, 409, 413, 422}
+            and (error.http_status not in TERMINAL_REJECTIONS
+                 or (phase == "publishing" and not terminal_rejection(error)))
         )
     )
 
@@ -185,12 +198,12 @@ def run_once(
             if isinstance(original, RunnerError)
             else RunnerError(**safe_error(original))
         )
-        if _retain(error):
-            raise error from None
         current = spool.read()
         require(current is not None, "DATASET_SPOOL_INTEGRITY")
+        if _retain(error, current["phase"]):
+            raise error from None
         rejected = safe_error(error)
-        if error.code == "DATASET_HTTP" and current["phase"] == "publishing":
+        if terminal_rejection(error) and current["phase"] == "publishing":
             if rejection_handler is not None:
                 rejection_handler(spool, current, error)
             rejected = safe_error(
