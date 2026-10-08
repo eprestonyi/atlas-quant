@@ -257,6 +257,13 @@
   gap: 24px;
   align-items: center;
 }
+.sq-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+}
 .sq-version {
   font: 9px var(--sq-mono);
   color: #6c7e85;

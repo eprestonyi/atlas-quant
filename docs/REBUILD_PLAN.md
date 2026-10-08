@@ -2,7 +2,7 @@
 
 开始：2026-10-08（Asia/Hong_Kong）。用户明确授权完整重构、长时间运行、多轮计划/修改/构建/检查/测试与上线。状态：**进行中，尚未完成**。
 
-当前云端为 v0.7 初始构建 `0.7.0-a83bd2c1fcbe`，研究与财务 Python 服务均为 0.7.0；0006 增量迁移与完整备份恢复检查通过，队列已恢复。`work/atlas-quant-financial-ui` 保存本轮发布与真实财务校验证据，正在修正证据目录查询放大后完成准备验收。v0.6 私有验收在 `work/atlas-quant-studio`，v0.5 在 `work/atlas-quant-shards`。`work/atlas-quant-financial` 正做统一数据组件，`work/atlas-quant-capacity` 是未公开启用的容量核心。保留的 v0.4 在 `work/atlas-quant`，不得从旧目录覆盖正式版。最新主干可能含未发布功能，部署必须固定已验收的源码与构建。
+当前云端为 v0.8 构建 `0.8.0-107f4acc4485`，研究、财务准备与独立采集三个 Python 服务均为 0.8.0。0007 增量迁移、完整备份恢复和四次真实 Tushare 自助采集验收通过；严格与显式单位假设版本分别保留，实际网页刷新、依赖和原生下载核对均通过，采集入口已公开，队列已恢复。详见 [RELEASE_V08.md](RELEASE_V08.md)。统一数据组件、CLI 和独立审计器已合并，当前继续实现托管 dataset/2、财务状态到 F 与独立结果传输；这些功能尚未上线。`work/atlas-quant-financial-ui` 保存当前发布与真实证据，容量核心仍未公开启用。保留的 v0.4 在 `work/atlas-quant`，不得从旧目录覆盖正式版。最新主干可能含未发布功能，部署必须固定已验收的源码与构建。
 
 本计划与 [FORECAST_RESEARCH_CONTRACT.md](FORECAST_RESEARCH_CONTRACT.md) 是续接入口。每轮先读最新进度，不重复已完成的部署或付费数据请求。自动续接：本聊天 heartbeat `atlas-quant`，每小时检查并继续；完成全部验收后停用。额度不足不绕过限制，重置卡工具每次调用须满足独立确认要求。
 
