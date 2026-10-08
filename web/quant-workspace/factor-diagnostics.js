@@ -1,18 +1,26 @@
 import { reportFeatureLabeler } from './feature-labels.js';
+import { jointFrequencyViews } from './joint-table.js';
 // Descriptive factor evidence from frozen artifacts; never estimates missing statistics in the browser.
 export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
   const { esc: e, fmt, pct } = C;
   const value = x => fmt(x, 5);
   const cell = x => `<td class="numeric">${value(x)}</td>`;
   const raw = x => `<pre class="sq-report-code">${e(JSON.stringify(x, null, 2))}</pre>`;
-  const status = x => x?.status === 'available' || x?.status === 'ok' ? '已计算' : x?.unavailableReason || x?.status || '未提供';
+  const unavailable = reason => ({
+    fewer_than_three_finite_targets_or_constant_cross_section: '少于三个有效标的，或横截面取值不变',
+    insufficient_or_constant_pairs: '有效配对不足，或取值不变',
+    no_development_values_for_bins: '开发期没有可用数值，无法固定分箱',
+    unavailable: '不可计算'
+  })[reason] || '未提供可计算的统计值';
+  const status = x => x?.status === 'available' || x?.status === 'ok' ? '已计算' : unavailable(x?.unavailableReason || x?.status);
   let label = key => key;
   function featureDetail(x) {
     const ts = x.timeSeriesCorrelation || {}, fit = x.descriptiveFit || {};
+    const fitSample = fit.fitSample === 'reported_terminal_pairs' ? '报告区间内的有效成熟配对' : '未提供样本范围';
     return F.advanced(`${label(x.name, x.definition)} · 定义与统计口径`,
-      `<dl class="sq-key-values"><dt>输入标识</dt><dd><code>${e(x.name)}</code></dd><dt>定义</dt><dd>${e(x.definition?.expression || x.name)}</dd><dt>观察缺失</dt><dd>${fmt(x.missing?.count, 0)} / ${fmt(x.missing?.total, 0)} · ${pct(x.missing?.fraction)}</dd><dt>横截面 IC</dt><dd>${e(status(x.ic))} · ${fmt(x.ic?.dates, 0)} 个有效日期</dd><dt>Rank IC</dt><dd>${e(status(x.rankIc))} · ${fmt(x.rankIc?.dates, 0)} 个有效日期</dd><dt>描述性单变量 R²</dt><dd>${value(fit.rSquared)} · ${e(fit.fitSample || '未提供样本范围')}</dd><dt>显著性</dt><dd>未提供经依赖调整的 p 值或系数标准误</dd></dl>` +
+      `<dl class="sq-key-values"><dt>输入标识</dt><dd><code>${e(x.name)}</code></dd><dt>定义</dt><dd>${e(x.definition?.expression || x.name)}</dd><dt>观察缺失</dt><dd>${fmt(x.missing?.count, 0)} / ${fmt(x.missing?.total, 0)} · ${pct(x.missing?.fraction)}</dd><dt>横截面 IC</dt><dd>${e(status(x.ic))} · ${fmt(x.ic?.dates, 0)} 个有效日期</dd><dt>Rank IC</dt><dd>${e(status(x.rankIc))} · ${fmt(x.rankIc?.dates, 0)} 个有效日期</dd><dt>描述性单变量 R²</dt><dd>${value(fit.rSquared)} · ${e(fitSample)}</dd><dt>显著性</dt><dd>未提供经依赖调整的 p 值或系数标准误</dd></dl>` +
       F.note('单变量拟合使用报告样本，只是描述关系；不是因子加入 F 后的样本外增量，也不是因果解释。单一标的的时间序列相关不称为横截面 IC。') +
-      (ts.perTarget?.length ? table(['目标', '样本数', '时序 Pearson', '时序 Spearman'], ts.perTarget.map(t => `<tr><td>${e(t.targetId)}</td><td>${fmt(t.n, 0)}</td>${cell(t.pearson)}${cell(t.spearman)}</tr>`)) + `<p class="sq-subtle">目标总数 ${fmt(ts.totalTargets, 0)}；未展示 ${fmt(ts.omittedTargets, 0)}。${e(ts.interpretation || '')}</p>` : F.note('未返回可用的逐标的时间序列相关。')) +
+      (ts.perTarget?.length ? table(['目标', '样本数', '时序 Pearson', '时序 Spearman'], ts.perTarget.map(t => `<tr><td>${e(t.targetId)}</td><td>${fmt(t.n, 0)}</td>${cell(t.pearson)}${cell(t.spearman)}</tr>`)) + `<p class="sq-subtle">目标总数 ${fmt(ts.totalTargets, 0)}；未展示 ${fmt(ts.omittedTargets, 0)}。各标的自身的时序相关，与横截面 IC 分开统计。</p>` : F.note('未返回可用的逐标的时间序列相关。')) +
       F.advanced('原始统计记录', raw(x)));
   }
   function features(rows) {
@@ -26,15 +34,19 @@ export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
     return `${index === 0 && lo === null ? '−∞' : value(lo)} 至 ${hi === null ? '+∞' : value(hi)}`;
   }
   function joint(x) {
-    if (!Array.isArray(x.counts) || !x.counts.length) return F.advanced(`${label(x.x)} × ${label(x.y)}`, F.note(`联合分布不可用：${x.status || '未返回频数表'}`) + F.advanced('联合输入原始记录', raw(x)));
+    const views = jointFrequencyViews(x);
+    if (!views) return F.advanced(`${label(x.x)} × ${label(x.y)}`, F.note(`联合分布不可用：${unavailable(x.reason || x.status)}`) + F.advanced('联合输入原始记录', raw(x)));
     const counts = x.counts, columns = counts[0].length;
-    const rowTotals = counts.map(row => row.reduce((a,b) => a + b, 0));
-    const columnTotals = Array.from({ length: columns }, (_, n) => counts.reduce((a,row) => a + row[n], 0));
-    const cells = counts.map((row, ri) => `<tr><th scope="row">${e(interval(x.xEdges, ri))}</th>${row.map((n, ci) => `<td class="numeric">${fmt(n, 0)}<small>${pct(x.probabilities?.[ri]?.[ci])}</small></td>`).join('')}<td class="numeric">${fmt(rowTotals[ri], 0)}</td></tr>`);
-    cells.push(`<tr><th scope="row">Y 边际频数</th>${columnTotals.map(n => `<td class="numeric">${fmt(n, 0)}</td>`).join('')}<td class="numeric">${fmt(x.sampleCount, 0)}</td></tr>`);
+    const headers = ['X 分箱 / Y 分箱', ...Array.from({length: columns}, (_, n) => interval(x.yEdges, n))];
+    const cells = counts.map((row, ri) => `<tr><th scope="row">${e(interval(x.xEdges, ri))}</th>${row.map((n, ci) => `<td class="numeric">${fmt(n, 0)}<small>${pct(x.probabilities?.[ri]?.[ci])}</small></td>`).join('')}<td class="numeric">${fmt(views.rowCounts[ri], 0)}<small>${pct(views.rowProbabilities[ri])}</small></td></tr>`);
+    cells.push(`<tr><th scope="row">Y 边际频数 / 概率</th>${views.columnCounts.map((n, i) => `<td class="numeric">${fmt(n, 0)}<small>${pct(views.columnProbabilities[i])}</small></td>`).join('')}<td class="numeric">${fmt(x.sampleCount, 0)}</td></tr>`);
+    const conditional = values => table(headers, values.map((row, ri) => `<tr><th scope="row">${e(interval(x.xEdges, ri))}</th>${row.map(p => `<td class="numeric">${pct(p)}</td>`).join('')}</tr>`));
     return F.advanced(`${label(x.x)} × ${label(x.y)} · ${fmt(x.sampleCount, 0)} 对观测`,
-      `<p>X：${e(label(x.x))}；Y：${e(label(x.y))}。每格为联合频数与经验概率。</p>` + table(['X 分箱 / Y 分箱', ...Array.from({ length: columns }, (_, n) => interval(x.yEdges, n)), 'X 边际频数'], cells) +
-      `<dl class="sq-key-values"><dt>缺失配对</dt><dd>${fmt(x.missingPairCount, 0)}</dd><dt>观察区间</dt><dd>${e(C.dateText(x.firstDate))} — ${e(C.dateText(x.lastDate))}</dd><dt>分箱来源</dt><dd>${e(x.edgeSource || '未提供')}</dd><dt>边界约定</dt><dd>${e(x.intervalConvention || '未提供')}</dd></dl>` +
+      `<p>X：${e(label(x.x))}；Y：${e(label(x.y))}。每格为联合频数与经验概率，末行及末列为边际分布。</p>` + table([...headers, 'X 边际频数 / 概率'], cells) +
+      F.advanced('条件分布 P(Y 分箱 | X 分箱)', '<p>固定一行 X 分箱，查看该行内 Y 的经验分布。非空行概率之和为 1。</p>' + conditional(views.yGivenX)) +
+      F.advanced('条件分布 P(X 分箱 | Y 分箱)', '<p>固定一列 Y 分箱，查看该列内 X 的经验分布。非空列概率之和为 1。</p>' + conditional(views.xGivenY)) +
+      '<p class="sq-subtle">边际和条件概率仅由这份冻结频数表相除得到；空的条件分箱显示 —，不作平滑或补值。</p>' +
+      `<dl class="sq-key-values"><dt>缺失配对</dt><dd>${fmt(x.missingPairCount, 0)}</dd><dt>观察区间</dt><dd>${e(C.dateText(x.firstDate))} — ${e(C.dateText(x.lastDate))}</dd><dt>分箱来源</dt><dd>${x.edgeSource === 'pre_terminal_development_feature_quantiles' ? '仅用报告期之前的开发样本固定分位数边界' : '详见原始记录'}</dd><dt>边界约定</dt><dd>${x.intervalConvention === '[left,right); exterior null means -infinity/+infinity; final right closed' ? '左闭右开，最后一档包含右端点；∞ 表示无界' : '详见原始记录'}</dd></dl>` +
       F.note('这是该报告样本的经验联合分布，不是已知的总体分布，也不意味着观测相互独立。') + F.advanced('分箱与概率原始记录', raw(x)));
   }
   function matrix(title, names, values, integer = false) {

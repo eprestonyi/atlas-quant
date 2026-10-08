@@ -5,6 +5,7 @@ import { JSDOM } from 'jsdom';
 import { createForms } from '../quant-workspace/forms.js';
 import { createFactorDiagnostics } from '../quant-workspace/factor-diagnostics.js';
 import { FINANCIAL_FEATURE_LABELS, createFeatureLabeler } from '../quant-workspace/feature-labels.js';
+import { jointFrequencyViews } from '../quant-workspace/joint-table.js';
 const dom = new JSDOM('<main></main>');
 const e = x => String(x ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
 const fmt = (x, n = 2) => x == null ? '—' : Number(x).toFixed(n);
@@ -25,6 +26,16 @@ assert(main.textContent.includes('不是因子加入 F 后的样本外增量'));
 assert(main.textContent.includes('单一标的的时间序列相关不称为横截面 IC'));
 assert(main.textContent.includes('X 边际频数'));
 assert(main.textContent.includes('Y 边际频数'));
+assert(main.textContent.includes('条件分布 P(Y 分箱 | X 分箱)'));
+assert(main.textContent.includes('条件分布 P(X 分箱 | Y 分箱)'));
+assert.deepEqual(jointFrequencyViews(pair), {
+  rowCounts:[3,7], columnCounts:[4,6], rowProbabilities:[.3,.7], columnProbabilities:[.4,.6],
+  yGivenX:[[1/3,2/3],[3/7,4/7]], xGivenY:[[1/4,2/6],[3/4,4/6]]
+});
+assert.deepEqual(jointFrequencyViews({...pair,counts:[[0,0],[0,2]],sampleCount:2}).yGivenX,[[null,null],[0,1]]);
+assert.deepEqual(jointFrequencyViews({...pair,counts:[[0,0],[0,2]],sampleCount:2}).xGivenY,[[null,0],[null,1]]);
+for(const counts of [[[1,2],[3]], [[1,-2],[3,4]], [[1,true],[3,4]], [[1,2],[3,5]]])
+  assert.equal(jointFrequencyViews({...pair,counts}),null,'malformed count tables cannot create conditional evidence');
 assert(main.textContent.includes('40.0%'));
 assert(main.textContent.includes('10'));
 assert(main.textContent.includes('不保证半正定'));
