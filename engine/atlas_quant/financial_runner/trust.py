@@ -161,58 +161,40 @@ def _proof_matches_source(entry, field, raw, rows):
         fail("UNIT_PROOF_SCOPE_MISMATCH", "单位证明的证券、期间或公告坐标不匹配。")
 
 
-def resolve_input(job, input_meta, source_bytes, registry_bytes):
-    """Never enable trusted proofs before complete payload and scope equality."""
-    if not isinstance(job, dict):
-        fail("FINANCIAL_IDENTITY", "财务任务需要对象。")
-    for key in ("id", "inputId"):
-        identifier(job.get(key))
-    if not isinstance(job.get("kind"), str) or job["kind"] not in KINDS:
-        fail("FINANCIAL_IDENTITY", "未知财务任务类型。")
-    if (
-        not isinstance(input_meta, dict)
-        or len(encode(input_meta)) > META_BYTES
-        or input_meta.get("job") != {key: job[key] for key in ("id", "kind", "inputId")}
-    ):
-        fail("FINANCIAL_IDENTITY", "财务任务与冻结输入描述不匹配。")
-    _check_bytes(source_bytes, input_meta.get("source"), PACKAGE_BYTES)
-    proofs = input_meta.get("proofs")
-    if (
-        not isinstance(proofs, list)
-        or len(proofs) > 256
-        or not isinstance(registry_bytes, dict)
-    ):
-        fail("FINANCIAL_BYTE_BUDGET", "授权证明集合超过数量限制。")
-    descriptors = [input_meta.get("calendar"), *proofs]
-    refs, total = set(), 0
-    for descriptor in descriptors:
-        if not isinstance(descriptor, dict):
-            fail("FINANCIAL_TRUST", "授权证据描述无效。")
-        ref = identifier(descriptor.get("ref"))
-        if ref in refs:
-            fail("FINANCIAL_TRUST", "授权证据引用重复。")
-        refs.add(ref)
-        raw_bytes = registry_bytes.get(ref)
-        _check_bytes(raw_bytes, descriptor, REGISTRY_BYTES)
-        total += len(raw_bytes)
-        if total > REGISTRIES_BYTES:
-            fail("FINANCIAL_BYTE_BUDGET", "授权证据集合超过总字节限制。")
-    if set(registry_bytes) != refs:
-        fail("FINANCIAL_TRUST", "授权证据集合与任务的冻结引用不匹配。")
+def resolve_package_registry(source_bytes, calendar_bytes, proof_bytes_list):
+    """Pure domain boundary; registry bytes must be authorized outside the package.
 
+    A serialized archive cannot authorize its own proof/calendar records. Callers
+    must match them against a separate trusted registry before calling here.
+    """
+    if (
+        not isinstance(source_bytes, bytes)
+        or len(source_bytes) > PACKAGE_BYTES
+        or not isinstance(proof_bytes_list, (list, tuple))
+        or len(proof_bytes_list) > 256
+    ):
+        fail("FINANCIAL_BYTE_BUDGET", "冻结输入或证明集合超过边界。")
+    entries = [calendar_bytes, *proof_bytes_list]
+    if any(
+        not isinstance(raw, bytes) or not 0 < len(raw) <= REGISTRY_BYTES
+        for raw in entries
+    ):
+        fail("FINANCIAL_BYTE_BUDGET", "注册证据字节无效或超过边界。")
+    if sum(map(len, entries)) > REGISTRIES_BYTES:
+        fail("FINANCIAL_BYTE_BUDGET", "注册证据超过共同边界。")
     # Strict JSON inspection grants no trust. Core decoding happens only below.
     untrusted = decode(source_bytes, limit=PACKAGE_BYTES)
     if not isinstance(untrusted, dict):
         fail("FINANCIAL_TRUST", "财务输入包须为对象。")
     raw, rows = _raw_scope(untrusted)
-    calendar_record = _registry(registry_bytes[descriptors[0]["ref"]], "calendar")
+    calendar_record = _registry(calendar_bytes, "calendar")
     if encode(raw.get("calendar")) != encode(
         calendar_record["payload"]
     ) or calendar_record["scope"] != calendar_scope(calendar_record["payload"]):
         fail("CALENDAR_REGISTRY_MISMATCH", "冻结日历与授权注册版本不完全匹配。")
     approved = set()
-    for descriptor in proofs:
-        record = _registry(registry_bytes[descriptor["ref"]], "unit_proof")
+    for proof_bytes in proof_bytes_list:
+        record = _registry(proof_bytes, "unit_proof")
         entry = record["payload"]
         _object(entry, {"type", "value"})
         if (
@@ -253,6 +235,60 @@ def resolve_input(job, input_meta, source_bytes, registry_bytes):
             reviewed = True
     package = decode_package(source_bytes, trusted_unit_proofs=reviewed)
     calendar, decoded_bindings = validate_package(package, trusted_unit_proofs=reviewed)
+    return TrustedInput(
+        package,
+        calendar,
+        decoded_bindings,
+        reviewed,
+        calendar_record["scope"]["calendarRoot"],
+    )
+
+
+def resolve_input(job, input_meta, source_bytes, registry_bytes):
+    """Never enable trusted proofs before complete payload and scope equality."""
+    if not isinstance(job, dict):
+        fail("FINANCIAL_IDENTITY", "财务任务需要对象。")
+    for key in ("id", "inputId"):
+        identifier(job.get(key))
+    if not isinstance(job.get("kind"), str) or job["kind"] not in KINDS:
+        fail("FINANCIAL_IDENTITY", "未知财务任务类型。")
+    if (
+        not isinstance(input_meta, dict)
+        or len(encode(input_meta)) > META_BYTES
+        or input_meta.get("job") != {key: job[key] for key in ("id", "kind", "inputId")}
+    ):
+        fail("FINANCIAL_IDENTITY", "财务任务与冻结输入描述不匹配。")
+    _check_bytes(source_bytes, input_meta.get("source"), PACKAGE_BYTES)
+    proofs = input_meta.get("proofs")
+    if (
+        not isinstance(proofs, list)
+        or len(proofs) > 256
+        or not isinstance(registry_bytes, dict)
+    ):
+        fail("FINANCIAL_BYTE_BUDGET", "授权证明集合超过数量限制。")
+    descriptors = [input_meta.get("calendar"), *proofs]
+    refs, total = set(), 0
+    for descriptor in descriptors:
+        if not isinstance(descriptor, dict):
+            fail("FINANCIAL_TRUST", "授权证据描述无效。")
+        ref = identifier(descriptor.get("ref"))
+        if ref in refs:
+            fail("FINANCIAL_TRUST", "授权证据引用重复。")
+        refs.add(ref)
+        raw_bytes = registry_bytes.get(ref)
+        _check_bytes(raw_bytes, descriptor, REGISTRY_BYTES)
+        total += len(raw_bytes)
+        if total > REGISTRIES_BYTES:
+            fail("FINANCIAL_BYTE_BUDGET", "授权证据集合超过总字节限制。")
+    if set(registry_bytes) != refs:
+        fail("FINANCIAL_TRUST", "授权证据集合与任务的冻结引用不匹配。")
+
+    source = resolve_package_registry(
+        source_bytes,
+        registry_bytes[descriptors[0]["ref"]],
+        [registry_bytes[descriptor["ref"]] for descriptor in proofs],
+    )
+    package = source.package
     operation = input_meta.get("operation")
     if not isinstance(operation, dict):
         fail("FINANCIAL_IDENTITY", "财务任务缺少明确操作参数。")
@@ -265,13 +301,7 @@ def resolve_input(job, input_meta, source_bytes, registry_bytes):
             _object(operation, {"expectedPackRoot"})
         if operation.get("expectedPackRoot") != package["packRoot"]:
             fail("FINANCIAL_INTEGRITY", "冻结父输入包与任务预期不匹配。")
-    return TrustedInput(
-        package,
-        calendar,
-        decoded_bindings,
-        reviewed,
-        calendar_record["scope"]["calendarRoot"],
-    )
+    return source
 
 
 def revise_input(source, operation):
