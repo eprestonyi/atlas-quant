@@ -102,10 +102,16 @@ class DatasetSpool(FinancialSpool):
 
 
 class DatasetPublicationSpool(PublicationSpool):
+    COMPONENT_PATTERN = COMPONENT
+    VERSION = 2
+    PROFILE_ID = PROFILE
+    READER_CLASS = DatasetReader
+    manifest_decoder = staticmethod(validate_manifest)
+
     def _name(self, component, ordinal):
         require(
             isinstance(component, str)
-            and COMPONENT.fullmatch(component)
+            and self.COMPONENT_PATTERN.fullmatch(component)
             and type(ordinal) is int
             and 0 <= ordinal < LIMITS["parts"],
             "DATASET_PART_IDENTITY",
@@ -118,9 +124,9 @@ class DatasetPublicationSpool(PublicationSpool):
 
     def validate_manifest(self, manifest):
         raw = encode(manifest)
-        parsed = validate_manifest(raw)
+        parsed = self.manifest_decoder(raw)
         require(
-            parsed["version"] == 2 and parsed["profile"] == PROFILE, "DATASET_MANIFEST"
+            parsed["version"] == self.VERSION and parsed["profile"] == self.PROFILE_ID, "DATASET_MANIFEST"
         )
         names = {
             self._name(c["componentId"], p["ordinal"]) + ".enc"
@@ -136,7 +142,7 @@ class DatasetPublicationSpool(PublicationSpool):
             for c in parsed["components"]
             for p in c["parts"]
         }
-        reader = DatasetReader(
+        reader = self.READER_CLASS(
             raw, lambda name, ordinal: self.read_chunk(name, descriptors[name, ordinal])
         )
         reader.verify_integrity()

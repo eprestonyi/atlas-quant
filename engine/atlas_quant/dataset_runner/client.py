@@ -25,6 +25,9 @@ from .spool import COMPONENT
 
 
 class DatasetClient:
+    PROFILE_ID = PROFILE
+    COMPONENT_PATTERN = COMPONENT
+
     def __init__(self, config, session=None):
         self.base = config["api_base"].rstrip("/") + "/runner/datasets"
         self.prefix = urlsplit(self.base).path + "/"
@@ -194,7 +197,7 @@ class DatasetClient:
             },
         )
         plan = meta["plan"]
-        require(plan["profile"] == PROFILE)
+        require(plan["profile"] == self.PROFILE_ID)
         identifier(plan["marketCalendarRef"])
         selection = plan["marketSource"]
         keys(
@@ -549,7 +552,7 @@ class DatasetClient:
     def upload(
         self, job, publication_id, dataset_root, component, part, raw, *, deadline
     ):
-        require(isinstance(component, str) and COMPONENT.fullmatch(component))
+        require(isinstance(component, str) and self.COMPONENT_PATTERN.fullmatch(component))
         integer(part["ordinal"], 0, LIMITS["parts"] - 1)
         route = (
             "jobs/"
