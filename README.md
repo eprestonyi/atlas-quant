@@ -4,9 +4,9 @@ Atlas Quant 是嵌入 Atlas 的开源统计量化研究工作区。先建立条�
 
 [Atlas Quant](https://atlas-aletheia.com/quant/) · [源码](https://github.com/eprestonyi/atlas-quant) · [Discussions](https://github.com/eprestonyi/atlas-quant/discussions) · [Issues](https://github.com/eprestonyi/atlas-quant/issues)
 
-**v0.4 已于 2026-10-08 部署并完成真实数据预测和独立执行验收**，部署构建为 `0.4.0-5e57805bd6cd`。发布证据见 [v0.4 验收记录](docs/RELEASE_V04.md)，当前服务状态以 [health](https://atlas-aletheia.com/quant/api/health) 为准。大规模整池研究与四库历史覆盖仍在继续建设；实施进度与未完成项见 [REBUILD_PLAN.md](docs/REBUILD_PLAN.md)。
+**v0.5 已于 2026-10-08 部署并完成正式分片和冻结预测重放验收**，部署构建为 `0.5.0-bc615b2893be`。发布证据见 [v0.5 验收记录](docs/RELEASE_V05.md)，既有真实数据研究见 [v0.4 验收记录](docs/RELEASE_V04.md)，当前服务状态以 [health](https://atlas-aletheia.com/quant/api/health) 为准。大规模整池研究与四库历史覆盖仍在继续建设；实施进度与未完成项见 [REBUILD_PLAN.md](docs/REBUILD_PLAN.md)。
 
-当前 v0.5 候选加入完整分片产物、按需报告和独立分片审计，尚未宣称正式上线。[传输协议](docs/BUNDLE_TRANSPORT_V1.md) · [本地验收与剩余门槛](docs/BUNDLE_ACCEPTANCE_A.md)
+v0.5 加入完整分片产物、按需报告和独立分片审计。[传输协议](docs/BUNDLE_TRANSPORT_V1.md) · [验收过程与失败修复记录](docs/BUNDLE_ACCEPTANCE_A.md)
 
 ## 研究协议
 
@@ -126,7 +126,7 @@ CI 运行 Python/Node 回归、真实 DOM 操作及两次确定性预测，再�
 
 ## 边界与历史兼容
 
-| 项目 | v0.5 候选范围 |
+| 项目 | v0.5 已发布范围 |
 |---|---|
 | 研究范围 | 单次 1–50 只沪深 A 股；日频；北交所目录可发现，托管引擎暂不支持 |
 | 冻结目标 | Pair 恰好两腿；PCA 3–20 腿；显式固定数量 |
