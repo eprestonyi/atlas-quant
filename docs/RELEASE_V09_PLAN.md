@@ -38,7 +38,7 @@ archive. Rejected deliveries must now retain encrypted original results and sour
 references outside the automatic retry queue. A later correction acceptance is a
 new declared run, never a rewrite of that failed job or another source acquisition.
 
-## Five services, four compute consumers
+## Six services, five compute consumers
 
 | Persistent service | Role | Provider configuration | Shared compute slot |
 |---|---|---|---|
@@ -46,17 +46,26 @@ new declared run, never a rewrite of that failed job or another source acquisiti
 | Financial preparation | Validate and prepare financial inputs | None | Same canonical private path |
 | Financial acquisition | Existing v0.8 durable requests and receipts | Existing authorized configuration | Network acquisition is not model computation |
 | Dataset composition | New independent dataset queue and encrypted recovery directory | None | Same canonical private path |
+| Graph dataset composition | Independent dataset/3 queue, exact graph capability and encrypted recovery directory | None | Same canonical private path |
 | Market acquisition | New independent requests, receipts and market normalization | Authorized market configuration only | Normalization uses the same canonical private path |
 
 The services share the existing runner authentication model; separate processes
 and spool namespaces do not imply independent security credentials. Preserve
 the exact API base, secret and existing spool locations. New services get
 separate private configuration, delivery directories and process identities.
-All four compute consumers must use the **same explicit canonical private
+All five compute consumers must use the **same explicit canonical private
 lock path**. No parallel worker may bypass it to improve a benchmark.
 
+Graph composition runs as `python -m atlas_quant.graph_dataset_runner`, requires
+explicit `graph_dataset_enabled:true` and a separate absolute
+`graph_dataset_delivery_dir`, and declares only `research-dataset-graph/1` for
+that queue. Its pending publication cannot block the legacy dataset consumer.
+The research service separately enables the exact graph F capability tuple;
+neither the graph composition flag nor the legacy dataset capability enables it.
+This topology is a deployment plan, not proof of installed services.
+
 On macOS retain Standard process scheduling (omit `ProcessType`), bounded
-numerical threads and restart behavior. The dataset and market services are
+numerical threads and restart behavior. The dataset, graph dataset and market services are
 additions to the three v0.8 services. The earlier four-service v0.9 installation
 plan is therefore incomplete and must not be replayed unchanged.
 
@@ -78,7 +87,7 @@ plan is therefore incomplete and must not be replayed unchanged.
    `schema.sql` over production or delete tables for rollback.
 4. Deploy compatible Worker readers/receipts with new feature flags closed.
    Read the actual deployed bytes and bindings back. Install the exact private
-   runtime, preserve old configuration and archives, then add the two new
+   runtime, preserve old configuration and archives, then add the three new
    services. Keep `ALLOW_MARKET_FIXTURES` absent/false in production. The local
    preview enables fixtures explicitly and is not a production configuration.
 5. Verify the shared slot, private paths, actual process identities and fresh
