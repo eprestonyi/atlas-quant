@@ -19,17 +19,26 @@ frozen evidence; numerical edits create unvalidated derived functions.
 | Complete filter and Easy flow | Actual local browser saved 1,000 members, then 12 after explicit filters; no subset picker | New production build and authenticated browser readback |
 | Automatic selection | Eight predeclared candidates, date-ordered nested validation, state-only comparator and preserved tails | Exact final commit CI; no claim of unbiased or universally optimal selection |
 | Portable F and diagnostics | Native function download agrees with Python evaluation; joint, marginal and conditional tables checked | Same behavior on deployed assets and independent owner workspace |
-| Market full-pool transport | The declared correction run passed actual loopback HTTP for all 1,000 securities: 41,000 main and baseline predictions each, 190 input pairs, and two frozen archives. Independent paired source/result audit passed. The first rejected run remains preserved separately | Final runtime guard fixes and exact candidate CI, then authenticated deployed readback; this synthetic run proves transport and coverage, not provider authenticity or predictive advantage |
+| Market full-pool transport | The declared correction run passed actual loopback HTTP for all 1,000 securities: 41,000 main and baseline predictions each, 190 input pairs, and two frozen archives. Independent paired source/result audit passed. The first rejected run remains preserved separately. Final reply resource checks and fresh progress-clock observation passed no-fit regression checks | Exact release candidate CI and authenticated deployed readback; this synthetic run proves transport and coverage, not provider authenticity or predictive advantage |
 | Existing financial dataset/2 | Actual browser composition, auto research and native dual downloads passed for one synthetic security | Candidate runtime and authenticated hosted readback using frozen input |
-| Financial dataset/3 | Supervised 50-security F completed with 2,050 main and baseline rows each. Fresh source reconstruction and independent source-derived full-domain audit passed; coordinated member/day/tail deletion attacks rejected | Separate hosted routes, claims, capability, publication and browser acceptance; the existing 50-security F is retained and is not repeated for these checks |
+| Financial dataset/3 | Supervised 50-security F and full-domain audit passed. Separate routes, claims, publication and actual local browser composition/research passed with one synthetic security. Native paired archives passed 16,231 result and 93,797 source checks; portable F agrees with Python. The original monitor failure remains retained | Exact release candidate CI, service installation and authenticated deployed readback; neither the original 50-security run nor completed browser correction is repeated |
 | Source authenticity | Exact receipt, source and authorized registry identities retained | Synthetic acceptance never substitutes for provider or disclosure authentication; reuse previously frozen real evidence for canary |
 
-The graph dataset/3 and financial bundle/2 implementations currently expose a
-**local** admission only. No serialized `modelAdmissionRegistered` flag grants
-authority. A fresh same-process restoration must recompute financial inputs
+The graph dataset/3 and financial bundle/2 hosted interface is implemented and
+accepted in an isolated local HTTP/browser workflow; its production gates remain
+closed. No serialized `modelAdmissionRegistered` flag grants authority.
+A fresh same-process restoration must recompute financial inputs
 from retained source and compare the full logical data before fitting.
 Publishing the general workbench does not implicitly publish graph admission.
 An unavailable profile must remain unavailable in the capability response/UI.
+
+Five mechanism cards do not imply five full-pool compute profiles. The accepted
+1,000-security auto profile currently applies to asset-price mean reversion.
+Trend auto at that size, basket/pair sources, event PIT sources and financial
+scope projection require their own profiles and acceptance. New acquisition
+must check whether the requested mechanism can consume its result before making
+provider requests; receipt reconciliation and existing source downloads remain
+available even when a new computation is unavailable.
 
 The first 1,000-security F's manifest and 17 received chunks survived its rejection,
 but the old runner discarded its local result spool after acknowledging failure.
