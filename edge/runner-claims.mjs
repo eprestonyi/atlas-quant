@@ -1,3 +1,5 @@
+import {readScope,bindWholeScope} from './market-preparation/scope.mjs';
+import {scopeRef} from './market-preparation/common.mjs';
 import {supportsFinancialDatasets,assertRunDataset,researchEnabled} from './datasets/research.mjs';
 /** Durable claim identity: request retries recover the same job and lease. */
 import { random, parse } from './runtime.mjs';
@@ -21,9 +23,13 @@ async function jobPayload(env, row, supportsBundle) {
   const financial = row.data_source === 'ready_dataset' ? await assertRunDataset(env, row) : null;
   const dataset = row.dataset_key ? await env.ARTIFACTS.get(row.dataset_key) : null;
   const strategy = parse(row.spec);
+  const scopeRow=await env.DB.prepare('SELECT scope_id id,scope_root FROM quant_run_scopes WHERE job_id=? AND owner=?').bind(row.id,row.owner).first();
+  const wholeScope=scopeRow?await readScope(env,row.owner,scopeRef(scopeRow)):null;
+  if(wholeScope)bindWholeScope(strategy,wholeScope.scope);
   return {
     id: row.id,
     workspaceId: row.owner,
+    ...(wholeScope?{universeScopeRef:wholeScope.scopeRef,universeScope:wholeScope.scope}:{}),
     leaseToken: row.lease_token,
     ...(await claimMetadata(env, row)),
     ...(financial ? {datasetRef:financial.datasetRef,admissionProfile:financial.admissionProfile,sourceEvidence:financial.sourceEvidence,datasetInputUrl:`/quant/api/runner/research-datasets/${row.id}/input`,resultTransport:{format:'atlas.quant.financial_bundle',version:1}} : {}),

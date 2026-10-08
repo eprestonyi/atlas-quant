@@ -128,7 +128,7 @@ export function validateCosts(input = {}) {
   );
 }
 
-export function validateStatisticalQuant(input) {
+export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) {
   keys(
     input,
     [
@@ -166,7 +166,7 @@ export function validateStatisticalQuant(input) {
     '股票池'
   );
   const universe = {
-    symbols: symbols(u.symbols, 1, 50, '股票池'),
+    symbols: symbols(u.symbols, 1, scopeSymbolLimit, '股票池'),
     start: date(u.start),
     end: date(u.end)
   };
@@ -360,7 +360,7 @@ export function validateStatisticalQuant(input) {
  * Only the four exact resolver summary fields from that candidate are removable.
  * Full immutable forecast artifacts are never rewritten through this function.
  */
-export function validateStoredStatisticalQuant(input) {
+export function validateStoredStatisticalQuant(input, options = {}) {
   const candidate = structuredClone(input),
     snapshot = candidate?.universe?.catalogSnapshot;
   if (object(snapshot)) {
@@ -388,5 +388,5 @@ export function validateStoredStatisticalQuant(input) {
       );
     }
   }
-  return validateStatisticalQuant(candidate);
+  return validateStatisticalQuant(candidate, options);
 }

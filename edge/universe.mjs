@@ -2,7 +2,7 @@
 export class UniverseRuleError extends Error {
  constructor(code,message,status=400){super(message);this.code=code;this.status=status;}
 }
-export const UNIVERSE_RULE_LIMITS=Object.freeze({maxGroups:20,maxFiltersPerGroup:20,maxValuesPerFilter:64,maxExplicitSymbols:6000,maxRunSymbols:50,maxCatalogSecurities:10000,maxCatalogUniverses:5000,maxCatalogMemberships:250000});
+export const UNIVERSE_RULE_LIMITS=Object.freeze({maxGroups:20,maxFiltersPerGroup:20,maxValuesPerFilter:64,maxExplicitSymbols:6000,maxCatalogSecurities:10000,maxCatalogUniverses:5000,maxCatalogMemberships:250000});
 const UNIVERSE_FIELDS=Object.freeze({universe:'股票池 / 指数',area:'地域',industry:'行业',market:'板块',exchange:'交易所',list_status:'上市状态',is_hs:'互联互通'});
 const UNIVERSE_SYMBOL=/^\d{6}\.(?:SH|SZ|BJ)$/;
 const universeFail=(code,message,status)=>{throw new UniverseRuleError(code,message,status);};
@@ -81,8 +81,8 @@ export function resolveUniverseSelection(input,catalog){
  const symbols=universeSorted(selected),missing=symbols.filter(s=>catalog.identities.get(s).metadataStatus==='missing_identity_metadata').length;
  const warnings=['使用当前分类与实际成员快照，尚未验证历史时点成员，不能据此声称消除幸存者偏差。'];
  if(missing)warnings.push(`${missing}只实际股票池成员缺少完整身份属性；成员资格保留，未知地域与行业不会参与属性匹配。`);
- if(symbols.length>UNIVERSE_RULE_LIMITS.maxRunSymbols)warnings.push('保留完整股票池；运行前请继续筛选或明确选择不超过50只的研究子集。');
+ warnings.push('研究使用完整筛选集合；数据与计算预算由独立准入检查，不自动截断成员。');
  const usedIds=new Set([...selection.includeGroups,...selection.excludeGroups].flatMap(g=>g.filters.filter(f=>f.field==='universe').flatMap(f=>Array.isArray(f.value)?f.value:[f.value])));
- return {selection,symbols,symbolCount:symbols.length,members:symbols.map(s=>({...catalog.identities.get(s)})),steps,catalogSnapshot:{...catalog.snapshot},snapshotHash:catalog.snapshot.hash,sourceUniverses:universeSorted(usedIds).map(id=>({...catalog.universes.get(id)})),algorithmVersion:'universe-set-v1',requiresSubset:symbols.length>UNIVERSE_RULE_LIMITS.maxRunSymbols,maxRunSymbols:UNIVERSE_RULE_LIMITS.maxRunSymbols,historicalMembershipVerified:false,warnings};
+ return {selection,symbols,symbolCount:symbols.length,members:symbols.map(s=>({...catalog.identities.get(s)})),steps,catalogSnapshot:{...catalog.snapshot},snapshotHash:catalog.snapshot.hash,sourceUniverses:universeSorted(usedIds).map(id=>({...catalog.universes.get(id)})),algorithmVersion:'universe-set-v1',requiresSubset:false,membershipPolicy:'complete_filtered_set',admissionStatus:'preflight_required',historicalMembershipVerified:false,warnings};
 }
 export async function universeResolutionHash(result){const input={algorithmVersion:result.algorithmVersion,catalogHash:result.catalogSnapshot.hash,selection:result.selection,symbols:result.symbols};const data=new TextEncoder().encode(JSON.stringify(input));return [...new Uint8Array(await crypto.subtle.digest('SHA-256',data))].map(x=>x.toString(16).padStart(2,'0')).join('');}

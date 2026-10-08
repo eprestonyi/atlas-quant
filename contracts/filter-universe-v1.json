@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "scopeFormat": "atlas.quant.universe_scope",
+  "scopeVersion": 1,
+  "membershipPolicy": "complete_filtered_set",
+  "createScope": {
+    "method": "POST",
+    "path": "/quant/api/universe-scopes",
+    "bodyKeys": [
+      "selection",
+      "expectedResolutionHash",
+      "expectedSnapshotHash",
+      "start",
+      "end"
+    ],
+    "responseKeys": ["scopeRef", "scope", "created"]
+  },
+  "scopeRefKeys": ["scopeId", "scopeRoot", "format", "version"],
+  "scopeLookup": "/quant/api/universe-scopes/:scopeId",
+  "preflight": {
+    "method": "POST",
+    "path": "/quant/api/market-preparation-plans",
+    "bodyKeys": ["scopeRef", "profile", "requiredFields"],
+    "providerCalls": 0,
+    "membershipPolicy": "complete_filtered_set",
+    "unsupportedPolicy": "reject_entire_scope_never_truncate"
+  },
+  "legacyReadCompatibility": "Saved subsets and completed artifacts retain their original identity; new complete-scope creation never accepts a client subset.",
+  "firstCapacityProfile": "pooled_asset_1000_v1",
+  "firstCapacityScope": {
+    "maxSymbols": 1000,
+    "maxCalendarDays": 366
+  },
+  "profileStatus": "local_1000_ridge_synthetic_validated_not_hosted_ready",
+  "experimentBinding": {
+    "key": "universeScopeRef",
+    "create": "POST /quant/api/statistical-quant/experiments",
+    "update": "PUT /quant/api/statistical-quant/experiments/:id",
+    "run": "POST /quant/api/statistical-quant/experiments/:id/run",
+    "strategyUniverse": "Full ordered symbols/start/end exactly equal the frozen scope",
+    "updateOmission": "Inherit the prior version scope; cannot remove or shrink it by omission",
+    "runOmission": "Inherit saved version; an explicit reference must match it",
+    "versionAtomicity": "Experiment head, immutable revision, and scope association share one D1 transaction"
+  }
+}
