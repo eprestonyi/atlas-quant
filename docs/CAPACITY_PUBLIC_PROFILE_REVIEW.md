@@ -85,3 +85,9 @@ UI 必须显式选择该能力，保存完整300成员与池快照，显示数�
 根审查又使用已冻结的 50 股八年大案例实际走完本地 Worker/D1/R2：36 个分片、59,882,995 字节，19,700 条主预测及同量基线。全部 104,350 行 snapshot 保留原字节，但不再生成对应逐行 D1 索引；其他 80,235 条索引完整保留。提交、分页、完整 32,994,262 字节报告下载通过，报告 SHA-256 仍为 `0c6eaf474bf1c4c8c3fd59c7d9bce7dc6e34fea5576c47715b941cd6e8f14a88`，bundle/forecast 身份不变。此次本地上传约 2.98 秒，不能推定为云端时延；无重新拟合或 provider 请求。私有回执为 `private/sorted-large-20261008.json`。
 
 以上证明本地实现、完整大包与兼容边界。尚未修改生产flag、runner协商或公开300准入，尚无新策略的云端时延结论；也没有把50股投递冒称300包已完成生产投递。下一阶段仍须在保持完整数据与900秒计算/300秒单轮投递预算下验证公共大包链路。
+
+下一步的数据准备、统一冻结 dataset 引用和公共 profile 准入设计见 [POOLED_DATASET_ADMISSION.md](POOLED_DATASET_ADMISSION.md)。该合同尚未实现，不扩大本分支的服务能力。
+
+合并共享 DSL 合同后，feature cache 身份还绑定进程实际加载的 `dsl_contract.json` 语义、Python 解析器和字段注册实现；resource plan 的 `implementationRoot` 覆盖包内 Python 与 JSON 文件。共享合同变更不能复用旧特征缓存。此前已冻结的300基准保留其原源码根与资源证据，不被新实现根追溯替换。
+
+合并主分支 `b2fc345` 后，在上述复用依赖环境中通过完整688项Python、147项Node、check/build和六个前端流程/DOM脚本；新增合同变更失效反例也通过。此轮没有重新跑300基准、调用provider或部署。

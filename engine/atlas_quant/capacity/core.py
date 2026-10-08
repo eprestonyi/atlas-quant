@@ -32,6 +32,14 @@ def peak_rss_bytes():
     return int(value if sys.platform == "darwin" else value * 1024)
 
 
+def implementation_root(engine_root):
+    """Bind executable sources and packaged semantic contracts, never caches."""
+    paths = sorted([*engine_root.rglob("*.py"), *engine_root.rglob("*.json")])
+    return digest(
+        {str(path.relative_to(engine_root)): file_hash(path) for path in paths}
+    )
+
+
 class FitRuntime:
     def __init__(self, check, maximum, progress):
         self.check, self.maximum, self.progress = check, maximum, progress
@@ -138,17 +146,11 @@ def run_capacity_research(
             last = index
     baseline = any(name.startswith("factor:") for name in samples.X)
     engine_root = Path(__file__).resolve().parents[1]
-    implementation_root = digest(
-        {
-            str(path.relative_to(engine_root)): file_hash(path)
-            for path in sorted(engine_root.rglob("*.py"))
-        }
-    )
     plan = {
         "profile": profile.to_dict(),
         "modelScope": "pooled_all_symbols",
         "targetKind": "asset_price",
-        "implementationRoot": implementation_root,
+        "implementationRoot": implementation_root(engine_root),
         "numericalRuntime": {
             "python": sys.version.split()[0],
             "numpy": np.__version__,

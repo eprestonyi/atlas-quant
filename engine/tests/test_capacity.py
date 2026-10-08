@@ -412,6 +412,42 @@ def test_row_input_order_is_normalized_but_expression_and_direction_change_key(
     assert len({expression.identity, opposite.identity, altered.identity}) == 3
 
 
+def test_shared_dsl_contract_change_invalidates_feature_cache(
+    source, tmp_path, monkeypatch
+):
+    from atlas_quant.capacity import features
+
+    s, _, _ = source
+    _, _, store = setup(source, tmp_path)
+    graph = FeatureGraph.compile(s["factors"])
+    original = graph.evaluate(store, tmp_path / "features")
+    # A contract revision must invalidate otherwise identical AST/data caches.
+    # Do not mutate the live shared contract or the user's repository files.
+    revised = copy.deepcopy(features.DSL_CONTRACT)
+    revised["capacityReviewRevision"] = 1
+    monkeypatch.setattr(features, "DSL_CONTRACT", revised)
+    changed_graph = FeatureGraph.compile(s["factors"])
+    changed = changed_graph.evaluate(store, tmp_path / "features")
+    assert graph.identity != changed_graph.identity
+    assert original.identity != changed.identity
+    assert original.root != changed.root
+    for factor in s["factors"]:
+        np.testing.assert_array_equal(original[factor["id"]], changed[factor["id"]])
+
+
+def test_implementation_root_includes_json_contracts_but_not_cache_files(tmp_path):
+    from atlas_quant.capacity.core import implementation_root
+
+    (tmp_path / "factors.py").write_text("# frozen implementation\n")
+    contract = tmp_path / "dsl_contract.json"
+    contract.write_text('{"version":1}')
+    first = implementation_root(tmp_path)
+    (tmp_path / "cached.npy").write_bytes(b"not an implementation input")
+    assert implementation_root(tmp_path) == first
+    contract.write_text('{"version":2}')
+    assert implementation_root(tmp_path) != first
+
+
 @pytest.mark.parametrize("boundary", ["before_fit", "after_fit"])
 def test_resource_rejection_is_not_swallowed_as_invalid_model_trial(
     source, tmp_path, monkeypatch, boundary

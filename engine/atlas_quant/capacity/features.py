@@ -10,7 +10,7 @@ import uuid
 import numpy as np
 import pandas as pd
 
-from ..factors import _parse, _number, WINDOW_FUNCTIONS
+from ..factors import _parse, _number, WINDOW_FUNCTIONS, DSL_CONTRACT
 from ..statistical_quant.schema import digest, fail
 from .panel_store import (
     private_dir,
@@ -32,6 +32,15 @@ class FeatureGraph:
             "numpy": np.__version__,
             "pandas": pd.__version__,
             "implementationSha256": file_hash(Path(__file__)),
+            # Hash the loaded contract, which is the actual parser authority in
+            # this process, as well as its Python validation dependencies.
+            "dslContractSha256": digest(DSL_CONTRACT),
+            "dslImplementationSha256": file_hash(
+                Path(__file__).resolve().parents[1] / "factors.py"
+            ),
+            "fieldRegistrySha256": file_hash(
+                Path(__file__).resolve().parents[1] / "research_registry.py"
+            ),
         }
         self.nodes, self.roots, self.metadata = {}, {}, {}
 
