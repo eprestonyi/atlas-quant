@@ -1,6 +1,6 @@
 # v0.7 — auditable financial workspace
 
-Status: **production financial preparation accepted; completion-snapshot correction under release review**.
+Status: **released and read back in production; financial preparation and browser acceptance completed**.
 This is an incremental release of the ongoing Atlas Quant rebuild, not the
 completion of financial-to-F research or the whole community platform.
 
@@ -122,10 +122,20 @@ D1 transaction. A real Miniflare completion interleaving reproduces the old
 failure and passes with the new snapshot. The complete Node suite is 172/172.
 Candidate `0.7.0-0cf1f66c9b2d`, 1,491,510 bytes, SHA-256
 `a03f2a4edcdecf2e4dd89fb2c17bd6c5880be1fee00d99cf6d80b649409cdbda`.
-This candidate has not yet replaced the registry-correction production build.
+PR #14 merged as `a98faa0ab7494ccc5098f0d5a1c11f80e8fa2335`; this exact
+Worker is now deployed and read back, with the same Python PIDs and unchanged
+engine/configuration bytes. Both queues resumed.
 
 The hosted evidence used operator-registered, owner-specific calendar and
 record/field unit proofs. It does not establish self-service Tushare onboarding
 for a new workspace. That workflow and unified dataset-to-F admission remain
-separate implementation work. The source archive must be rebuilt from the final
-accepted merge before publication; the legacy alias is not acceptance evidence.
+separate implementation work. The tracked-only source archive was rebuilt from that final merge: 294 files,
+2,388,818 bytes, SHA-256
+`a32109c8afcb239af4a1053c3a471e13173acd159d43466e1ab4bc7683962146`.
+Both the public source download and the GitHub release asset match those bytes.
+The previous source remains available under an immutable backup key.
+
+The actual production browser also completed upload, validation, preparation,
+company/state filtering and event inspection. A native 4,524-byte event download
+matched independently audited HTTP bytes exactly. These UI inputs belong to
+the browser owner, with separately registered owner-specific evidence.
