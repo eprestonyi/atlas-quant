@@ -1,3 +1,5 @@
+import { ownedForecastStage, streamDocumentResponse } from '../bundles/user-api.mjs';
+import { ownedStageForRun, parsedStage } from '../bundles/storage.mjs';
 import { ApiError } from '../errors.mjs';
 import { NOW, random, json, parse, body, jobItem, audit } from '../runtime.mjs';
 import {
@@ -187,7 +189,14 @@ async function createComparison(env, owner, input) {
       time
     )
     .run();
-  return { id, name, kind: input.kind, members: input.members, ...metadata, createdAt: time };
+  return {
+    id,
+    name,
+    kind: input.kind,
+    members: input.members,
+    ...metadata,
+    createdAt: time
+  };
 }
 
 /** All routes are behind a server-derived workspace owner and same-origin gate. */
@@ -227,12 +236,24 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
           .bind(owner)
           .first();
       const rows = await env.DB.prepare(
-        'SELECT * FROM quant_experiments WHERE owner=? AND archived=0 ORDER BY updated_at DESC LIMIT ? OFFSET ?'
+        `SELECT e.*,
+          (SELECT json_object(
+            'id',j.id,'status',j.status,'jobKind',q.kind,
+            'experimentVersion',q.experiment_version,
+            'createdAt',j.created_at,'updatedAt',j.updated_at
+          ) FROM quant_runs q JOIN jobs j ON j.id=q.job_id
+          WHERE q.owner=e.owner AND j.owner=e.owner AND q.experiment_id=e.id
+          ORDER BY j.created_at DESC,j.id DESC LIMIT 1) AS latest_run
+         FROM quant_experiments e WHERE e.owner=? AND e.archived=0
+         ORDER BY e.updated_at DESC,e.id DESC LIMIT ? OFFSET ?`
       )
         .bind(owner, p.pageSize, p.offset)
         .all();
       return json({
-        items: rows.results.map(experimentView),
+        items: rows.results.map((row) => ({
+          ...experimentView(row),
+          latestRun: parse(row.latest_run)
+        })),
         total: count.n,
         page: p.page,
         pageSize: p.pageSize
@@ -275,7 +296,9 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
       const strategy = validateStoredStatisticalQuant(parse(row.spec));
       strategy.name = input.name ?? strategy.name.slice(0, 70) + ' · 副本';
       return json(
-        { experiment: await createExperiment(env, owner, validateStatisticalQuant(strategy), id) },
+        {
+          experiment: await createExperiment(env, owner, validateStatisticalQuant(strategy), id)
+        },
         201
       );
     }
@@ -356,8 +379,11 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
     if (!id && req.method === 'POST') {
       const input = await body(req, 12000);
       keys(input, ['forecastArtifactId', 'execution', 'portfolio', 'costs'], '执行复用');
-      const source = await ownedForecast(env, owner, String(input.forecastArtifactId ?? '')),
-        artifact = await readPrivateObject(env, source.artifact_key, source.artifact_hash);
+      const source = await ownedForecast(env, owner, String(input.forecastArtifactId ?? ''));
+      const bundleStage = await ownedForecastStage(env, owner, source.id);
+      const artifact = bundleStage
+        ? (await parsedStage(bundleStage)).metadata.forecast
+        : await readPrivateObject(env, source.artifact_key, source.artifact_hash);
       if (input.execution !== undefined)
         keys(
           input.execution,
@@ -401,8 +427,14 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
           ...input.execution,
           enabled: true
         }),
-        portfolio: validatePortfolio({ ...artifact.sourceStrategy.portfolio, ...input.portfolio }),
-        costs: validateCosts({ ...artifact.sourceStrategy.costs, ...input.costs })
+        portfolio: validatePortfolio({
+          ...artifact.sourceStrategy.portfolio,
+          ...input.portfolio
+        }),
+        costs: validateCosts({
+          ...artifact.sourceStrategy.costs,
+          ...input.costs
+        })
       };
       validateStatisticalQuant(strategy);
       const experiment = await ownedExperiment(env, owner, source.experiment_id);
@@ -437,12 +469,23 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
         .bind(id, owner)
         .first();
       if (!row) throw notFound();
+      const bundleStage = await ownedStageForRun(env, owner, id);
+      if (bundleStage) {
+        const parsed = await parsedStage(bundleStage);
+        return streamDocumentResponse(env, bundleStage, parsed, 'report', {
+          prefix: JSON.stringify({ execution: executionView(row) }).slice(0, -1) + ',\"result\":',
+          suffix: '}',
+          ...(action === 'download' ? { filename: `atlas-execution-${id}.json` } : {})
+        });
+      }
       const result = row.result_key ? await readPrivateObject(env, row.result_key) : null;
       return json(
         { execution: executionView(row), result },
         200,
         action === 'download'
-          ? { 'content-disposition': `attachment; filename="atlas-execution-${id}.json"` }
+          ? {
+              'content-disposition': `attachment; filename="atlas-execution-${id}.json"`
+            }
           : {}
       );
     }
@@ -496,7 +539,12 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
       });
     }
     if (!id && req.method === 'POST')
-      return json({ comparison: await createComparison(env, owner, await body(req, 12000)) }, 201);
+      return json(
+        {
+          comparison: await createComparison(env, owner, await body(req, 12000))
+        },
+        201
+      );
     if (id && req.method === 'GET') {
       const row = await env.DB.prepare('SELECT * FROM quant_comparisons WHERE id=? AND owner=?')
         .bind(id, owner)
@@ -515,7 +563,9 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
         },
         200,
         action === 'download'
-          ? { 'content-disposition': `attachment; filename="atlas-comparison-${id}.json"` }
+          ? {
+              'content-disposition': `attachment; filename="atlas-comparison-${id}.json"`
+            }
           : {}
       );
     }

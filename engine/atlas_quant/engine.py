@@ -655,11 +655,11 @@ def _factor_research(X, y, valid, holdout_start, strategy, diagnostics, metrics,
             "limitations": ["Long-short is high-minus-low forward-label arithmetic, not a financed, borrowable or T+1-executable short portfolio.", "Forward labels can overlap. ICIR is unannualized mean/sample-standard-deviation, not a significance test.", "Factor directions and universe are user choices. Reusing holdout for revisions introduces selection bias."]}
 
 
-def run_research(strategy: dict, data: pd.DataFrame, provenance: dict) -> dict:
+def run_research(strategy: dict, data: pd.DataFrame, provenance: dict, *, forecast_plan_sink=None) -> dict:
     """Run deterministic research. No provider call, network, file or trade side effect."""
     if isinstance(strategy, dict) and isinstance(strategy.get('research'), dict) and strategy['research'].get('mode') == 'statistical_quant':
         from .statistical_quant import run_statistical_quant
-        return run_statistical_quant(strategy, data, provenance)
+        return run_statistical_quant(strategy, data, provenance, plan_sink=forecast_plan_sink)
     if isinstance(strategy, dict) and isinstance(strategy.get('research'), dict) and strategy['research'].get('mode') == 'stat_arb':
         from .stat_arb import run_stat_arb
         return run_stat_arb(strategy, data, provenance)

@@ -15,6 +15,8 @@ The public site combines the embedded browser app, a Cloudflare Worker with D1/R
 9. Save the private runner config below outside the checkout as an absolute, non-symlink file with mode `0600`. Start `python -m atlas_quant.runner --config /private/path/config.json` with `PYTHONPATH` pointing to the engine directory. Configure restart-on-failure and host startup appropriately.
 10. Read back build version, capabilities and heartbeat, then submit and retrieve a complete experiment in a fresh workspace. Test an actual AI request separately when enabled. A configured binding or online heartbeat alone does not prove provider execution, correct computation or persistence.
 
+For this macOS compute service, omit the LaunchAgent `ProcessType` key (the default Standard class). Do not configure Background or assume Adaptive improves compute scheduling: a controlled same-host study with identical Python, dependencies, input and forecast hash measured 1.80 seconds under Standard versus 8.87 seconds under Background and 9.27 under Adaptive. That single microbenchmark is not a throughput guarantee. The 50-stock hosted acceptance under Background actually reached the 900-second job deadline; see [the acceptance record](BUNDLE_ACCEPTANCE_A.md). Keep the existing one-job process isolation, numerical thread limits and 900-second deadline. Change scheduling only after pausing claims and draining active jobs and durable deliveries, preserve the original plist, and verify service/queue health after restart. Do not use a realtime or interactive scheduling class to conceal a compute-capacity failure.
+
 ```json
 {
   "api_base": "https://your-host.example/quant/api",
@@ -73,6 +75,16 @@ Successful schema-2 research stores two distinct encrypted local delivery object
 Complete artifacts and frozen inputs reside in private R2 under owner scope. D1 manifests keep compact diagnostics; full arrays remain in R2. Reads verify actual object SHA-256 against the stored manifest. A digest mismatch fails explicitly and must not be repaired by silently fetching today's provider data. Full result objects remain capped at 24 MiB; oversized experiments fail rather than silently truncate forecasts, control forecasts or the ledger.
 
 For a safe operator restart, inspect `delivery/*.enc`, `delivery/*.tmp`, `delivery/snapshots/*` and `delivery/claims/*` as well as active queue work and claim receipts. Do not print their decrypted contents. The runner's `runner.lock` and empty snapshots/claims directories alone do not block a clean restart. A `.tmp` intent is not an acknowledged claim; inspect it together with `current.enc` and server receipts rather than deleting it during upgrade.
+
+## v0.5 bundle upgrade
+
+Apply additive `0005_artifact_bundles.sql` before deploying the v0.5 Worker: even the compatible legacy claim path queries the bundle tables. Preserve the existing database and all R2 objects. Pause new claims through `runner_maintenance`, drain running jobs and pending deliveries, deploy and read back the Worker, then upgrade the Quant runner while the gate remains paused. Resume only after checking source hashes, unchanged private configuration and actual process state.
+
+The new runner writes authenticated encrypted per-file spool objects. A child returns a small spool handle; delivery uses the saved original manifest and chunk bytes. The 300-second total delivery budget is separate from the 900-second computation budget. Interrupted or uncertain acknowledgements retain recoverable bytes; do not delete a pending spool during upgrade. Inspect all delivery children, including bundle directories, not only the older completion/snapshot files.
+
+Once any bundle is committed, draining jobs alone does **not** make a v0.4 Worker rollback compatible: that Worker cannot read bundle-backed reports or serve frozen bundle replay. Retain the v0.5 bundle read/replay layer when rolling back UI or computation, or restore a separately verified compatible Worker. Never remove committed data or overwrite it with a legacy report to make a rollback appear successful.
+
+The scheduled cleanup removes only abandoned staging/verified/aborted uploads whose jobs are failed/cancelled and older than 30 days. It verifies the manifest and deletes every deterministic chunk key, including an R2 write whose D1 receipt transaction failed. Committed references block cleanup. User report and forecast JSON downloads stream the full logical document; local CLI bundle directories remain the available manifest/chunk export format.
 
 ## Local full stack
 

@@ -1407,6 +1407,24 @@
   max-width: 210px;
   font-size: 10px;
 }
+.sq-report-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+}
+.sq-report-filter-grid .sq-field {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .sq-report-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 540px) {
+  .sq-report-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .sq-report-code {
   font: 10px var(--sq-mono);
   background: #081114;
@@ -2174,3 +2192,7 @@
 .sq-main h1[tabindex='-1']:focus {
   outline: none;
 }
+
+/* Report and reproducibility downloads stay readable in the narrow layout. */
+.sq-report-downloads { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 260px; }
+.sq-report-downloads small { color: var(--muted); line-height: 1.6; overflow-wrap: anywhere; }

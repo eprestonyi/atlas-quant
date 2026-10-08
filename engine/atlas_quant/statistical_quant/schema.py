@@ -7,7 +7,7 @@ import math
 import re
 from datetime import datetime
 
-VERSION = "0.4.0"
+from .. import __version__ as VERSION
 FAMILIES = ("mean_reversion", "pair_reversion", "trend", "fundamental", "event")
 ESTIMATORS = ("auto", "no_change", "historical_drift", "ridge", "elastic_net", "hist_gradient_boosting")
 MAX_FORECASTS = 25000

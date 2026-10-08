@@ -138,6 +138,15 @@ test('malformed AI JSON and null entries never become trusted patches or unhandl
  await mock({answer:null});const empty=await review('x = 1\n');assert.notEqual(empty.status,500);
 });
 
+test('statistical-quant DSL review receives the actual conditional-value horizon and fragment scope',async()=>{
+ const current={schemaVersion:2,research:{mode:'statistical_quant',observationDays:3},target:{kind:'frozen_basket',horizonSessions:10,basket:{method:'pair_ols'}},model:{family:'pair_reversion',estimator:'ridge',trainWindow:504,refitDays:20},validation:{minTrainDates:80,innerFolds:2,outerFolds:2,holdoutFraction:.2},costs:{commissionBps:2.5,slippageBps:3},execution:{enabled:false},universe:{symbols:['PRIVATE_SYMBOL']},credentials:'PRIVATE_SENTINEL_NOT_CONTEXT'};
+ await mock({answer:{response:{summary:'该表达式只使用当前与过去收盘价。',findings:[],patches:[]}}});
+ const response=await review('returns(close,20)','ai',{language:'dsl',strategy:current});assert.equal(response.status,200);
+ const call=JSON.parse((await db.prepare("SELECT value FROM meta WHERE key='test_ai_call'").first()).value),payload=JSON.parse(call.payload.messages[1].content),context=payload.researchContext;
+ assert.equal(context.codeScope,'factor_expression');assert.equal(context.target,'frozen_basket');assert.equal(context.horizon,10);assert.equal(context.observationDays,3);assert.equal(context.basketMethod,'pair_ols');assert.deepEqual(context.model,{family:'pair_reversion',estimator:'ridge',trainWindow:504,refitDays:20});assert.deepEqual(context.expression,{syntaxValid:true,fields:['close'],lookback:20});assert.equal(context.executionEnabled,false);
+ assert.match(call.payload.messages[0].content,/absence of those stages in a one-line DSL fragment/);assert.match(call.payload.messages[0].content,/x\[t\]\/x\[t-n\]-1/);assert.ok(!JSON.stringify(call.payload).includes('PRIVATE_SENTINEL'));assert.ok(!JSON.stringify(call.payload).includes('PRIVATE_SYMBOL'));
+});
+
 test('AI structured response objects use the same findings and original-source patch validation as JSON text',async()=>{
  const code='\nresult = data.shift(-1)\n';
  const payload={summary:'将标签与输入特征分开。',findings:[{severity:'warning',line:2,message:'未来位移需要明确标签角色。',suggestion:'不要把它作为输入特征。'}],patches:[{title:'Causal feature',before:'data.shift(-1)',after:'data.shift(1)',reason:'输入只能使用过去数据。'},{title:'Invented',before:'unseen_source',after:'replacement',reason:'应被过滤。'}]};
