@@ -1,6 +1,6 @@
-# v0.7 candidate — auditable financial workspace
+# v0.7 — auditable financial workspace
 
-Status: **initial production deployment verified; hosted preparation and registry-read correction acceptance in progress**.
+Status: **production financial preparation accepted; completion-snapshot correction under release review**.
 This is an incremental release of the ongoing Atlas Quant rebuild, not the
 completion of financial-to-F research or the whole community platform.
 
@@ -56,8 +56,8 @@ identity fields.
 
 ## Release boundaries
 
-The production flag remains off until the new schema, consumer, private
-registry scope and hosted readback are verified. `researchBinding` remains
+The financial workspace flag is enabled after the new schema, consumer, private
+registry scope and hosted readback were verified. `researchBinding` remains
 false. Financial preparation does not attach a component to a forecast, run an
 execution, authenticate historical as-published revisions, or establish alpha.
 A unified dataset reference and its typed evidence archive are the next stage.
@@ -85,7 +85,7 @@ was repeated. Validation took about 178 seconds: repeated all-proof lookups
 made each proof download do quadratic registry work. The correction batches
 metadata lookups in groups of 64 and authorizes each body by its own reference,
 retaining owner, active state, kind, length and SHA checks. Its hosted preparation
-acceptance remains pending. New-user calendar onboarding and financial forecast
+acceptance passed as described below. New-user calendar onboarding and financial forecast
 attachment are separate unfinished work.
 
 The registry correction passed all 171 Node tests and static checks. Candidate
@@ -97,3 +97,35 @@ Node-to-workerd cancellation arrived. The test now gates the first storage read
 and cancels inside workerd against the native FixedLengthStream; it precisely
 asserts one in-flight read without sleeps or a relaxed threshold. The production
 archive implementation was not changed.
+
+
+## Real hosted preparation and completion-state correction
+
+The registry correction merged as `697decb5bfe7d92c5cac02e79597dbe171a98918`
+and the exact Worker bytes were read back. Both existing Python processes kept
+their PIDs, all 54 engine files and configurations; no restart or migration was
+needed. Queues resumed before validation continued.
+
+The frozen two-company input completed preparation in about 53 seconds from
+queue creation to completion. Its four input/package/calendar/preparation roots
+match the earlier offline evidence. Actual D1/R2 and authenticated HTTP readback
+passed **21,209 independent checks**, including all 24 complete event downloads,
+26 dependencies, four assignments, twelve coverage entries and 486 panel rows.
+Each of six states retains 354 valid and 132 missing observations. An independent
+standard-library Decimal calculation reproduced every ratio and its first usable
+trading session. This repeated neither provider acquisition nor an F-model fit.
+
+Browser acceptance exposed a completion race: three separate detail queries
+could return an old `validating` input beside a newly completed job, causing
+polling to stop. The correction reads input, job and preparation together in one
+D1 transaction. A real Miniflare completion interleaving reproduces the old
+failure and passes with the new snapshot. The complete Node suite is 172/172.
+Candidate `0.7.0-0cf1f66c9b2d`, 1,491,510 bytes, SHA-256
+`a03f2a4edcdecf2e4dd89fb2c17bd6c5880be1fee00d99cf6d80b649409cdbda`.
+This candidate has not yet replaced the registry-correction production build.
+
+The hosted evidence used operator-registered, owner-specific calendar and
+record/field unit proofs. It does not establish self-service Tushare onboarding
+for a new workspace. That workflow and unified dataset-to-F admission remain
+separate implementation work. The source archive must be rebuilt from the final
+accepted merge before publication; the legacy alias is not acceptance evidence.
