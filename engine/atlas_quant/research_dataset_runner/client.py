@@ -30,6 +30,25 @@ class ResearchDatasetClient(DatasetClient):
         require(method == "GET", "DATASET_ROUTE")
         return super()._request(method, route, **kwargs)
 
+    def source_contract(self, job):
+        """Legacy dataset/2 stays explicit; graph/3 uses a separate subclass."""
+        reference = dataset_reference(job.get("datasetRef"))
+        require(reference["version"] == 2)
+        profile = admit_profile(job.get("admissionProfile"), 2)
+        require(job.get("admissionProfile") == profile, "DATASET_INPUT_IDENTITY")
+        require(job.get("resultTransport") == {"format": "atlas.quant.financial_bundle", "version": 1},
+                "DATASET_INPUT_IDENTITY")
+        return reference, profile
+
+    def source_store(self, spool, job):
+        return ResearchDatasetSpool.from_spool(spool, job)
+
+    def source_reader(self, manifest, store, reference, job):
+        reader = DatasetReader(manifest, lambda c, n: store.read(store.part_name(c, n)),
+                               expected_root=reference["datasetRoot"])
+        require(reader.manifest["version"] == 2 and reader.manifest["profile"] == PROFILE)
+        return reader
+
     def prepare(self, job, spool, *, deadline, check):
         # Only a small control envelope is ever passed to multiprocessing.spawn.
         require(len(encode(job)) <= LIMITS["inputMetadataBytes"], "DATASET_BYTE_BUDGET")
@@ -41,10 +60,7 @@ class ResearchDatasetClient(DatasetClient):
             and job.get("dataset") is None,
             "DATASET_INPUT_IDENTITY",
         )
-        reference = dataset_reference(job.get("datasetRef"))
-        require(reference["version"] == 2)
-        research_profile = admit_profile(job.get("admissionProfile"), 2)
-        require(job.get("admissionProfile") == research_profile, "DATASET_INPUT_IDENTITY")
+        reference, research_profile = self.source_contract(job)
         evidence = {"datasetRef": reference, "admissionProfile": research_profile}
         require(job.get("sourceEvidence") == evidence, "DATASET_INPUT_IDENTITY")
         route = job["id"] + "/"
@@ -117,15 +133,8 @@ class ResearchDatasetClient(DatasetClient):
         manifest = descriptor(
             meta["manifest"], "manifest" + query, LIMITS["manifestBytes"]
         )
-        store = ResearchDatasetSpool.from_spool(spool, job)
-        reader = DatasetReader(
-            manifest,
-            lambda c, n: store.read(store.part_name(c, n)),
-            expected_root=reference["datasetRoot"],
-        )
-        require(
-            reader.manifest["version"] == 2 and reader.manifest["profile"] == PROFILE
-        )
+        store = self.source_store(spool, job)
+        reader = self.source_reader(manifest, store, reference, job)
         # Complete registry page admission precedes any source payload download.
         index, refs, total, offset = [], set(), 0, 0
         while offset < count:
