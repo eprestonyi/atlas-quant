@@ -104,10 +104,8 @@ class BundleAudit:
         self.db = database
         raw = self.read_file("manifest.json", LIMIT_MANIFEST)
         self.bundle_id = sha(raw)
-        self.manifest = m = decode(raw)
-        require(m.get("format") == "atlas.quant.bundle" and type(m.get("version")) is int and m.get("version") == 1,
-                "Unsupported bundle transport")
-        require(m.get("kind") in ("forecast", "execution"), "Invalid bundle kind")
+        self.manifest = m = self.decode_json(raw)
+        self.validate_transport_header(raw, m)
         for key in ("forecastArtifactId", "predictionConfigHash", "dataFingerprint"):
             require(is_hash(m.get(key)), "Invalid identity: " + key)
         expected_docs = {"forecast", "report", "coverage"}
@@ -149,6 +147,28 @@ class BundleAudit:
         self.max_error = 0.0
         self.max_chunk = 0
 
+    def validate_transport_header(self, raw, manifest):
+        require(manifest.get("format") == "atlas.quant.bundle"
+                and type(manifest.get("version")) is int and manifest["version"] == 1,
+                "Unsupported bundle transport")
+        require(manifest.get("kind") in ("forecast", "execution"), "Invalid bundle kind")
+
+    def decode_json(self, raw):
+        return decode(raw)
+
+    def document_encoder(self, name):
+        return canonical
+
+    def collection_encoder(self, name):
+        return self.document_encoder(self.collections[name]["document"])
+
+    def validate_snapshot(self):
+        snapshot = self.documents["snapshot"]
+        require(snapshot["schemaVersion"] == 1 and snapshot["fingerprintVersion"] == "research_input_v1"
+                and snapshot["dataFingerprint"] == self.manifest["dataFingerprint"]
+                and snapshot["sourceDataFingerprint"] == snapshot["provenance"]["dataFingerprint"],
+                "Snapshot input metadata differs")
+
     def read_file(self, relative, maximum):
         candidate = self.directory / relative
         resolved = candidate.resolve()
@@ -171,9 +191,10 @@ class BundleAudit:
         for name, collection in self.collections.items():
             for descriptor in collection["chunks"]:
                 raw = self.chunk_bytes(name, descriptor)
-                rows = decode(raw)
+                rows = self.decode_json(raw)
+                encode = self.collection_encoder(name)
                 require(isinstance(rows, list) and len(rows) == descriptor["count"], "Chunk row count mismatch")
-                require(canonical(rows) == raw, "Chunk encoding is not canonical v1 JSON")
+                require(encode(rows) == raw, "Chunk encoding is not canonical v1 JSON")
                 for offset, row in enumerate(rows):
                     require(isinstance(row, dict), "Collection record must be an object")
                     key = IDENTITIES.get(name)
@@ -182,7 +203,7 @@ class BundleAudit:
                         require(isinstance(identity, str) and identity, "Missing record identity: " + name)
                     self.db.execute("INSERT INTO records VALUES(?,?,?,?,?,?)", (
                         name, descriptor["start"] + offset, identity, row.get("date"),
-                        row.get("targetId"), canonical(row).decode("utf-8")))
+                        row.get("targetId"), encode(row).decode("utf-8")))
                 self.checks += len(rows) + 1
                 del raw, rows
         self.db.commit()
@@ -240,7 +261,7 @@ class BundleAudit:
                 yield pending[:-1]
                 yield b"}"
 
-    def canonical_stream(self, value):
+    def canonical_stream(self, value, encode=canonical):
         if isinstance(value, Collection):
             yield from self.collection_bytes(value.name)
         elif isinstance(value, dict):
@@ -248,18 +269,18 @@ class BundleAudit:
             for index, key in enumerate(sorted(value)):
                 if index:
                     yield b","
-                yield canonical(key) + b":"
-                yield from self.canonical_stream(value[key])
+                yield encode(key) + b":"
+                yield from self.canonical_stream(value[key], encode)
             yield b"}"
         elif isinstance(value, list):
             yield b"["
             for index, item in enumerate(value):
                 if index:
                     yield b","
-                yield from self.canonical_stream(item)
+                yield from self.canonical_stream(item, encode)
             yield b"]"
         else:
-            yield canonical(value)
+            yield encode(value)
 
     @staticmethod
     def stream_hash(chunks):
@@ -304,7 +325,7 @@ class BundleAudit:
                     skeleton_parts.append(canonical(doc_marker))
             skeleton_bytes = b"".join(skeleton_parts)
             require(len(skeleton_bytes) <= LIMIT_MANIFEST, "Skeleton exceeds metadata budget")
-            skeleton = decode(skeleton_bytes)
+            skeleton = self.decode_json(skeleton_bytes)
             require(isinstance(skeleton, dict), "Document root must be an object")
             found = set()
             found_doc = False
@@ -342,7 +363,7 @@ class BundleAudit:
             self.documents[doc] = result
             expected = (descriptor["sha256"], descriptor["byteLength"])
             require(self.stream_hash(self.document_bytes(doc)) == expected, "Recipe document hash/length mismatch")
-            require(self.stream_hash(self.canonical_stream(result)) == expected, "Noncanonical document layout")
+            require(self.stream_hash(self.canonical_stream(result, self.document_encoder(doc))) == expected, "Noncanonical document layout")
             self.checks += 2
         require(used == set(self.collections), "Unreachable chunk descriptor")
         require(self.manifest["documents"]["forecast"]["sha256"] == self.manifest["forecastArtifactId"],
@@ -356,11 +377,7 @@ class BundleAudit:
                 f["dataFingerprint"] == m["dataFingerprint"], "Manifest differs from forecast metadata")
         require(r["provenance"]["dataSha256"] == m["dataFingerprint"], "Report input fingerprint differs")
         if "snapshot" in self.documents:
-            snapshot = self.documents["snapshot"]
-            require(snapshot["schemaVersion"] == 1 and snapshot["fingerprintVersion"] == "research_input_v1"
-                    and snapshot["dataFingerprint"] == m["dataFingerprint"]
-                    and snapshot["sourceDataFingerprint"] == snapshot["provenance"]["dataFingerprint"],
-                    "Snapshot input metadata differs")
+            self.validate_snapshot()
         require(f["truncated"] is False and f["totalRows"] == self.collections["forecasts"]["rowCount"],
                 "Incomplete forecast artifact")
         require(coverage["schemaVersion"] == 1 and coverage["source"] in

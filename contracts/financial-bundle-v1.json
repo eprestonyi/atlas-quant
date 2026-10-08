@@ -1,0 +1,38 @@
+{
+  "format": "atlas.quant.financial_bundle",
+  "version": 1,
+  "capability": "atlas.quant.financial_bundle/1",
+  "kind": "forecast",
+  "documentCodecs": {
+    "forecast": "forecast_json_v1",
+    "report": "forecast_json_v1",
+    "coverage": "forecast_json_v1",
+    "snapshot": "financial_json_v1"
+  },
+  "sourceEvidenceKeys": [
+    "datasetRef",
+    "admissionProfile"
+  ],
+  "datasetReferenceKeys": [
+    "datasetId",
+    "datasetRoot",
+    "format",
+    "version"
+  ],
+  "datasetProfiles": {
+    "1": "financial_compose_50_v1",
+    "2": "financial_snapshot_view_50_v1"
+  },
+  "limits": {
+    "manifestBytes": 524288,
+    "chunkTargetBytes": 4194304,
+    "chunkBytes": 8388608,
+    "chunkRows": 10000,
+    "chunks": 256,
+    "totalBytes": 268435456,
+    "rows": 1000000,
+    "snapshotBytes": 25165824,
+    "jsonDepth": 64
+  },
+  "executionEnabled": false
+}

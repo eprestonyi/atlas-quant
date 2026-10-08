@@ -78,12 +78,12 @@ import {createPageState} from './quant-workspace/page-state.js';
     s.name=String(s.name||'未命名策略').slice(0,80);
     return s;
   }
-  let initial=baseStrategy(),initialDirty=true,initialDataSource='tushare';
-  try{const saved=JSON.parse(localStorage.getItem(DRAFT_KEY)||'null');if(saved?.strategy){initial=normalizeStrategy(saved.strategy);initialDirty=saved.dirty!==false;}if(saved?.uiVersion===2&&['demo','upload','tushare'].includes(saved?.dataSource))initialDataSource=saved.dataSource;}catch{}
-  const state={view:'dashboard',session:null,catalog:null,strategies:[],runs:[],factors:[],strategy:initial,strategyId:null,strategyVersion:null,dirty:initialDirty,stage:'factors',dataSource:initialDataSource,dataset:null,loading:true,error:'',factorQuery:'',factorFilter:'all',paletteFilter:'all',runId:null,report:null,reportTransport:null,job:null,reportLoading:false,reportError:'',reportTab:'overview',tradePage:0,predictionPage:0,predictionScope:'latest',predictionDate:'',predictionQuery:'',saving:false,submitting:false,tutorial:false,modal:null,polling:false};
+  let initial=baseStrategy(),initialDirty=true,initialDataSource='tushare',initialDatasetBinding=null;
+  try{const saved=JSON.parse(localStorage.getItem(DRAFT_KEY)||'null');if(saved?.strategy){initial=normalizeStrategy(saved.strategy);initialDirty=saved.dirty!==false;}if(saved?.uiVersion===2&&['demo','upload','tushare','ready_dataset'].includes(saved?.dataSource))initialDataSource=saved.dataSource;if(saved?.datasetBinding&&saved?.dataSource==='ready_dataset')initialDatasetBinding=saved.datasetBinding;}catch{}
+  const state={view:'dashboard',session:null,catalog:null,strategies:[],runs:[],factors:[],strategy:initial,strategyId:null,strategyVersion:null,dirty:initialDirty,stage:'factors',dataSource:initialDataSource,datasetBinding:initialDatasetBinding,dataset:null,loading:true,error:'',factorQuery:'',factorFilter:'all',paletteFilter:'all',runId:null,report:null,reportTransport:null,job:null,reportLoading:false,reportError:'',reportTab:'overview',tradePage:0,predictionPage:0,predictionScope:'latest',predictionDate:'',predictionQuery:'',saving:false,submitting:false,tutorial:false,modal:null,polling:false};
   const app=$('#app');
   const pageState=createPageState(app);
-  const renderedRoute=()=>state.view==='quant'?`quant/${state.quantMode}/${state.quantStep}/${state.quantEntityId||''}${state.quantStep==='financial'?'/'+(location.hash.split('/')[4]||'source'):''}`:state.view==='runs'?`runs/${state.runId||''}`:state.view==='research'?`research/${state.researchStep}`:state.view==='studio'?`studio/${state.studioStep}`:state.view;
+  const renderedRoute=()=>state.view==='quant'?`quant/${state.quantMode}/${state.quantStep}/${state.quantEntityId||''}${['financial','datasets'].includes(state.quantStep)?'/'+(location.hash.split('/')[4]||'source'):''}`:state.view==='runs'?`runs/${state.runId||''}`:state.view==='research'?`research/${state.researchStep}`:state.view==='studio'?`studio/${state.studioStep}`:state.view;
   let studio=null,workspace=null;
   let previousFocus=null;
   let lastSessionRefresh=0;
@@ -93,14 +93,14 @@ import {createPageState} from './quant-workspace/page-state.js';
   const safeUrl = url => {if(!url||!String(url).trim())return '';try{const u=new URL(url,location.origin);return ['https:','http:'].includes(u.protocol)?u.href:'';}catch{return '';}};
   const activeStatus = s=>['queued','running','pending','claimed'].includes(s);
   const successStatus = s=>['completed','complete','succeeded','success'].includes(s);
-  const sourceLabel = s=>({demo:'合成教学数据',upload:'自有数据导入',tushare:'Tushare 实际行情',replay:'冻结数据 · 执行复用'}[s]||s||'来源未标明');
+  const sourceLabel = s=>({demo:'合成教学数据',upload:'自有数据导入',tushare:'Tushare 实际行情',replay:'冻结数据 · 执行复用',ready_dataset:'冻结行情与财务数据集'}[s]||s||'来源未标明');
   const badge = (source)=>`<span class="badge ${source==='demo'?'demo':'real'}">${icon(source==='demo'?'book':'database')}${esc(sourceLabel(source))}</span>`;
   const statusBadge = s=>`<span class="badge ${s==='failed'?'failed':activeStatus(s)?'running':''}">${activeStatus(s)?'<i class="dot running"></i>':''}${esc({queued:'排队中',pending:'等待中',running:'计算中',claimed:'计算中',completed:'已完成',complete:'已完成',succeeded:'已完成',success:'已完成',failed:'失败',cancelled:'已取消',canceled:'已取消'}[s]||s||'未知')}</span>`;
   const factors=()=>state.factors.length?state.factors:state.catalog?.factors?.length?state.catalog.factors:FALLBACK_FACTORS;
   const findFactor=id=>factors().find(f=>f.id===id)||state.strategy.factors.find(f=>f.id===id);
   const factorName=f=>f.name||findFactor(f.id)?.name||f.id;
   const templates=()=>state.catalog?.templates?.length?state.catalog.templates.map((t,i)=>({icon:TEMPLATES[i%3].icon,tags:['研究模板'],...t,strategy:t.strategy||t.config||t})):TEMPLATES;
-  function persistDraft(markDirty=true){state.dirty=markDirty;try{localStorage.setItem(window.AtlasQuantV4?.isStatistical(state.strategy)?DRAFT_KEY:LEGACY_DRAFT_KEY,JSON.stringify({uiVersion:2,dirty:state.dirty,experimentId:workspace?.ui.activeId||null,experimentVersion:workspace?.ui.activeVersion||null,strategy:state.strategy,dataSource:state.dataSource,savedAt:new Date().toISOString()}));}catch{}}
+  function persistDraft(markDirty=true){state.dirty=markDirty;try{localStorage.setItem(window.AtlasQuantV4?.isStatistical(state.strategy)?DRAFT_KEY:LEGACY_DRAFT_KEY,JSON.stringify({uiVersion:2,dirty:state.dirty,experimentId:workspace?.ui.activeId||null,experimentVersion:workspace?.ui.activeVersion||null,strategy:state.strategy,dataSource:state.dataSource,datasetBinding:state.dataSource==='ready_dataset'?state.datasetBinding:null,savedAt:new Date().toISOString()}));}catch{}}
   function toast(message,error=false){const item=document.createElement('div');item.className=`toast${error?' error':''}`;item.textContent=message;$('#toast-root').append(item);setTimeout(()=>item.remove(),error?8500:4300);}
   async function api(path,options={}) {
     const {timeoutMs=20000,...fetchOptions}=options;const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),timeoutMs);

@@ -4,6 +4,12 @@ from .archive import export_dataset_archive, extract_dataset_archive
 from .codec import DatasetError
 from .compose import FinancialSource, DatasetPublication, compose_dataset_components
 from .profile import DatasetProfile
+from .compose import compose_snapshot_dataset_components
+from .snapshot_view import (
+    SnapshotMarketView,
+    derive_market_snapshot_view,
+    validate_snapshot_scope_origin,
+)
 from .reader import (
     DatasetReader,
     DirectoryDatasetReader,
@@ -13,6 +19,10 @@ from .reader import (
 from .snapshot import freeze_financial_input, restore_financial_input
 
 __all__ = [
+    "SnapshotMarketView",
+    "derive_market_snapshot_view",
+    "validate_snapshot_scope_origin",
+    "compose_snapshot_dataset_components",
     "DatasetError",
     "DatasetProfile",
     "FinancialSource",

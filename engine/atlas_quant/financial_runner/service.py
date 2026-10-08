@@ -178,17 +178,20 @@ class LeaseMonitor:
             self.thread.join(timeout=1)
 
 
-def _child_entry(connection, context, meta, source, registries, computer):
+def _child_entry(connection, context, meta, source, registries, computer, compute_lock_path=None, deadline=None):
     try:
         if computer is None:
             from .publication import compute_publication
 
             computer = compute_publication
         publication = FinancialSpool.from_context(context).publication(context["job"])
-        manifest = computer(
-            context["job"], meta, source, registries, publication.write_chunk
-        )
-        publication.finalize(manifest)  # Manifest is the final durable commit marker.
+        from ..compute_slot import compute_slot
+
+        with compute_slot(compute_lock_path, deadline=deadline):
+            manifest = computer(
+                context["job"], meta, source, registries, publication.write_chunk
+            )
+            publication.finalize(manifest)  # Manifest is the final durable commit marker.
         connection.send({"complete": True})
     except BaseException as error:
         connection.send({"error": safe_error(error)})
@@ -196,7 +199,7 @@ def _child_entry(connection, context, meta, source, registries, computer):
         connection.close()
 
 
-def execute_bounded(spool, job, inputs, monitor, *, computer=None):
+def execute_bounded(spool, job, inputs, monitor, *, computer=None, compute_lock_path=None):
     """Child gets no queue/provider credentials and cannot outlive its deadline."""
     ctx = multiprocessing.get_context("spawn")
     parent, child = ctx.Pipe(duplex=False)
@@ -207,7 +210,7 @@ def execute_bounded(spool, job, inputs, monitor, *, computer=None):
             spool.context(job),
             *inputs,
             computer,
-        ),
+        ) + ((compute_lock_path, monitor.deadline) if compute_lock_path is not None else ()),
         daemon=True,
     )
     try:
@@ -421,7 +424,12 @@ def run_once(
                 monitor.check()
                 state = spool.save(dict(state, phase="computing"))
                 monitor.phase = "preparing_states"
-                bounded_compute(spool, job, inputs, monitor)
+                options = (
+                    {"compute_lock_path": config["compute_lock_path"]}
+                    if config.get("compute_lock_path") is not None
+                    else {}
+                )
+                bounded_compute(spool, job, inputs, monitor, **options)
                 state = spool.save(dict(state, phase="publishing"))
             deliver(client, spool, state, monitor)
     except RunnerError as error:

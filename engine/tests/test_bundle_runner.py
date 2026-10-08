@@ -235,3 +235,17 @@ def test_server_cancellation_stops_chunks_and_requires_terminal_receipt(tmp_path
     runner.flush_completions(client,spool)
     assert not client.puts and not client.completes
     assert not list(spool.pending()) and not store.root.exists() and ClaimIntent(spool).read() is None
+
+
+def test_execution_replay_requires_host_compute_slot_before_execution(research, monkeypatch):
+    from atlas_quant import statistical_quant
+    from atlas_quant.compute_slot import ComputeSlotError
+    report, snapshot, coverage = research
+    job = {'jobKind': 'execution', 'forecastArtifactId': report['forecasts']['artifactId'],
+           'strategy': report['strategy'], 'replay': {'artifact': report['forecasts'], 'snapshot': snapshot}}
+    def forbidden(*args, **kwargs):
+        pytest.fail('Replay must acquire the host compute slot before execution')
+    monkeypatch.setattr(statistical_quant, 'execute_forecasts', forbidden)
+    with pytest.raises(ComputeSlotError) as error:
+        runner.run_job(job, compute_lock_path='relative.lock', deadline=runner.time.monotonic()+5)
+    assert error.value.code == 'COMPUTE_SLOT_PATH'

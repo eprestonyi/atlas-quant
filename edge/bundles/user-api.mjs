@@ -9,8 +9,16 @@ import { bundleArchiveResponse } from './archive.mjs';
 
 export function transportView(stage, parsed, runId) {
   return {
-    format: 'atlas.quant.bundle',
-    version: 1,
+    format: parsed.manifest.format,
+    version: parsed.manifest.version,
+    ...(parsed.manifest.sourceEvidence
+      ? {
+          sourceEvidence: parsed.manifest.sourceEvidence,
+          sourceEvidenceClosure:
+            'separate_research_dataset_v' + parsed.manifest.sourceEvidence.datasetRef.version,
+          executionEligible: false
+        }
+      : {}),
     bundleId: stage.bundle_id,
     complete: true,
     logicalArtifactId: parsed.manifest.forecastArtifactId,
@@ -57,7 +65,9 @@ export async function ownedForecastStage(env, owner, forecastId) {
 
 export async function bundleUserApi(req, env, path, owner) {
   const match =
-    /^\/runs\/([^/]+)(?:\/(report)(?:\/(pages|detail|chart|download|bundle))?|\/(export))?$/.exec(path);
+    /^\/runs\/([^/]+)(?:\/(report)(?:\/(pages|detail|chart|download|bundle))?|\/(export))?$/.exec(
+      path
+    );
   if (!match || req.method !== 'GET') return null;
   const [, id, reportRoute, operation, oldExport] = match;
   const job = await env.DB.prepare('SELECT * FROM jobs WHERE id=? AND owner=?')

@@ -6,9 +6,13 @@ import stat
 from types import MappingProxyType
 
 from .codec import DatasetError, decode, encode, keys, require, sha, uuid
-from .compose import FinancialSource, compose_dataset_components
+from .compose import (
+    FinancialSource,
+    compose_dataset_components,
+    compose_snapshot_dataset_components,
+)
 from .manifest import validate_manifest
-from .profile import DEFAULT_PROFILE
+from .profile import DEFAULT_PROFILE, VIEW_VERSION
 
 
 def _freeze(value):
@@ -102,6 +106,28 @@ class DatasetReader:
         """No trust or numerical claim: exact complete typed transport only."""
         for name in self._components:
             decode(self.payload(name), self.profile.total_bytes)
+        if self._manifest["version"] == VIEW_VERSION:
+            from .snapshot_view import validate_snapshot_scope_origin
+
+            view = validate_snapshot_scope_origin(
+                self.payload("marketOrigin"), profile=self.profile
+            )
+            origin = decode(view.origin_bytes, self.profile.total_bytes)
+            require(
+                dict(self._components["marketOrigin"]["semanticRoots"])
+                == {
+                    "sourceBundleId": origin["source"]["bundleId"],
+                    "sourceSnapshotSha256": origin["source"]["snapshotSha256"],
+                    "marketRoot": view.receipt["marketRoot"],
+                },
+                "DATASET_ROOT",
+                "Origin descriptor semantic roots differ from its actual bytes",
+            )
+            require(
+                view.market_bytes == self.payload("marketDataset"),
+                "DATASET_VIEW_ORIGIN",
+                "Archived market differs from original snapshot projection",
+            )
         return {
             "datasetRoot": self.dataset_root,
             "transportVerified": True,
@@ -235,15 +261,29 @@ def restore_dataset(reader, authorized_registry):
             "Recomputed source, numbers, missing masks or lineage differ from archive",
         )
 
-    publication = compose_dataset_components(
-        reader.manifest["scope"],
-        reader.payload("marketDataset"),
-        sources,
-        authorized_registry,
-        compare,
-        market_calendar_ref=reader.manifest["marketCalendarRef"],
-        profile=reader.profile,
-    )
+    if reader.manifest["version"] == VIEW_VERSION:
+        from .snapshot_view import SnapshotMarketView
+
+        publication = compose_snapshot_dataset_components(
+            SnapshotMarketView(
+                reader.payload("marketDataset"), reader.payload("marketOrigin")
+            ),
+            sources,
+            authorized_registry,
+            compare,
+            market_calendar_ref=reader.manifest["marketCalendarRef"],
+            profile=reader.profile,
+        )
+    else:
+        publication = compose_dataset_components(
+            reader.manifest["scope"],
+            reader.payload("marketDataset"),
+            sources,
+            authorized_registry,
+            compare,
+            market_calendar_ref=reader.manifest["marketCalendarRef"],
+            profile=reader.profile,
+        )
     require(
         publication.manifest_bytes == reader.manifest_bytes,
         "DATASET_RECOMPUTATION",

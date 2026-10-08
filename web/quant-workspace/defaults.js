@@ -306,7 +306,7 @@ export function validateStrategy(
     !s.factors?.some(
       (f) =>
         (f.role || 'predictor') === 'predictor' &&
-        /\b(?:fd_|pcd_|pe\b|pe_ttm\b|pb\b|ps\b|ps_ttm\b|dv_ratio\b|dv_ttm\b|total_mv\b|circ_mv\b)/.test(
+        /\b(?:model_fin_[a-z_]+\b|fd_|pcd_|pe\b|pe_ttm\b|pb\b|ps\b|ps_ttm\b|dv_ratio\b|dv_ttm\b|total_mv\b|circ_mv\b)/.test(
           f.expression
         )
     )

@@ -6,7 +6,7 @@ import { createForms } from '../quant-workspace/forms.js';
 import { defaultStrategy } from '../quant-workspace/defaults.js';
 
 const dom = new JSDOM('<main></main><div id="modal-root"></div>', {
-  url: 'http://localhost/quant/#runs/run-a',
+  url: 'http://localhost/quant/#runs/run-a'
 });
 globalThis.document = dom.window.document;
 const document = dom.window.document;
@@ -26,7 +26,7 @@ const target = {
   construction: 'single_asset',
   symbols: ['600000.SH'],
   quantities: [1],
-  unit: 'adjusted_price',
+  unit: 'adjusted_price'
 };
 const fit = {
   id: 'fit-a',
@@ -38,7 +38,7 @@ const fit = {
   estimator: 'ridge',
   featureNames: ['state'],
   labelEndMax: '20241230',
-  informationCutoff: '20241231',
+  informationCutoff: '20241231'
 };
 const row = (n) => ({
   forecastId: `forecast-${n}`,
@@ -57,12 +57,12 @@ const row = (n) => ({
   expectedGrossBps: 300,
   realizedFuture: 10.3,
   forecastError: -0.1,
-  status: 'valid',
+  status: 'valid'
 });
 const ledger = {
   date: '20250103',
   risk: { gross: 0.5, net: 0, annualVolatility: 0.1, factorExposures: {} },
-  riskBreaches: [],
+  riskBreaches: []
 };
 const report = {
   schemaVersion: 2,
@@ -85,22 +85,22 @@ const report = {
         rmse: 0.01,
         relativeMseImprovement: -0.2,
         weighting: 'equal_weight_daily_average',
-        observedDates: 20,
+        observedDates: 20
       },
-      factorIncrement: { status: 'not_applicable' },
-    },
+      factorIncrement: { status: 'not_applicable' }
+    }
   },
   execution: {
     enabled: true,
     riskAdapter: { grossExposure: 1, netExposureLimit: 2 },
-    unit: 'fractional_adjusted_research_units',
+    unit: 'fractional_adjusted_research_units'
   },
   metrics: {
     totalReturn: -0.01,
     tradeCount: 1,
     maxDrawdown: 0.02,
-    totalCosts: 8,
-  },
+    totalCosts: 8
+  }
 };
 const transport = {
   format: 'atlas.quant.bundle',
@@ -118,11 +118,11 @@ const transport = {
     trades: { total: 1 },
     riskLedger: { total: 1 },
     decisions: { total: 1 },
-    equity: { total: 2000 },
+    equity: { total: 2000 }
   },
   downloadUrl: '/quant/api/runs/run-a/report/download',
   bundleDownloadUrl: '/quant/api/runs/run-a/report/bundle?bundleId=fixture',
-  hasFrozenInputs: true,
+  hasFrozenInputs: true
 };
 const original = JSON.stringify(report);
 function freeze(value) {
@@ -177,7 +177,7 @@ const C = {
       targets: [target],
       modelFits: [fit],
       targetLabels: { [target.id]: '600000.SH' },
-      riskEvents: { 20250103: { riskExitCount: 1, exitPendingCount: 2 } },
+      riskEvents: { 20250103: { riskExitCount: 1, exitPendingCount: 2 } }
     };
     if (url.pathname.endsWith('/detail'))
       return {
@@ -186,10 +186,10 @@ const C = {
           targets: target,
           modelFits: fit,
           riskLedger: ledger,
-          finalTrials: { id: 'trial-a', folds: [{ score: 0.1 }] },
+          finalTrials: { id: 'trial-a', folds: [{ score: 0.1 }] }
         }[collection],
         related,
-        bundleId: identity,
+        bundleId: identity
       };
     if (url.pathname.endsWith('/chart'))
       return {
@@ -197,7 +197,7 @@ const C = {
         totalPoints: 2000,
         samplingMethod: 'bounded_test_points',
         range: ['20230101', '20260101'],
-        bundleId: identity,
+        bundleId: identity
       };
     const offset = Number(url.searchParams.get('offset'));
     const items =
@@ -210,8 +210,8 @@ const C = {
             targetId: target.id,
             observations: 20,
             priceBias: -0.1,
-            priceRmse: 0.2,
-          },
+            priceRmse: 0.2
+          }
         ],
         finalTrials: [{ id: 'trial-a', estimator: 'ridge', score: 0.2 }],
         outerFolds: [{ testStart: '20240101', testEnd: '20240201' }],
@@ -225,11 +225,11 @@ const C = {
             notional: 100,
             cost: 2,
             forecastId: 'forecast-999',
-            exitReason: 'risk_limit_exit',
-          },
+            exitReason: 'risk_limit_exit'
+          }
         ],
         riskLedger: [ledger],
-        decisions: [{ date: '20250103', action: 'exit_pending' }],
+        decisions: [{ date: '20250103', action: 'exit_pending' }]
       }[collection] || [];
     const total = collection === 'forecasts' ? 10000 : items.length;
     return {
@@ -240,12 +240,12 @@ const C = {
       nextOffset: offset + items.length,
       hasMore: collection === 'forecasts' && offset + items.length < total,
       bundleId: identity,
-      related,
+      related
     };
-  },
+  }
 };
 reports = createForecastReports(C, createForms(C), {
-  onExecution: async () => {},
+  onExecution: async () => {}
 });
 document.addEventListener('click', (event) => {
   const button = event.target.closest('[data-sq]');
@@ -269,7 +269,9 @@ assert.equal(requests.length, 1, 'first render reads only one forecast page');
 assert(document.querySelector('main').textContent.includes('当前 1–2 条'));
 assert(document.querySelector('main').textContent.includes('完整产物已提交'));
 assert.equal(document.querySelector('a[download]').getAttribute('href'), transport.downloadUrl);
-const packLink = [...document.querySelectorAll('a[download]')].find(x=>x.textContent==='下载私有复现包');
+const packLink = [...document.querySelectorAll('a[download]')].find(
+  (x) => x.textContent === '下载私有复现包'
+);
 assert.equal(packLink?.getAttribute('href'), transport.bundleDownloadUrl);
 assert(document.querySelector('main').textContent.includes('包含冻结行情、预测与来源'));
 const recordLookup = document.querySelector('#sq-forecast-search').closest('details');
@@ -365,6 +367,39 @@ assert(document.querySelector('main').textContent.includes('预测身份与报�
 C.state.reportTransport = { ...transport, version: 2 };
 C.render();
 assert(document.querySelector('main').textContent.includes('尚未支持的传输版本'));
+// The distinct financial codec shares bounded pages, but never an execution form.
+C.state.reportTransport = {
+  ...transport,
+  format: 'atlas.quant.financial_bundle',
+  executionEligible: false,
+  sourceEvidence: {
+    datasetRef: {
+      datasetId: '11111111-1111-4111-8111-111111111111',
+      datasetRoot: 'e'.repeat(64),
+      format: 'atlas.quant.research_dataset',
+      version: 2
+    },
+    admissionProfile: 'financial_snapshot_view_50_v1'
+  }
+};
+C.render();
+await tick();
+assert(!document.querySelector('main').textContent.includes('尚未支持的传输版本'));
+const financialAttachments = [...document.querySelectorAll('a[download]')];
+assert(financialAttachments.some((x) => x.textContent === '下载财务预测结果包'));
+assert(
+  financialAttachments.some(
+    (x) =>
+      x.textContent === '下载数据集完整闭包' &&
+      x.getAttribute('href').includes('datasetRoot=' + 'e'.repeat(64))
+  )
+);
+assert(document.querySelector('main').textContent.includes('同时保留'));
+await click('[data-sq="forecast-tab"][data-id="execution"]');
+assert(!document.querySelector('[data-sq="forecast-execute"]'));
+assert(document.querySelector('main').textContent.includes('交易执行与执行重放尚未开放'));
+await click('[data-sq="forecast-tab"][data-id="provenance"]');
+assert(document.querySelector('a[href^="#quant/studio/datasets/dataset/"]'));
 console.log(
   JSON.stringify({
     remotePagination: true,
@@ -373,10 +408,12 @@ console.log(
     boundedCache: true,
     asyncDetails: true,
     directDownload: true,
+    financialTwoArchiveClosure: true,
+    financialExecutionDisabled: true,
     riskEvents: true,
     reportImmutable: true,
     apiDoubles: true,
-    browserVisualAcceptance: false,
+    browserVisualAcceptance: false
   })
 );
 dom.window.close();

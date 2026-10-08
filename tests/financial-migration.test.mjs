@@ -184,7 +184,7 @@ async function oldSnapshot(db) {
   return result;
 }
 
-async function upgraded(t, enabled = false) {
+async function upgraded(t, enabled = false, currentWorker = false) {
   const mf = new Miniflare({
     modules: true,
     script,
@@ -290,6 +290,32 @@ async function upgraded(t, enabled = false) {
     await (await bucket.get("legacy/retained.json")).text(),
     '{"migrationEvidenceOnly":true,"preserve":-0.0}',
   );
+  // A current Worker requires the complete additive migration chain even when
+  // every new capability is disabled. The 0006-only test below remains isolated.
+  if (currentWorker) {
+    for (const filename of [
+      "0007_financial_acquisition.sql",
+      "0008_hosted_datasets.sql",
+    ]) {
+      const sql = (
+        await fs.readFile(
+          new URL("../edge/migrations/" + filename, import.meta.url),
+          "utf8",
+        )
+      ).replaceAll("\n", " ");
+      await db.exec(sql);
+      await db.exec(sql);
+    }
+    assert.deepEqual(
+      await oldSnapshot(db),
+      before,
+      "Current additive migrations preserve every released row and schema",
+    );
+    assert.deepEqual(
+      (await db.prepare("PRAGMA foreign_key_check").all()).results,
+      [],
+    );
+  }
   const cookie = "aq_session=" + token;
   async function request(path, data) {
     const response = await mf.dispatchFetch(
@@ -352,6 +378,15 @@ async function upgraded(t, enabled = false) {
 
 test("published v0.6.0 schema accepts 0006 twice without altering historical rows or evidence", async (t) => {
   const { db, firstSchema } = await upgraded(t);
+  assert.equal(
+    await db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='quant_run_datasets'",
+      )
+      .first(),
+    null,
+    "0006-specific migration test must not apply later dataset tables",
+  );
   const tables = firstSchema
     .filter((x) => x.type === "table")
     .map((x) => x.name)
@@ -377,7 +412,7 @@ test("published v0.6.0 schema accepts 0006 twice without altering historical row
 });
 
 test("migration does not enable the financial flag or let new work enter the old queue", async (t) => {
-  const { db, request, financialJob, ids } = await upgraded(t);
+  const { db, request, financialJob, ids } = await upgraded(t, false, true);
   const financialId = await financialJob();
   const capabilities = await request("/financial/capabilities");
   assert.equal(capabilities.status, 200);
@@ -434,7 +469,7 @@ test("migration does not enable the financial flag or let new work enter the old
 });
 
 test("enabled financial and research consumers keep distinct claims, leases, heartbeats and completion authority", async (t) => {
-  const { db, request, financialJob, ids } = await upgraded(t, true);
+  const { db, request, financialJob, ids } = await upgraded(t, true, true);
   const financialId = await financialJob(),
     requestId = randomUUID();
   const financial = await request("/runner/financial/claim", {

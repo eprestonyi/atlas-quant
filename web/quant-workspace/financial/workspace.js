@@ -96,6 +96,7 @@ export function createFinancialWorkspace(C, F) {
     const importEnabled = state.cap?.operations.upload && state.calendars.length;
     return (
       title('财务输入工作区', '冻结报表、核对单位与披露时点，再生成可追溯的研究状态。') +
+      '<p><a class="sq-button" href="#quant/studio/datasets/source">行情与财务数据集</a></p>' +
       busyError() +
       panel('从授权数据源开始', '<p>先选择股票、年报期和观察区间，核对实际请求与缓存预算，再明确开始。获取能力以当前授权和服务状态为准。</p><a class="sq-button" href="#quant/studio/financial/acquire/source">查看自助来源获取</a>') +
       (state.cap && !state.cap.enabled
