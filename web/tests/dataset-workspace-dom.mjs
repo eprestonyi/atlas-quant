@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
+import { validateStatisticalQuant } from '../../edge/statistical-quant/validation.mjs';
 const dom = new JSDOM(
     '<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>',
     {
@@ -137,7 +138,7 @@ w.fetch = async (url, opts = {}) => {
       experiment: {
         id: datasetId,
         version: 1,
-        strategy: data.strategy,
+        strategy: validateStatisticalQuant(data.strategy),
         datasetBinding: {
           datasetRef: data.datasetRef,
           admissionProfile: data.admissionProfile,
@@ -286,6 +287,17 @@ await tick();
 assert.equal(q.state.dataSource, 'ready_dataset');
 assert(w.location.hash.endsWith('/state'));
 assert(w.document.querySelector('main').textContent.includes('现金资产占比'));
+const initialStrategy = JSON.parse(JSON.stringify(q.state.strategy));
+assert.doesNotThrow(() => validateStatisticalQuant(initialStrategy));
+assert.equal(Object.hasOwn(initialStrategy.factors[0], 'name'), false);
+assert.throws(
+  () =>
+    validateStatisticalQuant({
+      ...initialStrategy,
+      factors: [{ ...initialStrategy.factors[0], name: '现金资产占比' }],
+    }),
+  /因子包含尚未支持的字段：name/,
+);
 q.state.strategy.factors[0].id = 'custom_cash_id';
 q.render();
 let selected = w.document.querySelector('[data-sq-dataset-state]');
@@ -313,10 +325,15 @@ assert(
   w.document.querySelector('main').textContent.includes('基本面 / Ridge 预测'),
 );
 assert(!w.document.querySelector('[data-sq-config="model.family"]'));
-await q.workspace.save();
+const savedVersion = await q.workspace.save();
+assert(savedVersion, 'real server validator must accept the UI save payload');
+assert.equal(q.state.dirty, false);
 const saved = calls.find((x) => x.path === '/statistical-quant/experiments');
 assert.deepEqual(saved.data.datasetRef, ref);
 assert.equal(saved.data.admissionProfile, 'financial_snapshot_view_50_v1');
+assert.doesNotThrow(() => validateStatisticalQuant(saved.data.strategy));
+assert.equal(Object.hasOwn(saved.data.strategy.factors[0], 'name'), false);
+assert.equal(q.state.datasetBinding.stateDefinitions[0].name, '现金资产占比');
 q.workspace.datasets.dispose();
 q.workspace.financial.dispose();
 dom.window.close();
@@ -331,6 +348,7 @@ console.log(
     heartbeatRefreshRetainsPlanAndBothRequestIds: true,
     coverageObservedDates: true,
     explicitForecastOnlyBinding: true,
+    realServerValidationOnBindAndSave: true,
     browserVisualAcceptance: false,
   }),
 );

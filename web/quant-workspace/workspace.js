@@ -222,7 +222,6 @@ window.AtlasQuantV4 = {
       strategy.execution.enabled = false;
       strategy.factors = stateIds.map((id) => ({
         id,
-        name: stateDefinitions.find((x) => x.id === id)?.name || id,
         expression: id,
         direction: 1,
         role: 'predictor',
@@ -1416,9 +1415,6 @@ window.AtlasQuantV4 = {
               ...others,
               {
                 id,
-                name:
-                  s.datasetBinding.stateDefinitions?.find((x) => x.id === id)
-                    ?.name || id,
                 expression: id,
                 direction: 1,
                 role: 'predictor',
