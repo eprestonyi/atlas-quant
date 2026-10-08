@@ -1,6 +1,6 @@
 /** Independent stream/DOM review. Local synthetic fixture, no provider/R2 service.
- * Native FixedLengthStream runs inside workerd; storage transport is a bounded
- * delayed test double. Ownership is covered by the full-router bundles tests.
+ * Native FixedLengthStream runs inside workerd; storage transport has an
+ * explicit in-flight barrier. Ownership is covered by full-router bundle tests.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,40 +14,52 @@ import {defaultStrategy} from '../web/quant-workspace/defaults.js';
 
 const fixture = bundleFixture();
 const source = `
-import {bundleArchiveResponse} from './edge/bundles/archive.mjs';
+import {archiveEntries,archiveLength,archiveStream} from './edge/bundles/archive.mjs';
 import {validateManifest} from './edge/bundles/manifest.mjs';
 const manifestText=${JSON.stringify(fixture.manifestText)};
 const bundleId=${JSON.stringify(fixture.bundleId)};
 const bodies=new Map(${JSON.stringify([...fixture.chunks])});
-let reads=0;
 export default {async fetch(req){
- if(new URL(req.url).pathname==='/reads')return Response.json({reads});
- reads=0;
  const parsed=await validateManifest(manifestText,bundleId);
- const env={DB:{prepare(){return {bind(stage,collection,ordinal){return {async first(){
-  const d=parsed.collections.get(collection).chunks[ordinal];
-  return {object_key:collection+':'+ordinal,sha256:d.sha256,byte_length:d.byteLength};
- }}}}}},ARTIFACTS:{async get(key){
+ const entries=archiveEntries({manifest_text:manifestText},parsed);
+ let reads=0,started,release;
+ const firstLoad=new Promise(resolve=>{started=resolve;});
+ const blocked=new Promise(resolve=>{release=resolve;});
+ const source=archiveStream(entries,async(collection,descriptor)=>{
   reads++;
-  await new Promise(resolve=>setTimeout(resolve,40));
-  const raw=new TextEncoder().encode(bodies.get(key));
-  return {size:raw.byteLength,async arrayBuffer(){return raw.buffer;}};
- }}};
- return bundleArchiveResponse(env,{id:'test-stage',status:'committed',bundle_id:bundleId,manifest_text:manifestText},parsed,'test-run');
+  started();
+  await blocked;
+  return new TextEncoder().encode(bodies.get(collection+':'+descriptor.ordinal));
+ });
+ const fixed=new FixedLengthStream(archiveLength(entries));
+ const pumping=source.pipeTo(fixed.writable).then(()=>({status:'fulfilled'}),()=>({status:'cancelled'}));
+ const reader=fixed.readable.getReader();
+ // Drain only until the first storage read blocks. This cancellation happens
+ // beside the producer, so dispatchFetch IPC cannot pre-consume extra chunks.
+ const consuming=(async()=>{while(!(await reader.read()).done){}})();
+ const consumed=consuming.then(()=>null,()=>null);
+ try{
+  await firstLoad;
+  const atCancellation=reads;
+  await reader.cancel('deterministic in-flight cancellation');
+  release();
+  const settled=await pumping;
+  await consumed;
+  return Response.json({reads,atCancellation,pipelineSettled:true,pipelineStatus:settled.status,availableChunks:entries.length-1});
+ }finally{release();}
 }};`;
 const built = await build({stdin:{contents:source,resolveDir:process.cwd(),sourcefile:'review-entry.mjs'},bundle:true,write:false,format:'esm',platform:'browser'});
 const mf = new Miniflare({modules:true,script:built.outputFiles[0].text,compatibilityDate:'2026-08-01'});
 test.after(()=>mf.dispose());
 
-test('native FixedLengthStream cancellation stops after the in-flight bounded chunk', async()=>{
-  const response=await mf.dispatchFetch('http://review.test/archive');
-  assert(Number(response.headers.get('content-length'))>1024);
-  const reader=response.body.getReader();
-  await reader.read();
-  await reader.cancel();
-  await new Promise(resolve=>setTimeout(resolve,150));
-  const count=(await (await mf.dispatchFetch('http://review.test/reads')).json()).reads;
-  assert(count<=1,`cancellation fetched ${count} chunks`);
+test('native FixedLengthStream cancellation stops after the explicitly gated in-flight chunk', {timeout:10000}, async()=>{
+  const response=await mf.dispatchFetch('http://review.test/cancel-check');
+  const result=await response.json();
+  assert(result.availableChunks>1,'fixture must contain an observable next chunk');
+  assert.equal(result.atCancellation,1,'cancel only after exactly one load has begun');
+  assert.equal(result.pipelineSettled,true,'measure after the entire pipe has settled');
+  assert.equal(result.pipelineStatus,'cancelled');
+  assert.equal(result.reads,1,'no storage load may start after cancellation');
 });
 
 test('execution archive UI does not promise frozen market inputs or fetch its body',()=>{

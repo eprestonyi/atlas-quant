@@ -15,7 +15,7 @@ import {
   fixedStream,
 } from './common.mjs';
 import { claim, heartbeat, leasedJob, finishFailure } from './jobs.mjs';
-import { inputRegistry, registryBytes } from './registry.mjs';
+import { inputRegistry, registryEntry, registryBytes } from './registry.mjs';
 import {
   publication,
   publicationStatus,
@@ -136,6 +136,19 @@ export async function financialRunnerApi(req, env, path) {
       if (!obj || obj.size !== descriptor.byteLength) fail('SOURCE_INTEGRITY', '源包不可读取', 409);
       return protectedResponse(obj.body, descriptor.sha256, descriptor.byteLength);
     }
+    if (action === 'registry') {
+      // A download authorizes exactly one reference. Reading every proof again
+      // for each body creates quadratic D1 work on the real cloud transport.
+      const kind =
+        ref === input.calendar_ref
+          ? 'calendar'
+          : JSON.parse(input.proof_refs).includes(ref)
+            ? 'unit_proof'
+            : null;
+      if (!kind) fail('NOT_FOUND', '此任务未授权该证据', 404);
+      const row = await registryEntry(env, input.owner, ref, kind);
+      return protectedResponse(await registryBytes(env, row), row.sha256, row.byte_length);
+    }
     const registry = await inputRegistry(env, input);
     const descriptor = (row) => ({
       ref: row.id,
@@ -143,11 +156,6 @@ export async function financialRunnerApi(req, env, path) {
       byteLength: row.byte_length,
       url: `/quant/api/runner/financial/jobs/${job.id}/registry/${row.id}`,
     });
-    if (action === 'registry') {
-      const row = [registry.calendar, ...registry.proofs].find((x) => x.id === ref);
-      if (!row) fail('NOT_FOUND', '此任务未授权该证据', 404);
-      return protectedResponse(await registryBytes(env, row), row.sha256, row.byte_length);
-    }
     const source = await sourceDescriptor(env, job, parent);
     delete source.publication;
     const payload = {
