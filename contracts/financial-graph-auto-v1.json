@@ -116,7 +116,19 @@
       "wallSeconds": 27.900111625000136,
       "childPeakRssBytes": 643645440
     },
-    "laterRevisionsAreNotNewFits": true
+    "laterRevisionsAreNotNewFits": true,
+    "freshSourceDomainVerification": {
+      "modelsFitted": 0,
+      "providerCalls": 0,
+      "sourceForecastDomainVerified": true,
+      "inputValidityRecomputed": true,
+      "origins": 2050,
+      "symbols": 50,
+      "wallSeconds": 40.80366016598418,
+      "childPeakRssBytes": 724205568,
+      "receipt": "private/financial-graph-auto-50-20261008-01/fresh-recomposition-source-coverage/recomposition.json",
+      "independentStdlibCoveragePending": true
+    }
   },
   "hostedBlocker": "SOURCE_DERIVED_FORECAST_DOMAIN_CHECK_REQUIRED: mutable forecast and plan cannot independently prove complete frozen-universe coverage"
 }

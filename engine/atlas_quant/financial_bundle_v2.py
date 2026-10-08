@@ -190,8 +190,11 @@ class FinancialGraphBundleReader(PreviousReader):
                 and dataset_reader.manifest['version']==3 and dataset_reader.manifest['profile']==GRAPH_PROFILE_ID,
                 'Source graph sidecar differs')
         strategy=legacy.document_skeleton(self._manifest,'forecast')['sourceStrategy']
-        return restore_graph_input(strategy,self.snapshot_bytes(),dataset_reader,authorized_registry,
+        result=restore_graph_input(strategy,self.snapshot_bytes(),dataset_reader,authorized_registry,
                                    research_profile=evidence['admissionProfile'])
+        from .research_dataset.graph_v3.coverage import verify_source_coverage
+        verify_source_coverage(self,strategy,result,dataset_reader.manifest['scope'],research_profile=evidence['admissionProfile'])
+        return result
 
 
 def build_financial_graph_bundle(

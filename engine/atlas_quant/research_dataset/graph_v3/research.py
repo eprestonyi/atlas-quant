@@ -25,9 +25,9 @@ def run_graph_research(strategy,reader,authorized_registry,dataset_ref,*,researc
     work_dir=Path(work_dir);started=time.monotonic()
     def check():
         peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*(1 if sys.platform=='darwin' else 1024)
-        require(peak<=3*1024**3,'GRAPH_RESEARCH_RSS','Local graph profile exceeded 3 GiB RSS')
-        require(time.monotonic()-started<=900,'GRAPH_RESEARCH_WALL','Local graph profile exceeded 900 seconds')
-        require(shutil.disk_usage(work_dir).free>=500*1024**2,'GRAPH_RESEARCH_DISK','Local graph profile requires 500 MiB free reserve')
+        require(peak<=3*1024**3,'CAPACITY_MEMORY','Local graph profile exceeded 3 GiB RSS')
+        require(time.monotonic()-started<=900,'CAPACITY_TIMEOUT','Local graph profile exceeded 900 seconds')
+        require(shutil.disk_usage(work_dir).free>=500*1024**2,'CAPACITY_DISK','Local graph profile requires 500 MiB free reserve')
     check()
     if progress:progress({'phase':'source_recomposition'})
     result=restore_graph_for_research(strategy,reader,authorized_registry,research_profile=research_profile)

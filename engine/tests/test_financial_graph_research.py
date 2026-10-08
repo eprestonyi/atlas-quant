@@ -21,3 +21,20 @@ def test_same_child_source_snapshot_then_full_nested_F_and_runtime_budget(snapsh
     assert events[0]['phase']=='source_recomposition' and events[-1]['phase']=='research_complete'
     assert report['trades']==[] and report['metrics'] is None
     assert len(plans)==1 and len(plans[0]['origins'])==len(report['forecasts']['rows'])
+
+
+def test_mid_selection_global_budget_error_is_not_relabelled_as_bad_candidate(snapshots,long_sources,tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    import atlas_quant.research_dataset.graph_v3.research as module
+    import pytest
+    config,reader,snapshot,*_=snapshots
+    calls=0
+    def space(_):
+        nonlocal calls
+        calls+=1
+        return SimpleNamespace(free=1024**3 if calls<=3 else 0)
+    monkeypatch.setattr(module.shutil,'disk_usage',space)
+    with pytest.raises(ValueError) as err:
+        module.run_graph_research(config,reader,long_sources['registry'],snapshot['datasetRef'],
+            research_profile=RESEARCH_PROFILE,work_dir=tmp_path)
+    assert err.value.code=='CAPACITY_DISK'

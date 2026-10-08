@@ -29,7 +29,7 @@ def child(a,out):
         save(out/'recomposition.json',{'status':'PASS_FRESH_PROCESS_RECOMPOSITION_NO_FIT','bundleId':reader.bundle_id,
             'datasetRoot':source.dataset_root,'forecastArtifactId':reader.manifest['forecastArtifactId'],
             'rows':len(result.data),'symbols':len(result.data.ts_code.unique()),'logicalJoined':result.logical_joined,
-            'sourceValidation':result.validation_report,'snapshotExact':True,'modelsFitted':0,'providerCalls':0,
+            'sourceValidation':result.validation_report,'snapshotExact':True,'sourceForecastDomainVerified':True,'modelsFitted':0,'providerCalls':0,
             'wallSeconds':time.monotonic()-started,
             'childPeakRssBytes':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*(1 if sys.platform=='darwin' else 1024)})
 
