@@ -1,5 +1,6 @@
 """Hard in-flight profile checks in the parent, including a stuck model fit."""
 
+import math
 import subprocess
 import time
 from ..market_acquisition.protocol import decode, require
@@ -38,16 +39,26 @@ class MarketProcessBudget:
             "Whole-pool process exceeds 3 GiB RSS",
         )
         progress_path = self.store.root / "progress.enc"
-        if progress_path.exists():
+        if progress_path.exists() or progress_path.is_symlink():
             progress = decode(self.store.read("progress"), limit=256 * 1024)
-            require(
-                not (
-                    progress.get("phase") == "fit_started"
-                    and now - progress["startedMonotonic"] > 300
-                ),
-                "CAPACITY_FIT_TIMEOUT",
-                "One pooled model fit exceeds 300 seconds",
-            )
+            require(isinstance(progress, dict), "CAPACITY_MONITOR", "Invalid fit progress")
+            if progress.get("phase") == "fit_started":
+                started = progress.get("startedMonotonic")
+                # Progress can advance while ps or the encrypted read blocks.
+                # The poll timestamp is not an upper bound on this new event.
+                observed = time.monotonic()
+                require(
+                    type(started) in (int, float)
+                    and math.isfinite(started)
+                    and 0 <= started <= observed,
+                    "CAPACITY_MONITOR",
+                    "Invalid fit start clock",
+                )
+                require(
+                    observed - started <= 300,
+                    "CAPACITY_FIT_TIMEOUT",
+                    "One pooled model fit exceeds 300 seconds",
+                )
         cache = self.store.root / "cache"
         try:
             size = (

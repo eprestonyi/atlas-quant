@@ -378,6 +378,8 @@ def test_compute_failure_releases_shared_slot_removes_cache_and_keeps_source(
 def test_parent_monitor_fails_closed_on_resource_or_measurement_failure(
     tmp_path, monkeypatch, attack, code
 ):
+    # A fresh CI host may have <301s uptime; use a valid nonnegative start.
+    monkeypatch.setattr(limits, "time", SimpleNamespace(monotonic=lambda: 1000.0))
     spool = runner.CompletionSpool(config(tmp_path))
     context = BundleSpool.context_for(spool, {"id": JOB, "leaseToken": LEASE})
     monitor = limits.MarketProcessBudget(context)
@@ -392,7 +394,7 @@ def test_parent_monitor_fails_closed_on_resource_or_measurement_failure(
         monitor.store.write(
             "progress",
             encode(
-                {"phase": "fit_started", "startedMonotonic": time.monotonic() - 301}
+                {"phase": "fit_started", "startedMonotonic": 699.0}
             ),
         )
     if attack == "cache":

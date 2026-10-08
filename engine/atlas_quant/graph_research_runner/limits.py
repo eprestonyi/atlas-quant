@@ -42,5 +42,8 @@ class GraphProcessBudget:
             require(isinstance(event,dict),'CAPACITY_MONITOR')
             if event.get('phase')=='fit_started':
                 started=event.get('startedMonotonic')
-                require(type(started) in (int,float) and math.isfinite(started) and 0<=started<=now,'CAPACITY_MONITOR')
-                require(now-started<=300,'CAPACITY_FIT_TIMEOUT')
+                # ps/disk IO may overlap a new child fit. Compare the decoded
+                # event with a fresh observation, never the pre-IO poll clock.
+                observed=time.monotonic()
+                require(type(started) in (int,float) and math.isfinite(started) and 0<=started<=observed,'CAPACITY_MONITOR')
+                require(observed-started<=300,'CAPACITY_FIT_TIMEOUT')
