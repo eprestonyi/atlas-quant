@@ -36,6 +36,66 @@ def config(tmp_path):
     }
 
 
+class IdleQueue:
+    def __init__(self, ready):
+        self.ready, self.heartbeats, self.requests = ready, 0, []
+
+    def post(self, route, payload, **kwargs):
+        if route == "heartbeat":
+            self.heartbeats += 1
+            return self.ready
+        assert route == "claim"
+        self.requests.append(payload["requestId"])
+        return {
+            "claim": {"requestId": payload["requestId"], "status": "empty"},
+            "job": None,
+        }
+
+
+def test_idle_service_does_not_create_durable_empty_claims(tmp_path):
+    cfg = dict(config(tmp_path), poll_seconds=0)
+    queue = IdleQueue({"ok": True, "canClaim": False})
+    assert (
+        service.serve(
+            cfg,
+            client_factory=lambda _: queue,
+            stop_requested=lambda: queue.heartbeats >= 50,
+        )
+        == 0
+    )
+    assert queue.heartbeats == 50 and queue.requests == []
+    assert FinancialSpool(cfg).read() is None
+
+
+@pytest.mark.parametrize("ready", [{"ok": True, "canClaim": False}, {"ok": True}])
+def test_idle_advice_cannot_block_unknown_claim_recovery(tmp_path, ready):
+    cfg = config(tmp_path)
+    spool = FinancialSpool(cfg)
+    original = spool.current_or_create()
+    queue = IdleQueue(ready)
+    assert service.serve(cfg, once=True, client_factory=lambda _: queue) == 0
+    assert queue.requests == [original["requestId"]]
+    assert spool.read() is None
+
+
+def test_ready_advice_still_uses_durable_claim_when_queue_races_empty(tmp_path):
+    cfg = config(tmp_path)
+    queue = IdleQueue({"ok": True, "canClaim": True})
+    assert service.serve(cfg, once=True, client_factory=lambda _: queue) == 0
+    assert len(queue.requests) == 1
+    assert FinancialSpool(cfg).read() is None
+
+
+@pytest.mark.parametrize(
+    "ready", [None, {"ok": True}, {"ok": True, "canClaim": "false"}]
+)
+def test_missing_or_malformed_ready_advice_cannot_create_claim(tmp_path, ready):
+    cfg = config(tmp_path)
+    queue = IdleQueue(ready)
+    assert service.serve(cfg, once=True, client_factory=lambda _: queue) == 1
+    assert queue.requests == [] and FinancialSpool(cfg).read() is None
+
+
 def job():
     return {
         "id": JOB,

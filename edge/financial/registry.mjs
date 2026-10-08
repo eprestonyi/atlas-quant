@@ -19,11 +19,11 @@ export async function registryBytes(env, row) {
 }
 export function registryDTO(row) {
   return {
+    ...parse(row.metadata, {}),
     ref: row.id,
     kind: row.kind,
     sha256: row.sha256,
     byteLength: row.byte_length,
-    ...parse(row.metadata, {}),
   };
 }
 export async function inputRegistry(env, input) {

@@ -11,6 +11,11 @@ import {
   jobDTO,
 } from './common.mjs';
 
+// Shared with the atomic claim: the heartbeat is only a read-only advisory and
+// never reserves a job, expires a lease or creates a durable claim receipt.
+const CLAIMABLE_JOB =
+  "status='queued' AND NOT EXISTS(SELECT 1 FROM meta WHERE key='financial_maintenance' AND value='paused')";
+
 export async function expireJobs(env) {
   const rows = await env.DB.prepare(
     "SELECT * FROM financial_jobs WHERE status IN ('running','cancel_requested') AND (lease_until<? OR deadline<?) LIMIT 100"
@@ -60,7 +65,7 @@ export async function claim(env, value) {
     leaseUntil = new Date(Date.now() + 120000).toISOString();
   const result = await env.DB.batch([
     env.DB.prepare(
-      `INSERT OR IGNORE INTO financial_claims(request_id,job_id,created_at) VALUES(?,(SELECT id FROM financial_jobs WHERE status='queued' AND NOT EXISTS(SELECT 1 FROM meta WHERE key='financial_maintenance' AND value='paused') ORDER BY created_at,id LIMIT 1),?)`
+      `INSERT OR IGNORE INTO financial_claims(request_id,job_id,created_at) VALUES(?,(SELECT id FROM financial_jobs WHERE ${CLAIMABLE_JOB} ORDER BY created_at,id LIMIT 1),?)`
     ).bind(value.requestId, now),
     env.DB.prepare(
       "UPDATE financial_jobs SET status='running',lease_token=?,lease_until=?,deadline=strftime('%Y-%m-%dT%H:%M:%fZ',?,CASE WHEN kind='financial_prepare' THEN '+600 seconds' ELSE '+180 seconds' END),phase='checking_inputs',updated_at=? WHERE id=(SELECT job_id FROM financial_claims WHERE request_id=?) AND status='queued' AND changes()=1"
@@ -118,7 +123,14 @@ export async function heartbeat(env, value) {
       now
     )
     .run();
-  if (value.jobId === undefined) return { ok: true };
+  if (value.jobId === undefined) {
+    const canClaim = enabled(env)
+      ? !!(await env.DB.prepare(
+          `SELECT 1 FROM financial_jobs WHERE ${CLAIMABLE_JOB} LIMIT 1`
+        ).first())
+      : false;
+    return { ok: true, canClaim };
+  }
   const row = await leasedJob(env, value.jobId, value.leaseToken, {
     cancel: true,
   });

@@ -14,10 +14,10 @@ keep these operations separate from forecasting and execution.
 ## Candidate checks
 
 After merging the accepted v0.6 release, financial dataset bridge and capacity
-core, the candidate passed 860 Python tests, 161 Node tests, seven frontend/DOM
+core, the candidate passed 867 Python tests, 167 Node tests, seven frontend/DOM
 commands, formula-definition parity and the JavaScript check. Candidate build:
-`0.7.0-a750b34e1a69`, 1,490,170 bytes, SHA-256
-`2d6a2a12be05ba405c6af0a85691f3093eba16ea61ca1e920873a9c3d72c1e65`.
+`0.7.0-a83bd2c1fcbe`, 1,490,381 bytes, SHA-256
+`1fb3c6d63dea3eee404d5a9ca57f4bd1aa7ab940d7f5640f7549044ccd2dcffe`.
 
 Actual local HTTP and the production Python consumer completed validation,
 all-missing preparation, explicit unit revision and the revised preparation.
@@ -48,6 +48,11 @@ Applying migration 0006 twice to the exact published v0.6 schema preserved all
 seeded old tables, rows, claim receipts and R2 report bytes. New and old queues
 cannot claim or finalize each other's tasks. These are isolated migration tests,
 not proof that a production migration has already occurred.
+
+Idle heartbeats now expose read-only queue availability. An idle consumer does not
+create new durable empty claims; existing recovery intents ignore that advisory
+and retain their original identity. Registry metadata cannot overwrite proof
+identity fields.
 
 ## Release boundaries
 

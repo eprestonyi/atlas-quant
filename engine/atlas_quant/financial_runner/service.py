@@ -480,7 +480,7 @@ def serve(config, *, once=False, stop_requested=None, client_factory=FinancialCl
         client = client_factory(config)
         while not stop_requested():
             try:
-                client.post(
+                ready = client.post(
                     "heartbeat",
                     {
                         "capability": CAPABILITY,
@@ -488,13 +488,27 @@ def serve(config, *, once=False, stop_requested=None, client_factory=FinancialCl
                         "state": "ready",
                     },
                 )
-                run_once(
-                    config,
-                    spool,
-                    client,
-                    client_factory(config),
-                    stop_requested=stop_requested,
-                )
+                pending = spool.read()
+                if pending is not None:
+                    # Queue availability is only advisory: an ambiguous claim
+                    # or publication must resume with its original identity.
+                    should_claim = True
+                elif (
+                    isinstance(ready, dict)
+                    and ready.get("ok") is True
+                    and type(ready.get("canClaim")) is bool
+                ):
+                    should_claim = ready["canClaim"]
+                else:
+                    fail("FINANCIAL_PROTOCOL", "财务队列未返回明确的领取状态。")
+                if should_claim:
+                    run_once(
+                        config,
+                        spool,
+                        client,
+                        client_factory(config),
+                        stop_requested=stop_requested,
+                    )
                 code = 0
             except RunnerError as error:
                 print(encode({"error": safe_error(error)}).decode(), file=sys.stderr)
