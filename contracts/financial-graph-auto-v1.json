@@ -1,0 +1,51 @@
+{
+  "status": "LOCAL_ONLY_FULL_SCOPE_F_ACCEPTANCE_PENDING",
+  "admissionProfile": "financial_fundamental_graph_auto_50_v1",
+  "source": {
+    "format": "atlas.quant.research_dataset",
+    "version": 3,
+    "compositionProfile": "financial_snapshot_graph_50_v1"
+  },
+  "result": {
+    "format": "atlas.quant.financial_bundle",
+    "version": 2,
+    "snapshotSchemaVersion": 3
+  },
+  "research": {
+    "family": "fundamental",
+    "estimator": "auto",
+    "target": "asset_price",
+    "executionEnabled": false,
+    "symbols": 50,
+    "financialStates": 16,
+    "calendarDaysInclusive": 366,
+    "exactFrozenScopeRequired": true,
+    "innerFolds": 2,
+    "outerFolds": 2,
+    "minimumRefitCalendarSessions": 20,
+    "candidateCount": 8,
+    "factorFreeBaselineRequired": true
+  },
+  "authority": {
+    "registryPins": "separately authorized exact original registry bytes",
+    "freshRecomposition": "all raw financial package formulas in the same child, full component/root/row/provenance comparison",
+    "admission": "private process-local frame capability only after fresh source restore; JSON snapshot/boolean cannot grant it",
+    "syntheticPreserved": true,
+    "providerOrPdfAuthenticityImplied": false
+  },
+  "limits": {
+    "wallSeconds": 900,
+    "rssBytes": 3221225472,
+    "minimumFreeDiskBytes": 524288000,
+    "sourcePhysicalBytes": 67108864,
+    "logicalJoinedBytes": 25165824,
+    "logicalExpandedSnapshotBytes": 25165824,
+    "snapshotPhysicalBytes": 25165824,
+    "preparedPerInputBytes": 67108864,
+    "eventPerInputBytes": 33554432
+  },
+  "hosted": false,
+  "production": false,
+  "legacyClaimsAccepted": false,
+  "noBiasOrOverfitGuarantee": false
+}

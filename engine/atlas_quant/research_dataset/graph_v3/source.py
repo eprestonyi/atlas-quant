@@ -31,7 +31,7 @@ class GraphSourceResult:
 
     @property
     def validation_report(self):
-        return {"sourceAuthorityVerified":True,"financialRecomputed":True,"modelAdmissionRegistered":False,
+        return {"sourceAuthorityVerified":True,"financialRecomputed":True,"modelAdmissionRegistered":self.model_admission_registered,
             "authorityMeaning":"independently_authorized_registry_bytes_and_recomputed_frozen_packages",
             "synthetic":self.provenance["synthetic"],"originalAsPublishedVerified":False,
             "completeHistoricalVersionsVerified":False,"revisionTimeVerified":False}

@@ -1,45 +1,68 @@
 {
-  "status":"PROPOSED_COMPONENT_DESIGN_NOT_ADMITTED",
-  "format":"atlas.quant.financial_bundle",
-  "version":2,
-  "capability":"atlas.quant.financial_bundle/2",
-  "kind":"forecast",
-  "executionEnabled":false,
-  "sourceDatasetFormat":"atlas.quant.research_dataset/3",
-  "legacyInterpretationUnchanged":"atlas.quant.financial_bundle/1",
+  "status": "LOCAL_CODEC_AND_SMALL_F_PARITY_IMPLEMENTED_NOT_HOSTED",
+  "format": "atlas.quant.financial_bundle",
+  "version": 2,
+  "capability": "atlas.quant.financial_bundle/2",
+  "kind": "forecast",
+  "executionEnabled": false,
+  "sourceDatasetFormat": "atlas.quant.research_dataset/3",
+  "legacyInterpretationUnchanged": "atlas.quant.financial_bundle/1",
   "documents": {
-    "forecast":{"codec":"forecast_json_v1","semantics":"same conditional F forecast artifact"},
-    "report":{"codec":"forecast_json_v1","semantics":"same no-execution research report"},
-    "coverage":{"codec":"forecast_json_v1","semantics":"same pre-fit origin plan"},
-    "snapshot":{"codec":"financial_column_snapshot_v1","schemaVersion":3}
+    "forecast": {
+      "codec": "forecast_json_v1",
+      "semantics": "same conditional F forecast artifact"
+    },
+    "report": {
+      "codec": "forecast_json_v1",
+      "semantics": "same no-execution research report"
+    },
+    "coverage": {
+      "codec": "forecast_json_v1",
+      "semantics": "same pre-fit origin plan"
+    },
+    "snapshot": {
+      "codec": "financial_column_snapshot_v1",
+      "schemaVersion": 3
+    }
   },
   "snapshot": {
-    "keys":["schemaVersion","fingerprintVersion","datasetRef","sourceEvidenceClosure","provenance","dataFingerprint","sourceDataFingerprint","financialSourceCommitment","numericInput"],
-    "fingerprintVersion":"research_input_financial_column_v1",
-    "sourceEvidenceClosure":"separate_research_dataset_v3",
-    "numericInput":"atlas.quant.exact_column_table/1; contains actual frozen numeric/string cells, not only an unverified remote reference",
-    "provenance":"bounded exact research provenance; raw statement dependencies remain in separate source archive",
-    "reconstruction":"restore exact canonical logical financial input rows; stream-check logical rows hash before creating model inputs"
+    "keys": [
+      "schemaVersion",
+      "fingerprintVersion",
+      "datasetRef",
+      "sourceEvidenceClosure",
+      "provenance",
+      "dataFingerprint",
+      "sourceDataFingerprint",
+      "financialSourceCommitment",
+      "numericInput"
+    ],
+    "fingerprintVersion": "research_input_financial_column_v1",
+    "sourceEvidenceClosure": "separate_research_dataset_v3",
+    "numericInput": "atlas.quant.exact_column_table/1; contains actual frozen numeric/string cells, not only an unverified remote reference",
+    "provenance": "bounded exact research provenance; raw statement dependencies remain in separate source archive",
+    "reconstruction": "restore exact canonical logical financial input rows; stream-check logical rows hash before creating model inputs",
+    "logicalSizeCheck": "Canonical expanded schemaVersion=3 snapshot with rows replacing numericInput, retaining every other metadata field, must be <=24 MiB as well as the full source joined document and physical column snapshot."
   },
   "limits": {
-    "manifestBytes":524288,
-    "chunkTargetBytes":4194304,
-    "chunkBytes":8388608,
-    "chunkRows":10000,
-    "chunks":256,
-    "totalBytes":268435456,
-    "snapshotPhysicalBytes":25165824,
-    "snapshotLogicalJoinedDocumentBytes":25165824,
-    "jsonDepth":64
+    "manifestBytes": 524288,
+    "chunkTargetBytes": 4194304,
+    "chunkBytes": 8388608,
+    "chunkRows": 10000,
+    "chunks": 256,
+    "totalBytes": 268435456,
+    "snapshotPhysicalBytes": 25165824,
+    "snapshotLogicalJoinedDocumentBytes": 25165824,
+    "jsonDepth": 64
   },
-  "numericTablesTransport":"column descriptors and bounded value/index slices; slicing may not split or reinterpret one numeric token",
+  "numericTablesTransport": "snapshotColumns collection at /numericInput/columns; each bounded exact column descriptor/value-or-index vector is one complete record, chunked at column boundaries; no scalar token is split. Oversized single columns fail the existing 8 MiB item guard.",
   "identityPolicy": {
-    "forecastArtifactId":"unchanged only when actual forecast bytes are identical; never force equality",
-    "sourceDataFingerprint":"original numerical source fingerprint",
-    "inputResearchFingerprint":"recomputed by the same mathematical input procedure",
-    "bundleId":"new hash for the new transport layout"
+    "forecastArtifactId": "unchanged only when actual forecast bytes are identical; never force equality",
+    "sourceDataFingerprint": "original numerical source fingerprint",
+    "inputResearchFingerprint": "recomputed by the same mathematical input procedure",
+    "bundleId": "new hash for the new transport layout"
   },
-  "requiredAcceptance":[
+  "requiredAcceptance": [
     "old v2 source and new v3 source produce exactly equal financial values, availability, logical roots and research fingerprints",
     "small old/new same-child F produces identical frozen output or reports any actual numeric difference",
     "50 securities, 366 inclusive days, 16 states pass without removing members/factors/tails or changing guards",
@@ -47,5 +70,28 @@
     "independent source reconstruction and two-archive stdlib audit",
     "legacy parsers reject the new format instead of reinterpreting it"
   ],
-  "admission":{"hosted":false,"production":false,"implemented":false}
+  "admission": {
+    "hosted": false,
+    "production": false,
+    "implemented": true,
+    "scope": "explicit local fresh-source recomposition only; no serialized admission capability"
+  },
+  "sourceEvidence": {
+    "keys": [
+      "datasetRef",
+      "admissionProfile"
+    ],
+    "datasetVersion": 3,
+    "admissionProfile": "financial_fundamental_graph_auto_50_v1"
+  },
+  "evidence": {
+    "smallActualOldNewForecastBytesEqual": true,
+    "snapshotTests": 17,
+    "bundleTests": 11,
+    "providerCalls": 0,
+    "maximum50FinancialFitCompleted": false,
+    "independentPairedAudit": "pending",
+    "actualOldNewInputFingerprintsEqual": true,
+    "legacyReaderRejectsNewFormat": true
+  }
 }
