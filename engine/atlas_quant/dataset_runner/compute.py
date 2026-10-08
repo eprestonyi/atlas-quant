@@ -6,8 +6,9 @@ import time
 
 from ..compute_slot import compute_slot
 from ..runner import RunnerError
-from .protocol import fail, require
+from .protocol import require
 from .spool import DatasetSpool
+from .source_spool import read_sources, store_sources
 
 
 def safe_error(error):
@@ -17,13 +18,14 @@ def safe_error(error):
     return {"code": code, "message": "数据集任务未完成；请按错误代码检查冻结来源。"}
 
 
-def _child(connection, context, inputs, computer, slot_path, deadline):
+def _child(connection, context, computer, slot_path, deadline):
     try:
         if computer is None:
             from .publication import compute_publication
 
             computer = compute_publication
-        publication = DatasetSpool.from_context(context).publication(context["job"])
+        spool = DatasetSpool.from_context(context)
+        publication = spool.publication(context["job"])
 
         def check():
             require(time.monotonic() < deadline, "DATASET_DEADLINE")
@@ -32,6 +34,7 @@ def _child(connection, context, inputs, computer, slot_path, deadline):
         # Waiting for the host slot consumes this job's original fixed budget.
         with compute_slot(slot_path, deadline=deadline, check=check):
             check()
+            inputs = read_sources(spool, context["job"], check)
             manifest = computer(context["job"], inputs, publication.write_chunk)
             check()
             publication.finalize(manifest)
@@ -43,11 +46,14 @@ def _child(connection, context, inputs, computer, slot_path, deadline):
 
 
 def execute_bounded(spool, job, inputs, monitor, *, computer=None, slot_path=None):
+    # A child that fails before unpickling must not block Process.start while a
+    # parent writes tens of MiB to its bootstrap pipe. Pass only a small context.
+    store_sources(spool, job, inputs, monitor.check)
     ctx = multiprocessing.get_context("spawn")
     parent, child = ctx.Pipe(duplex=False)
     process = ctx.Process(
         target=_child,
-        args=(child, spool.context(job), inputs, computer, slot_path, monitor.deadline),
+        args=(child, spool.context(job), computer, slot_path, monitor.deadline),
         daemon=True,
     )
     try:

@@ -382,3 +382,87 @@ def test_missing_parts_cannot_select_unlisted_or_duplicate_payloads(prepared):
     ):
         with pytest.raises(RunnerError):
             missing_parts({"missing": value}, manifest)
+
+
+def test_spawn_import_failure_cannot_block_sending_large_input(prepared, tmp_path):
+    import subprocess
+    import sys
+
+    script = tmp_path / "bad_spawn_main.py"
+    script.write_text(
+        """
+if __name__ == '__mp_main__':
+    raise RuntimeError('Explicit startup-failure fixture')
+if __name__ == '__main__':
+    import time
+    from pathlib import Path
+    from test_research_dataset_components import sources
+    from test_snapshot_market_view import legacy_source
+    from dataset_runner_support import inputs,job,config,Queue
+    from atlas_quant.dataset_runner.compute import execute_bounded
+    from atlas_quant.dataset_runner.spool import DatasetSpool
+    from atlas_quant.dataset_runner.lease import LeaseMonitor
+    from atlas_quant.runner import RunnerError
+    source=sources.__wrapped__(); original=legacy_source.__wrapped__(source)
+    task=job(); values=inputs(source,original,task)
+    spool=DatasetSpool(config(Path(__file__).parent)); monitor=LeaseMonitor(Queue(values,task),task)
+    monitor.deadline=time.monotonic()+3
+    try:
+        execute_bounded(spool,task,values,monitor)
+    except RunnerError as error:
+        assert error.code=='DATASET_CHILD_EXIT', error.code
+    else:
+        raise AssertionError('failed startup was accepted')
+"""
+    )
+    root = Path(__file__).parents[2]
+    env = dict(
+        os.environ,
+        PYTHONPATH=os.pathsep.join([str(root / "engine"), str(root / "engine/tests")]),
+    )
+    result = subprocess.run(
+        [sys.executable, str(script)], env=env, capture_output=True, timeout=10
+    )
+    assert result.returncode == 0, result.stderr.decode()
+
+
+def test_encrypted_source_cache_tampering_cannot_reach_composition(prepared, tmp_path):
+    from atlas_quant.dataset_runner.source_spool import (
+        store_sources,
+        read_sources,
+        cache_identity,
+    )
+
+    task, data, _, _ = prepared
+    spool = DatasetSpool(config(tmp_path))
+    store_sources(spool, task, data, lambda: None)
+    assert read_sources(spool, task, lambda: None) == data
+    root, _ = cache_identity(spool, task)
+    path = root / "market-snapshot.enc"
+    raw = path.read_bytes()
+    path.write_bytes(raw[:-1] + bytes([raw[-1] ^ 1]))
+    with pytest.raises(RunnerError) as error:
+        read_sources(spool, task, lambda: None)
+    assert error.value.code == "FINANCIAL_SPOOL_INTEGRITY"
+
+
+def test_terminal_cleanup_handles_interrupted_encrypted_temp_write(prepared, tmp_path):
+    from atlas_quant.dataset_runner.source_spool import store_sources, cache_identity
+
+    task, data, _, _ = prepared
+    spool = DatasetSpool(config(tmp_path))
+    store_sources(spool, task, data, lambda: None)
+    root, _ = cache_identity(spool, task)
+    (root / ("write-" + "a" * 32 + ".tmp")).write_bytes(
+        b"AQF1unfinished encrypted write"
+    )
+    state = spool.save(
+        dict(
+            spool.current_or_create(),
+            job=task,
+            phase="terminal",
+            terminalStatus="failed",
+        )
+    )
+    spool.cleanup(state)
+    assert spool.read() is None and not root.exists()
