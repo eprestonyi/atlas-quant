@@ -17,6 +17,8 @@ import {
   requireEnabled,
 } from './common.mjs';
 import { assertRegistry } from './transport.mjs';
+import {FINANCIAL_AUTO_PROFILE,registeredFinancialProfile,assertFinancialResearchConfig} from './research-profile.mjs';
+export {FINANCIAL_AUTO_PROFILE} from './research-profile.mjs';
 
 const stateIds = new Set(definitions.items.map((x) => x.id));
 export const researchEnabled = (env) =>
@@ -55,6 +57,11 @@ export function supportsFinancialDatasets(input) {
     )
   );
 }
+export function supportsFinancialResearchProfile(input, profile) {
+  return supportsFinancialDatasets(input) && (profile === PROFILE ||
+    profile === FINANCIAL_AUTO_PROFILE && Array.isArray(input.financialResearchProfiles) && input.financialResearchProfiles.includes(profile));
+}
+
 export function validateDatasetRef(value) {
   object(value, ['datasetId', 'datasetRoot', 'format', 'version']);
   id(value.datasetId);
@@ -104,21 +111,10 @@ export async function readyDataset(env, owner, ref) {
     plan,
   };
 }
-function assertProfile(strategy, closure) {
+function assertProfile(strategy, closure, admissionProfile) {
   const scope = parse(closure.dataset.scope),
     u = strategy.universe;
-  if (
-    strategy.schemaVersion !== 2 ||
-    strategy.research.mode !== 'statistical_quant' ||
-    strategy.target.kind !== 'asset_price' ||
-    strategy.model.family !== 'fundamental' ||
-    strategy.model.estimator !== 'ridge' ||
-    strategy.execution.enabled !== false
-  )
-    fail(
-      'DATASET_RESEARCH_PROFILE',
-      '当前财务研究仅支持基本面 / Ridge / 单资产价格预测，交易执行必须关闭',
-    );
+  assertFinancialResearchConfig(strategy, admissionProfile, 2);
   if (
     u.selection ||
     canonical({ symbols: u.symbols, start: u.start, end: u.end }) !==
@@ -153,13 +149,13 @@ function assertProfile(strategy, closure) {
 }
 export async function admitDatasetResearch(env, owner, strategy, input) {
   requireResearchEnabled(env);
-  if (input.dataset !== undefined || input.admissionProfile !== PROFILE)
+  if (input.dataset !== undefined || !registeredFinancialProfile(input.admissionProfile, 2))
     fail('DATASET_RESEARCH_PROFILE', '请使用冻结数据集引用和明确研究口径');
   const closure = await readyDataset(env, owner, input.datasetRef);
-  assertProfile(strategy, closure);
+  assertProfile(strategy, closure, input.admissionProfile);
   const sourceEvidence = {
     datasetRef: datasetRef(closure.dataset),
-    admissionProfile: PROFILE,
+    admissionProfile: input.admissionProfile,
   };
   return {
     ...closure,
@@ -179,7 +175,7 @@ export async function assertRunDataset(env, job) {
   if (
     !relation ||
     job.data_source !== 'ready_dataset' ||
-    relation.profile !== PROFILE
+    !registeredFinancialProfile(relation.profile, 2)
   )
     fail('DATASET_RUN_BINDING', '实验没有已冻结的数据集关系', 409);
   const ref = {
@@ -191,14 +187,14 @@ export async function assertRunDataset(env, job) {
     closure = await readyDataset(env, job.owner, ref),
     strategy = parse(job.spec),
     admission = parse(relation.admission);
-  assertProfile(strategy, closure);
+  assertProfile(strategy, closure, relation.profile);
   if (admission?.strategyHash !== (await hashBytes(bytes(canonical(strategy)))))
     fail('DATASET_RUN_BINDING', '实验配置与冻结准入不一致', 409);
   return {
     ...closure,
     datasetRef: ref,
-    admissionProfile: PROFILE,
-    sourceEvidence: { datasetRef: ref, admissionProfile: PROFILE },
+    admissionProfile: relation.profile,
+    sourceEvidence: { datasetRef: ref, admissionProfile: relation.profile },
   };
 }
 

@@ -13,6 +13,7 @@ import re
 
 from . import bundle as legacy
 from .research_dataset.codec import encode as financial_encode
+from .research_dataset.research_profile import admit_profile, validate_research_profile, SOURCE_PROFILES
 from .statistical_quant.schema import prediction_config, validate as validate_strategy
 
 FORMAT = "atlas.quant.financial_bundle"
@@ -87,7 +88,7 @@ def decode_exact(raw, maximum, *, financial=False):
 
 def validate_source_evidence(value):
     require(
-        isinstance(value, dict) and set(value) == {"datasetRef", "admissionProfile"},
+        isinstance(value, dict) and set(value) == {"datasetRef", "admissionProfile"} and isinstance(value.get("admissionProfile"), str),
         "Explicit registered source evidence is required",
     )
     ref = value["datasetRef"]
@@ -111,9 +112,13 @@ def validate_source_evidence(value):
     require(
         ref["format"] == "atlas.quant.research_dataset"
         and type(ref["version"]) is int
-        and DATASET_PROFILES.get(ref["version"]) == value["admissionProfile"],
+        and ref["version"] in DATASET_PROFILES,
         "Dataset version/profile is not registered",
     )
+    try:
+        admit_profile(value["admissionProfile"], ref["version"])
+    except ValueError:
+        require(False, "Dataset research admission/profile is not registered")
     return deepcopy(value)
 
 
@@ -219,14 +224,13 @@ def validate_metadata(manifest):
             "FINANCIAL_BUNDLE_EXECUTION",
         )
         normalized = validate_strategy(config)
-        require(
-            normalized["schemaVersion"] == 2
-            and normalized["research"]["mode"] == "statistical_quant"
-            and normalized["target"]["kind"] == "asset_price"
-            and normalized["model"]["family"] == "fundamental"
-            and normalized["model"]["estimator"] == "ridge",
-            "Financial research profile differs",
-        )
+        try:
+            validate_research_profile(normalized,
+                {k: normalized["universe"][k] for k in ("symbols", "start", "end")},
+                research_profile=manifest["sourceEvidence"]["admissionProfile"],
+                dataset_version=manifest["sourceEvidence"]["datasetRef"]["version"])
+        except ValueError:
+            require(False, "Financial research profile differs")
         require(
             legacy.sha(legacy.encode(prediction_config(normalized)))
             == manifest["predictionConfigHash"],
@@ -405,7 +409,7 @@ class FinancialBundleReader(legacy.BundleReader):
         )
         require(
             dataset_reader.manifest["version"] == evidence["datasetRef"]["version"]
-            and dataset_reader.manifest["profile"] == evidence["admissionProfile"],
+            and dataset_reader.manifest["profile"] == SOURCE_PROFILES[evidence["datasetRef"]["version"]],
             "Dataset sidecar profile differs",
             "FINANCIAL_BUNDLE_SOURCE",
         )
@@ -415,7 +419,8 @@ class FinancialBundleReader(legacy.BundleReader):
             "sourceStrategy"
         ]
         return restore_financial_input(
-            strategy, self.snapshot_bytes(), dataset_reader, authorized_registry
+            strategy, self.snapshot_bytes(), dataset_reader, authorized_registry,
+            research_profile=evidence["admissionProfile"]
         )
 
 

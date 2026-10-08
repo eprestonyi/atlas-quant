@@ -34,13 +34,14 @@ def compute(job, context, *, slot_path, deadline):
     with scope, compute_slot(slot_path, deadline=deadline):
         require(time.monotonic() < deadline, "DATASET_DEADLINE")
         # Recomposition creates process-local admission, never a pickled trusted object.
-        joined = restore_dataset_for_research(job["strategy"], reader, registry)
+        joined = restore_dataset_for_research(job["strategy"], reader, registry, research_profile=job["admissionProfile"])
         snapshot = encode(
             freeze_financial_input(
                 job["strategy"],
                 joined,
                 job["datasetRef"],
                 manifest_bytes=reader.manifest_bytes,
+                research_profile=job["admissionProfile"],
             )
         )
         plans = []
