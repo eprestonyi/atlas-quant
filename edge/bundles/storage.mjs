@@ -386,6 +386,10 @@ export async function uploadChunk(
   }
   if (stage.status !== 'staging' || job.status !== 'running')
     conflict('已验证或终态传输不能新增分片');
+  // Existing exact receipts remain acknowledgeable after revocation; new
+  // market writes require the current server-side scope and feature gate.
+  if (job.data_source === 'ready_market')
+    await assertMarketBundle(env, job, parsed, storedMarketAdmission(stage));
   const indexes = [];
   if (!sortedSnapshot)
     for (let index = 0; index < rows.length; index++)
