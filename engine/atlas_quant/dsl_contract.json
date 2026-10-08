@@ -1,0 +1,234 @@
+{
+  "version": "atlas-factor-semantics/v1",
+  "language": "atlas-factor-dsl/v1",
+  "fields": [
+    "open",
+    "high",
+    "low",
+    "close",
+    "raw_close",
+    "vol",
+    "amount",
+    "adj_factor",
+    "turnover_rate",
+    "turnover_rate_f",
+    "volume_ratio",
+    "pe",
+    "pe_ttm",
+    "pb",
+    "ps",
+    "ps_ttm",
+    "dv_ratio",
+    "dv_ttm",
+    "total_share",
+    "float_share",
+    "free_share",
+    "total_mv",
+    "circ_mv"
+  ],
+  "limits": {
+    "expressionLength": 500,
+    "windowMin": 1,
+    "windowMax": 252,
+    "lookbackMax": 504,
+    "numberAbsMax": 1000000,
+    "divisionEpsilon": 1e-12,
+    "treeDepth": 16,
+    "treeRootDepth": 0,
+    "treeNodes": 128,
+    "parenthesisNesting": 128
+  },
+  "evaluation": {
+    "grid": "complete_market_session_grid",
+    "timeMeaning": "t 是完整市场交易日网格的当前评估位置。lag / returns / delta 的 n 表示向前 n 个间隔；ts_* 的 n 表示含当前格的 n 格窗口。它们不是自然日，也不跳过个股停牌或缺失日。",
+    "availability": "close[t]、high[t]、low[t]、当日成交量等收盘后才可完整获知；本工作区按收盘后观察，最早执行另由研究执行层决定。",
+    "missingClose": "当前格 close 缺失时，所有表达式输出都被屏蔽为缺失。",
+    "coverage": "这里只确认表达式运算语义；不确认数据覆盖、复权口径、外部披露历史可知性或预测能力。",
+    "horizon": "回看窗口描述历史输入；未来目标期限由研究 target.horizonSessions 单独定义。"
+  },
+  "operators": {
+    "lag": {
+      "category": "window",
+      "arity": 2,
+      "title": "历史取值",
+      "formula": "x[t−n]",
+      "meaning": "取同一标的在完整市场交易日网格中，向前 n 格的值；不是 n 期累计变化。",
+      "missing": "滞后位置缺值则结果缺失。",
+      "lookbackOffset": 0
+    },
+    "returns": {
+      "category": "window",
+      "arity": 2,
+      "title": "区间累计变化率",
+      "formula": "x[t] / x[t−n] − 1",
+      "meaning": "截至 t，从向前 n 格到当前值的累计相对变化；不是 n 格之前那个时点的单期收益率。",
+      "missing": "只比较两端；任一端缺值或分母绝对值≤1e−12则缺失，不要求中间每格都有值。",
+      "lookbackOffset": 0
+    },
+    "delta": {
+      "category": "window",
+      "arity": 2,
+      "title": "区间变化量",
+      "formula": "x[t] − x[t−n]",
+      "meaning": "当前值与向前 n 格的值之差。",
+      "missing": "任一端缺值则结果缺失。",
+      "lookbackOffset": 0
+    },
+    "ts_mean": {
+      "category": "window",
+      "arity": 2,
+      "title": "窗口均值",
+      "formula": "mean(x[t−n+1:t])",
+      "meaning": "在同一标的上使用含当前格的连续 n 格窗口。",
+      "missing": "窗口内必须有 n 个有效值；任何缺值均使该窗口结果缺失。",
+      "lookbackOffset": -1
+    },
+    "ts_std": {
+      "category": "window",
+      "arity": 2,
+      "title": "窗口总体标准差",
+      "formula": "std(x[t−n+1:t], ddof=0)",
+      "meaning": "在同一标的上使用含当前格的连续 n 格窗口。",
+      "missing": "窗口内必须有 n 个有效值；任何缺值均使该窗口结果缺失。",
+      "lookbackOffset": -1
+    },
+    "ts_min": {
+      "category": "window",
+      "arity": 2,
+      "title": "窗口最小值",
+      "formula": "min(x[t−n+1:t])",
+      "meaning": "在同一标的上使用含当前格的连续 n 格窗口。",
+      "missing": "窗口内必须有 n 个有效值；任何缺值均使该窗口结果缺失。",
+      "lookbackOffset": -1
+    },
+    "ts_max": {
+      "category": "window",
+      "arity": 2,
+      "title": "窗口最大值",
+      "formula": "max(x[t−n+1:t])",
+      "meaning": "在同一标的上使用含当前格的连续 n 格窗口。",
+      "missing": "窗口内必须有 n 个有效值；任何缺值均使该窗口结果缺失。",
+      "lookbackOffset": -1
+    },
+    "ts_sum": {
+      "category": "window",
+      "arity": 2,
+      "title": "窗口合计",
+      "formula": "sum(x[t−n+1:t])",
+      "meaning": "在同一标的上使用含当前格的连续 n 格窗口。",
+      "missing": "窗口内必须有 n 个有效值；任何缺值均使该窗口结果缺失。",
+      "lookbackOffset": -1
+    },
+    "ts_rank": {
+      "category": "window",
+      "arity": 2,
+      "title": "窗口内百分位排名",
+      "formula": "rank_pct(x[t] within x[t−n+1:t])",
+      "meaning": "在同一标的上使用含当前格的连续 n 格窗口。当前值在窗口中的升序百分位排名；并列采用平均名次。",
+      "missing": "窗口内必须有 n 个有效值；任何缺值均使该窗口结果缺失。",
+      "lookbackOffset": -1
+    },
+    "rank": {
+      "category": "unary",
+      "arity": 1,
+      "title": "当期横截面百分位排名",
+      "formula": "rank_pct(x_i[t] across i)",
+      "meaning": "在同一个市场交易日，对输入中的标的升序排名；并列采用平均名次；分母是当期有效标的数。",
+      "missing": "缺失按该算子的输入 x 判断；非缺值输入参与排名，最后统一应用当前 close 缺失屏蔽。"
+    },
+    "zscore": {
+      "category": "unary",
+      "arity": 1,
+      "title": "当期横截面标准分",
+      "formula": "(x_i[t] − mean_i(x[t])) / std_i(x[t], ddof=0)",
+      "meaning": "在同一个市场交易日，对当期有效标的做总体标准差标准化。",
+      "missing": "均值与总体标准差仅使用该算子的非缺值输入 x；标准差绝对值≤1e−12时缺失，最后统一应用当前 close 缺失屏蔽。"
+    },
+    "log": {
+      "category": "unary",
+      "arity": 1,
+      "title": "自然对数",
+      "formula": "ln(x[t])",
+      "meaning": "逐值自然对数。",
+      "missing": "x≤0或缺值则缺失。"
+    },
+    "sqrt": {
+      "category": "unary",
+      "arity": 1,
+      "title": "平方根",
+      "formula": "sqrt(x[t])",
+      "meaning": "逐值非负平方根。",
+      "missing": "x<0或缺值则缺失。"
+    },
+    "abs": {
+      "category": "unary",
+      "arity": 1,
+      "title": "绝对值",
+      "formula": "abs(x[t])",
+      "meaning": "逐值绝对值。",
+      "missing": "输入缺值则缺失。"
+    },
+    "sign": {
+      "category": "unary",
+      "arity": 1,
+      "title": "符号",
+      "formula": "sign(x[t])",
+      "meaning": "负数/零/正数分别变为−1/0/+1。",
+      "missing": "输入缺值则缺失。"
+    },
+    "min": {
+      "category": "binary",
+      "arity": 2,
+      "title": "逐值较小值",
+      "formula": "min(x[t], y[t])",
+      "meaning": "在对应标的与日期上取两个输入的较小值。",
+      "missing": "任一输入缺值则缺失。"
+    },
+    "max": {
+      "category": "binary",
+      "arity": 2,
+      "title": "逐值较大值",
+      "formula": "max(x[t], y[t])",
+      "meaning": "在对应标的与日期上取两个输入的较大值。",
+      "missing": "任一输入缺值则缺失。"
+    },
+    "clip": {
+      "category": "clip",
+      "arity": 3,
+      "title": "固定边界截断",
+      "formula": "clip(x[t], lower, upper)",
+      "meaning": "以显式数字常量为上下界逐值截断，边界必须递增。",
+      "missing": "输入缺值则缺失。"
+    }
+  },
+  "arithmetic": {
+    "/": {
+      "formula": "a / b",
+      "meaning": "逐值相除",
+      "missing": "任一输入缺值或分母绝对值≤1e−12则缺失。"
+    },
+    "+": {
+      "formula": "a + b",
+      "meaning": "逐值相加",
+      "missing": "任一输入缺值则缺失。"
+    },
+    "-": {
+      "formula": "a − b",
+      "meaning": "逐值相减",
+      "missing": "任一输入缺值则缺失。"
+    },
+    "*": {
+      "formula": "a × b",
+      "meaning": "逐值相乘",
+      "missing": "任一输入缺值则缺失。"
+    }
+  },
+  "syntax": {
+    "version": "ascii_tokens_semantic_tree/v1",
+    "tokenPattern": "(?:0|[1-9][0-9]*)(?:\\.[0-9]*)?(?:[eE][+-]?[0-9]+)?|\\.[0-9]+(?:[eE][+-]?[0-9]+)?|[A-Za-z_][A-Za-z_0-9]*|[()+\\-*/,]",
+    "whitespace": " \t\r\n",
+    "trailingComma": false,
+    "treeCounting": "field, number, unary, binary and call each count once; root depth is 0; call arguments are children; function names, parentheses and operator tokens do not add nodes",
+    "description": "只接受 ASCII 十进制数、字段/函数名及运算符；token 间的空格、制表、CR/LF 无语义。不接受前导零整数、Python 十六进制/下划线数字、Unicode 名称、注释和末尾逗号。"
+  }
+}
