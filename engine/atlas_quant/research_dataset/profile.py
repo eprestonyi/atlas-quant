@@ -7,6 +7,8 @@ from .codec import require
 FORMAT = "atlas.quant.research_dataset"
 VERSION = 1
 PROFILE_ID = "financial_compose_50_v1"
+VIEW_PROFILE_ID = "financial_snapshot_view_50_v1"
+VIEW_VERSION = 2
 
 
 @dataclass(frozen=True)

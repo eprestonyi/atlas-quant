@@ -4,9 +4,18 @@ import re
 
 from ..financial_statements.contracts import parse_date
 from .codec import decode, digest, encode, keys, require, sha, uuid
-from .profile import DEFAULT_PROFILE, FORMAT, PROFILE_ID, VERSION, check_profile
+from .profile import (
+    DEFAULT_PROFILE,
+    FORMAT,
+    PROFILE_ID,
+    VERSION,
+    VIEW_VERSION,
+    VIEW_PROFILE_ID,
+    check_profile,
+)
 
 TYPES = {
+    "snapshot_scope_origin": {"sourceBundleId", "sourceSnapshotSha256", "marketRoot"},
     "registry_evidence": set(),
     "market_dataset": {"marketRoot"},
     "financial_input": {"inputRoot", "packRoot"},
@@ -69,8 +78,12 @@ def validate_manifest(raw, *, expected_root=None, profile=DEFAULT_PROFILE):
     require(
         value["format"] == FORMAT
         and type(value["version"]) is int
-        and value["version"] == VERSION
-        and value["profile"] == PROFILE_ID,
+        and (
+            (value["version"] == VERSION and value["profile"] == PROFILE_ID)
+            or (
+                value["version"] == VIEW_VERSION and value["profile"] == VIEW_PROFILE_ID
+            )
+        ),
         "DATASET_FORMAT",
         "Unknown dataset format or profile",
     )
@@ -212,6 +225,8 @@ def validate_manifest(raw, *, expected_root=None, profile=DEFAULT_PROFILE):
         "schema": "dataset_schema",
         "coverage": "dataset_coverage",
     }
+    if value["version"] == VIEW_VERSION:
+        fixed["marketOrigin"] = "snapshot_scope_origin"
     for i, source in enumerate(sources):
         keys(source, {"componentId", "calendarRef", "proofRefs", "preparedRoot"})
         require(
@@ -242,6 +257,11 @@ def validate_manifest(raw, *, expected_root=None, profile=DEFAULT_PROFILE):
     )
     registry = ids["registryEvidence"]["componentRoot"]
     expected_dependencies = {"registryEvidence": [], "marketDataset": [registry]}
+    if value["version"] == VIEW_VERSION:
+        expected_dependencies["marketOrigin"] = []
+        expected_dependencies["marketDataset"] = sorted(
+            [registry, ids["marketOrigin"]["componentRoot"]]
+        )
     for i in range(len(sources)):
         expected_dependencies[f"financialInput{i}"] = [registry]
         expected_dependencies[f"financialPrepared{i}"] = [
@@ -270,6 +290,13 @@ def validate_manifest(raw, *, expected_root=None, profile=DEFAULT_PROFILE):
         "DATASET_ROOT",
         "Manifest semantic roots differ from components",
     )
+    if value["version"] == VIEW_VERSION:
+        require(
+            ids["marketOrigin"]["semanticRoots"]["marketRoot"]
+            == value["roots"]["marketRoot"],
+            "DATASET_ROOT",
+            "Origin and derived market root disagree",
+        )
     for i, source in enumerate(sources):
         financial, prepared = ids[f"financialInput{i}"], ids[f"financialPrepared{i}"]
         require(

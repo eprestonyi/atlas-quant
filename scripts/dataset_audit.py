@@ -1,4 +1,4 @@
-"""Independent standard-library audit of atlas.quant.research_dataset/1.
+"""Independent standard-library audit of atlas.quant.research_dataset versions 1 and 2.
 
 No production modules, provider, model, pickle, dynamic import or evaluator.
 An internally consistent archive does not authenticate its source assertions.
@@ -27,6 +27,7 @@ PART = 512 * 1024
 MAX_PARTS = 256
 TAR_MAX = TOTAL + (MAX_PARTS + 1) * 1023 + 1024
 TYPES = {
+    "snapshot_scope_origin": {"sourceBundleId", "sourceSnapshotSha256", "marketRoot"},
     "registry_evidence": set(),
     "market_dataset": {"marketRoot"},
     "financial_input": {"inputRoot", "packRoot"},
@@ -210,8 +211,10 @@ def validate_manifest(raw, check, expected_root=None):
     check.require(
         m["format"] == "atlas.quant.research_dataset"
         and type(m["version"]) is int
-        and m["version"] == 1
-        and m["profile"] == "financial_compose_50_v1",
+        and (
+            (m["version"] == 1 and m["profile"] == "financial_compose_50_v1")
+            or (m["version"] == 2 and m["profile"] == "financial_snapshot_view_50_v1")
+        ),
         "Unknown format/profile",
         "FORMAT",
     )
@@ -329,6 +332,8 @@ def validate_manifest(raw, check, expected_root=None):
         "schema": "dataset_schema",
         "coverage": "dataset_coverage",
     }
+    if m["version"] == 2:
+        expected["marketOrigin"] = "snapshot_scope_origin"
     for i, source in enumerate(sources):
         check.keys(source, {"componentId", "calendarRef", "proofRefs", "preparedRoot"})
         check.require(
@@ -368,8 +373,10 @@ def validate_manifest(raw, check, expected_root=None):
         + [by_id[f"financialPrepared{i}"]["componentRoot"] for i in range(len(sources))]
     )
     for name, c in by_id.items():
-        if name == "registryEvidence":
+        if name in {"registryEvidence", "marketOrigin"}:
             deps = []
+        elif name == "marketDataset" and m["version"] == 2:
+            deps = sorted([reg, by_id["marketOrigin"]["componentRoot"]])
         elif name in {"researchRows", "schema", "coverage"}:
             deps = global_deps
         elif name.startswith("financialPrepared"):
@@ -1403,10 +1410,353 @@ def prepared_summary(package, prepared, check):
     }
 
 
+def source_skeleton(manifest, name, check):
+    pieces = []
+    for part in manifest["documents"][name]["parts"]:
+        if set(part) == {"literal"} and isinstance(part["literal"], str):
+            pieces.append(part["literal"])
+        elif set(part) == {"collection"} and isinstance(part["collection"], str):
+            pieces.append(
+                encode({"__bundle_collection__": part["collection"]}).decode()
+            )
+        else:
+            raise AuditError("ORIGIN", "Unexpected source document layout")
+    return decode("".join(pieces).encode(), 512 * 1024, check)
+
+
+def check_snapshot_origin(manifest, origin, market, check):
+    """Independent source-byte/projection checks; no engine or provider import."""
+    check.keys(origin, {"format", "version", "source", "transform", "receipt"})
+    check.require(
+        origin["format"] == "atlas.quant.snapshot_scope_origin"
+        and type(origin["version"]) is int
+        and origin["version"] == 1,
+        "Unknown snapshot origin",
+        "ORIGIN",
+    )
+    source, transform, receipt = (
+        origin["source"],
+        origin["transform"],
+        origin["receipt"],
+    )
+    check.keys(
+        source,
+        {
+            "bundleId",
+            "manifestRawText",
+            "snapshotSha256",
+            "snapshotRawText",
+            "sourceStrategy",
+            "sourceStrategySha256",
+        },
+    )
+    check.require(
+        isinstance(source["manifestRawText"], str)
+        and isinstance(source["snapshotRawText"], str),
+        "Original raw text is missing",
+        "ORIGIN",
+    )
+    manifest_raw, snapshot_raw = (
+        source["manifestRawText"].encode(),
+        source["snapshotRawText"].encode(),
+    )
+    source_manifest = decode(manifest_raw, 512 * 1024, check)
+    snapshot = decode(snapshot_raw, 24 * MIB, check)
+    check.require(
+        sha(manifest_raw) == identity(source["bundleId"], check)
+        and sha(snapshot_raw) == identity(source["snapshotSha256"], check),
+        "Original pinned bytes changed",
+        "ORIGIN",
+    )
+    check.keys(
+        source_manifest,
+        {
+            "format",
+            "version",
+            "kind",
+            "forecastArtifactId",
+            "predictionConfigHash",
+            "dataFingerprint",
+            "documents",
+            "collections",
+            "totals",
+        },
+    )
+    check.require(
+        source_manifest["format"] == "atlas.quant.bundle"
+        and type(source_manifest["version"]) is int
+        and source_manifest["version"] == 1
+        and source_manifest["kind"] == "forecast",
+        "Only a legacy forecast origin is supported",
+        "ORIGIN",
+    )
+    check.keys(
+        source_manifest["documents"], {"forecast", "report", "coverage", "snapshot"}
+    )
+    descriptor = source_manifest["documents"]["snapshot"]
+    check.keys(descriptor, {"parts", "sha256", "byteLength"})
+    check.require(
+        descriptor["sha256"] == source["snapshotSha256"]
+        and type(descriptor["byteLength"]) is int
+        and descriptor["byteLength"] == len(snapshot_raw),
+        "Original snapshot descriptor changed",
+        "ORIGIN",
+    )
+    check.keys(
+        snapshot,
+        {
+            "schemaVersion",
+            "rows",
+            "provenance",
+            "sourceDataFingerprint",
+            "dataFingerprint",
+            "fingerprintVersion",
+        },
+    )
+    check.require(
+        type(snapshot["schemaVersion"]) is int
+        and snapshot["schemaVersion"] == 1
+        and snapshot["fingerprintVersion"] == "research_input_v1",
+        "Financial snapshot cannot use legacy origin",
+        "ORIGIN",
+    )
+    check.equal(
+        source_skeleton(source_manifest, "snapshot", check),
+        {**snapshot, "rows": {"__bundle_collection__": "snapshotRows"}},
+        "Original snapshot skeleton differs",
+    )
+    forecast = source_skeleton(source_manifest, "forecast", check)
+    strategy = source["sourceStrategy"]
+    check.equal(
+        strategy,
+        forecast["sourceStrategy"],
+        "Source strategy differs from manifest-bound text",
+    )
+    check.require(
+        root(strategy) == source["sourceStrategySha256"],
+        "Source strategy hash differs",
+        "ORIGIN",
+    )
+    check.require(
+        source_manifest["dataFingerprint"]
+        == snapshot["dataFingerprint"]
+        == forecast["dataFingerprint"]
+        and snapshot["sourceDataFingerprint"]
+        == snapshot["provenance"]["dataFingerprint"],
+        "Original numerical fingerprint references disagree",
+        "ORIGIN",
+    )
+    identity(snapshot["dataFingerprint"], check)
+    identity(snapshot["sourceDataFingerprint"], check)
+    rows, meta = snapshot["rows"], snapshot["provenance"]
+    row_index(rows, check)
+    check.require(
+        not any(k.startswith("model_fin_") for r in rows for k in r)
+        and not set(meta).intersection(
+            {
+                "financialDatasetRoot",
+                "financialInputs",
+                "financialCompositionVersion",
+                "financialSourceCommitment",
+            }
+        ),
+        "Financial source masquerades as market",
+        "ORIGIN",
+    )
+    original_scope = {
+        key: strategy["universe"][key] for key in ("symbols", "start", "end")
+    }
+    symbols(original_scope["symbols"], check)
+    original_scope["symbols"] = sorted(original_scope["symbols"])
+    check.require(
+        date(original_scope["start"], check) <= date(original_scope["end"], check),
+        "Original scope reversed",
+        "SCOPE",
+    )
+    for key in original_scope:
+        if key in meta:
+            check.equal(
+                sorted(meta[key]) if key == "symbols" else meta[key],
+                original_scope[key],
+                "Source metadata differs from strategy scope",
+            )
+    sessions = meta["tradingDates"]
+    check.require(
+        isinstance(sessions, list) and sessions and sessions == sorted(set(sessions)),
+        "Source sessions invalid",
+        "CALENDAR",
+    )
+    for value in sessions:
+        date(value, check)
+        check.require(
+            original_scope["start"] <= value <= original_scope["end"],
+            "Original session outside scope",
+            "CALENDAR",
+        )
+    session_set = set(sessions)
+    check.require(
+        all(
+            r["ts_code"] in original_scope["symbols"] and r["trade_date"] in session_set
+            for r in rows
+        ),
+        "Source row outside original domain",
+        "ORIGIN",
+    )
+    collections = [
+        c for c in source_manifest["collections"] if c.get("id") == "snapshotRows"
+    ]
+    check.require(
+        len(collections) == 1,
+        "Original rows collection missing or duplicated",
+        "ORIGIN",
+    )
+    collection = collections[0]
+    check.require(
+        collection["document"] == "snapshot"
+        and collection["path"] == "/rows"
+        and collection["rowCount"] == len(rows),
+        "Source row count/path differs",
+        "ORIGIN",
+    )
+    offset = 0
+    for ordinal, part in enumerate(collection["chunks"]):
+        check.keys(part, {"ordinal", "start", "count", "sha256", "byteLength"})
+        integer(part["ordinal"], ordinal, ordinal, check)
+        integer(part["start"], offset, offset, check)
+        integer(part["count"], 1, 10000, check)
+        integer(part["byteLength"], 2, 8 * MIB, check)
+        raw = encode(rows[offset : offset + part["count"]])
+        check.require(
+            len(raw) == part["byteLength"] and sha(raw) == part["sha256"],
+            "Original row chunk identity differs",
+            "ORIGIN",
+        )
+        offset += part["count"]
+    check.require(offset == len(rows), "Original row chunks are incomplete", "ORIGIN")
+    check_scope_projection(manifest, origin, market, original_scope, rows, meta, check)
+
+
+def check_scope_projection(manifest, origin, market, original_scope, rows, meta, check):
+    source, transform, receipt = (
+        origin["source"],
+        origin["transform"],
+        origin["receipt"],
+    )
+    check.keys(transform, {"kind", "version", "mode", "symbols", "start", "end"})
+    check.require(
+        transform["kind"] == "snapshot_scope_view"
+        and type(transform["version"]) is int
+        and transform["version"] == 1
+        and transform["mode"] in ("exact", "explicit_subset"),
+        "Unknown explicit scope transform",
+        "ORIGIN",
+    )
+    scope = {key: transform[key] for key in ("symbols", "start", "end")}
+    check.equal(scope, manifest["scope"], "View scope differs from dataset scope")
+    check.require(
+        set(scope["symbols"]) <= set(original_scope["symbols"])
+        and original_scope["start"]
+        <= scope["start"]
+        <= scope["end"]
+        <= original_scope["end"],
+        "View extends beyond original source",
+        "SCOPE",
+    )
+    check.require(
+        (scope == original_scope) == (transform["mode"] == "exact"),
+        "Exact/subset selection mode differs",
+        "SCOPE",
+    )
+    selected = [
+        r
+        for r in rows
+        if r["ts_code"] in scope["symbols"]
+        and scope["start"] <= r["trade_date"] <= scope["end"]
+    ]
+    check.require(
+        selected and {r["ts_code"] for r in selected} == set(scope["symbols"]),
+        "Selected securities lack observations",
+        "ORIGIN",
+    )
+    check.equal(
+        market["rows"],
+        selected,
+        "Market values/order/missing observations differ from explicit projection",
+    )
+    sessions = [d for d in meta["tradingDates"] if scope["start"] <= d <= scope["end"]]
+    fingerprint = market["provenance"]["dataFingerprint"]
+    identity(fingerprint, check)
+    derivation = {
+        "kind": "snapshot_scope_view",
+        "version": 1,
+        "mode": transform["mode"],
+        "sourceBundleId": source["bundleId"],
+        "sourceSnapshotSha256": source["snapshotSha256"],
+        "sourceDataFingerprint": meta["dataFingerprint"],
+        "sourceResearchFingerprint": receipt["sourceResearchFingerprint"],
+        "targetScope": scope,
+    }
+    # Provider-rounded and research fingerprints remain explicit opaque references;
+    # unlike the production recompose gate this independent audit does not fit or
+    # import pandas merely to claim that those historical algorithms were rerun.
+    source_snapshot = decode(source["snapshotRawText"].encode(), 24 * MIB, check)
+    check.require(
+        receipt["sourceResearchFingerprint"] == source_snapshot["dataFingerprint"],
+        "Source research fingerprint link differs",
+        "ORIGIN",
+    )
+    expected_meta = {
+        **meta,
+        **scope,
+        "tradingDates": sessions,
+        "rows": len(selected),
+        "dataFingerprint": fingerprint,
+        "marketDerivation": derivation,
+    }
+    check.equal(
+        market["provenance"],
+        expected_meta,
+        "Derived metadata omits or rewrites original evidence",
+    )
+    expected_receipt = {
+        "sourceScope": original_scope,
+        "targetScope": scope,
+        "sourceRows": len(rows),
+        "selectedRows": len(selected),
+        "removedRows": len(rows) - len(selected),
+        "sourceTradingDatesSha256": root(meta["tradingDates"]),
+        "selectedTradingDatesSha256": root(sessions),
+        "sourceDataFingerprint": meta["dataFingerprint"],
+        "sourceResearchFingerprint": source_snapshot["dataFingerprint"],
+        "derivedDataFingerprint": fingerprint,
+        "marketRoot": root(market),
+        "preservesRelativeRowOrder": True,
+        "imputation": "none",
+        "warmupExtension": "none",
+    }
+    check.equal(
+        receipt, expected_receipt, "Projection receipt differs from retained source"
+    )
+    component = next(
+        c for c in manifest["components"] if c["componentId"] == "marketOrigin"
+    )
+    check.equal(
+        component["semanticRoots"],
+        {
+            "sourceBundleId": source["bundleId"],
+            "sourceSnapshotSha256": source["snapshotSha256"],
+            "marketRoot": root(market),
+        },
+        "Origin semantic root link differs",
+    )
+
+
 def audit_semantics(manifest, raw_payloads, check, pins):
     values = {name: decode(raw, TOTAL, check) for name, raw in raw_payloads.items()}
     records = registry_records(manifest, values["registryEvidence"], check, pins)
     market, joined = values["marketDataset"], values["researchRows"]
+    if manifest["version"] == 2:
+        check_snapshot_origin(manifest, values["marketOrigin"], market, check)
     for value in (market, joined):
         check.keys(value, {"schemaVersion", "rows", "provenance"})
         check.require(
@@ -1744,6 +2094,9 @@ def audit_dataset(path, *, expected_root=None, registry_pins=None):
         "datasetRootPinned": expected_root is not None,
         "format": manifest["format"],
         "profile": manifest["profile"],
+        "datasetVersion": manifest["version"],
+        "sourceViewProjectionVerified": manifest["version"] == 2,
+        "sourceResearchFingerprintRecomputed": False,
         "componentCount": len(manifest["components"]),
         "partCount": sum(len(c["parts"]) for c in manifest["components"]),
         "closureBytes": len(raw) + sum(len(v) for v in payloads.values()),
@@ -1765,6 +2118,7 @@ def audit_dataset(path, *, expected_root=None, registry_pins=None):
             "Caller must authorize external registry pins independently; this tool does not authenticate the operator or PDF.",
             "Financial formula arithmetic, normalized StatementRecord record_hash, and original as-published/revision history are not rederived by this closure audit.",
             "Historical provider dataFingerprint uses pandas rounding; it is not rederived. All market/joined payload bytes and semantic roots are checked.",
+            "Version-2 original snapshot identity, exact projection, rows and metadata are checked; original engine research fingerprints and unrelated source forecast collections are not recomputed by this stdlib audit.",
             "JSON nesting is limited to 64; peak Python RSS is not bounded by the 64MiB encoded-byte ceiling.",
         ],
         **details,
