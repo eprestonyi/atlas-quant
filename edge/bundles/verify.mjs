@@ -2,6 +2,7 @@ import { ApiError } from '../errors.mjs';
 import { NOW } from '../runtime.mjs';
 import { readChunk, loadStage, leasedJob, parsedStage, terminalDiscard } from './storage.mjs';
 import { verifyDocuments } from './streams.mjs';
+import { SORTED_SNAPSHOT, snapshotValidation, verifySnapshotReceipts } from './snapshot-index.mjs';
 
 const invalid = (message) => {
   throw new ApiError('BUNDLE_INCOMPLETE', message, 409);
@@ -17,15 +18,19 @@ async function rejectIfRows(env, sql, args, message) {
 
 /** Coverage and references are checked against all staged records, not a preview. */
 export async function verifyRecords(env, stage, parsed) {
+  const sortedSnapshot = snapshotValidation(stage).strategy === SORTED_SNAPSHOT;
+  verifySnapshotReceipts(stage, parsed);
   const counts = await env.DB.prepare(
     'SELECT collection,count(*) n FROM quant_bundle_records WHERE stage_id=? GROUP BY collection'
   )
     .bind(stage.id)
     .all();
   const actual = new Map(counts.results.map((row) => [row.collection, row.n]));
-  for (const collection of parsed.collections.values())
-    if ((actual.get(collection.id) ?? 0) !== collection.rowCount)
+  for (const collection of parsed.collections.values()) {
+    const expected = sortedSnapshot && collection.id === 'snapshotRows' ? 0 : collection.rowCount;
+    if ((actual.get(collection.id) ?? 0) !== expected)
       invalid('完整集合计数不一致：' + collection.id);
+  }
   if ([...actual.keys()].some((id) => !parsed.collections.has(id))) invalid('索引含未声明集合');
   const primary = [
     'forecasts',

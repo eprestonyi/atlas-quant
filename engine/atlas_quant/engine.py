@@ -165,15 +165,19 @@ class TrainWinsorizer(TransformerMixin, BaseEstimator):
         return np.clip(np.asarray(X, dtype=float), self.lower_, self.upper_)
 
 
-def _prepare_data(data, strategy, provenance):
+def _prepare_data(data, strategy, provenance, *, capacity_profile=None):
+    row_limit = MAX_DATA_ROWS
+    if capacity_profile is not None:
+        from .capacity.profiles import get_profile
+        row_limit = get_profile(capacity_profile).max_rows
     if not isinstance(data, pd.DataFrame) or data.empty:
         raise ResearchError("NO_DATA", "没有可用行情")
     required = {"ts_code", "trade_date", "open", "high", "low", "close", "raw_close", "vol", "amount", "adj_factor"}
     missing = required - set(data.columns)
     if missing:
         raise ResearchError("MISSING_FIELDS", "行情缺少字段：" + ", ".join(sorted(missing)))
-    if len(data) > MAX_DATA_ROWS:
-        raise ResearchError("DATA_LIMIT", f"单次最多 {MAX_DATA_ROWS} 行行情")
+    if len(data) > row_limit:
+        raise ResearchError("DATA_LIMIT", f"单次最多 {row_limit} 行行情")
     df = data.copy()
     factor_fields = set().union(*(set(validate_expression(f["expression"])["fields"]) for f in strategy["factors"]))
     from .financial_statements.admission import assert_composed
