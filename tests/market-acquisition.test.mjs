@@ -31,13 +31,14 @@ const source = await buildWorkerSource({ buildId: "market-preparation-test" }),
     new URL("../edge/schema.sql", import.meta.url),
     "utf8",
   );
-async function setup() {
+async function setup(extraBindings = {}) {
   const bindings = {
     RUNNER_SECRET: "market-test-only",
     MARKET_ACQUISITION_ENABLED: "true",
     TUSHARE_PUBLIC_AUTHORIZED: "true",
     MARKET_ACQUISITION_AUTH_SCOPE: "SYNTHETIC_MARKET_TEST",
     ALLOW_MARKET_FIXTURES: "true",
+    ...extraBindings,
   };
   const mf = new Miniflare({
     modules: true,
@@ -513,6 +514,227 @@ test("immutable authorized receipt may be cached by another owner only through i
       { cookie },
     );
     assert.equal(old.status, 404);
+  } finally {
+    await x.mf.dispose();
+  }
+});
+
+test("ready market binding survives create/update/copy/readback and exact-profile claim; no source shrinking or legacy bypass", async () => {
+  const x = await setup({ MARKET_RESEARCH_ENABLED: "true" });
+  try {
+    // A dedicated feature flag is used only in this isolated Worker instance.
+    const p = await stage(x),
+      complete = await (
+        await x.req(
+          `/runner/market-acquire/jobs/${x.job.id}/complete`,
+          "POST",
+          { leaseToken: x.job.leaseToken, manifestSha256: p.root },
+        )
+      ).json();
+    const ref = complete.result.marketDatasetRef,
+      scope = fixture.plan.universeScopeRef;
+    const strategy = {
+      schemaVersion: 2,
+      name: "SYNTHETIC source-binding protocol test",
+      research: { mode: "statistical_quant" },
+      universe: {
+        symbols: fixture.plan.scope.symbols,
+        start: fixture.plan.scope.start,
+        end: fixture.plan.scope.end,
+      },
+      target: { kind: "asset_price", horizonSessions: 5 },
+      model: {
+        family: "mean_reversion",
+        estimator: "ridge",
+        trainWindow: 120,
+        refitDays: 20,
+      },
+      validation: { innerFolds: 2, outerFolds: 2, minTrainDates: 40 },
+      execution: { enabled: false },
+      factors: [{ id: "pb", expression: "pb", role: "predictor" }],
+    };
+    const binding = {
+      marketDatasetRef: ref,
+      universeScopeRef: scope,
+      admissionProfile: "pooled_asset_1000_v1",
+    };
+    let r = await x.req("/statistical-quant/experiments", "POST", {
+      strategy,
+      ...binding,
+    });
+    assert.equal(r.status, 201, await r.clone().text());
+    let e = (await r.json()).experiment;
+    assert.deepEqual(e.marketDatasetBinding.marketDatasetRef, ref);
+    assert.deepEqual(
+      e.marketDatasetBinding.scope.symbols,
+      strategy.universe.symbols,
+    );
+    r = await x.req("/statistical-quant/experiments/" + e.id, "PUT", {
+      version: 1,
+      strategy: { ...strategy, name: "Changed label" },
+    });
+    assert.equal(r.status, 200, await r.clone().text());
+    e = (await r.json()).experiment;
+    assert.equal(e.version, 2);
+    assert.deepEqual(e.marketDatasetBinding.marketDatasetRef, ref);
+    const detail = await (
+      await x.req("/statistical-quant/experiments/" + e.id)
+    ).json();
+    assert.deepEqual(
+      detail.experiment.marketDatasetBinding,
+      e.marketDatasetBinding,
+    );
+    const list = await (await x.req("/statistical-quant/experiments")).json();
+    assert.deepEqual(
+      list.items[0].marketDatasetBinding,
+      e.marketDatasetBinding,
+    );
+    r = await x.req(
+      "/statistical-quant/experiments/" + e.id + "/copy",
+      "POST",
+      {},
+    );
+    assert.equal(r.status, 201, await r.clone().text());
+    assert.deepEqual(
+      (await r.json()).experiment.marketDatasetBinding,
+      e.marketDatasetBinding,
+    );
+    // Equal strategy bytes cannot let the losing CAS attach its different source.
+    const unbound = (
+      await (
+        await x.req("/statistical-quant/experiments", "POST", {
+          strategy,
+          universeScopeRef: scope,
+        })
+      ).json()
+    ).experiment;
+    const racers = await Promise.all([
+      x.req("/statistical-quant/experiments/" + unbound.id, "PUT", {
+        version: 1,
+        strategy,
+        ...binding,
+      }),
+      x.req("/statistical-quant/experiments/" + unbound.id, "PUT", {
+        version: 1,
+        strategy,
+      }),
+    ]);
+    assert.deepEqual(racers.map((r) => r.status).sort(), [200, 409]);
+    const winner = (await racers.find((r) => r.status === 200).json())
+      .experiment;
+    const readback = (
+      await (await x.req("/statistical-quant/experiments/" + unbound.id)).json()
+    ).experiment;
+    assert.deepEqual(
+      readback.marketDatasetBinding,
+      winner.marketDatasetBinding,
+    );
+    const shrunk = structuredClone(strategy);
+    shrunk.universe.symbols.pop();
+    assert.equal(
+      (
+        await x.req("/statistical-quant/experiments/" + e.id, "PUT", {
+          version: 2,
+          strategy: shrunk,
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await x.req("/statistical-quant/experiments/" + e.id + "/run", "POST", {
+          version: 2,
+          dataSource: "demo",
+        })
+      ).status,
+      409,
+    );
+    r = await x.req("/statistical-quant/experiments/" + e.id + "/run", "POST", {
+      version: 2,
+      dataSource: "ready_market",
+      ...binding,
+    });
+    assert.equal(r.status, 202, await r.clone().text());
+    const job = (await r.json()).job;
+    let c = await (
+      await x.req("/runner/claim", "POST", {
+        requestId: randomUUID(),
+        engineVersion: "0.8.0",
+        transportFormats: ["atlas.quant.bundle/1"],
+      })
+    ).json();
+    assert.equal(c.job, null);
+    const requestId = randomUUID();
+    r = await x.req("/runner/claim", "POST", {
+      requestId,
+      engineVersion: "0.8.0",
+      transportFormats: ["atlas.quant.bundle/1"],
+      marketResearchProfiles: ["pooled_asset_1000_v1"],
+    });
+    assert.equal(r.status, 200, await r.clone().text());
+    c = await r.json();
+    assert.equal(c.job.id, job.id);
+    assert.deepEqual(c.job.marketDatasetRef, ref);
+    assert.equal(c.job.dataset, null);
+    assert.equal(c.job.strategy.universe.symbols.length, 2);
+    const header = { "X-Dataset-Lease": c.job.leaseToken };
+    const inputResponse = await x.req(
+      c.job.marketInputUrl.replace("/quant/api", ""),
+      "GET",
+      undefined,
+      header,
+    );
+    assert.equal(inputResponse.status, 200, await inputResponse.clone().text());
+    const sourceInput = await inputResponse.json();
+    assert.deepEqual(sourceInput.marketDatasetRef, ref);
+    assert.equal(sourceInput.sourceEvidence.rowValueRoot.length, 64);
+    const rawManifest = await x.req(
+      sourceInput.documents.manifest.url.replace("/quant/api", ""),
+      "GET",
+      undefined,
+      header,
+    );
+    assert.equal(rawManifest.status, 200);
+    assert.equal(rawManifest.headers.get("x-content-sha256"), ref.datasetRoot);
+    assert.equal(await rawManifest.text(), canonical(p.manifest));
+    const part = sourceInput.partUrlTemplate
+      .replace("{collection}", "rows")
+      .replace("{ordinal}", "0")
+      .replace("/quant/api", "");
+    const rowsResponse = await x.req(part, "GET", undefined, header);
+    assert.equal(rowsResponse.status, 200);
+    assert.equal((await rowsResponse.json()).length, 15);
+    assert.equal(
+      (
+        await x.req(
+          part.replace(ref.datasetRoot, "0".repeat(64)),
+          "GET",
+          undefined,
+          header,
+        )
+      ).status,
+      409,
+    );
+    assert.equal(
+      (await x.req(part, "GET", undefined, { "X-Dataset-Lease": randomUUID() }))
+        .status,
+      409,
+    );
+    const datasets = await (await x.req("/market-datasets")).json();
+    assert.deepEqual(datasets.items[0].marketDatasetRef, ref);
+    const sourceDetail = await (
+      await x.req(
+        "/market-datasets/" + ref.datasetId + "?datasetRoot=" + ref.datasetRoot,
+      )
+    ).json();
+    assert.deepEqual(sourceDetail.scope.symbols, strategy.universe.symbols);
+    r = await x.req("/runner/claim", "POST", {
+      requestId,
+      engineVersion: "0.8.0",
+      transportFormats: ["atlas.quant.bundle/1"],
+    });
+    assert.equal(r.status, 409);
+    assert.equal((await r.json()).error.code, "RUNNER_UPGRADE_REQUIRED");
   } finally {
     await x.mf.dispose();
   }

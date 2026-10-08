@@ -30,3 +30,11 @@ The adapter verifies explicit response fields, finite numeric data, symbol/date 
 The output manifest contains separate `rows`, `provenance` and `receipts` collections: at most 320 chunks, each at most 512 KiB; the manifest is at most 256 KiB. Rows are date/security ordered. D1 stores descriptors and identities; price rows remain in private R2. Completion rechecks all hashes, complete symbol coverage, raw calendar receipts, source metadata and the exact plan; it independently derives a normalized row-value root. Dataset creation, completed job state and committed publication are one D1 transaction. A cancelled or expired lease cannot publish.
 
 This commit's tests use explicit synthetic responses, real spawned child/fsync/AES primitives and isolated Miniflare D1/R2. They perform zero provider calls and do not establish live data entitlement, production enablement or a hosted whole-pool forecast. The ready-market F consumer, server-bound larger bundle admission and independent source-archive audit are separate follow-up integration gates.
+
+## Saved source and research admission
+
+The next integration slice saves `marketDatasetBinding` on every immutable experiment revision, including full scope and explicit computation profile. GET/list/export/copy retain this record; omitted fields on an update inherit it. Scope/date changes must match another explicitly supplied ready source, and financial/market sources cannot be combined. A lost concurrent update cannot add its source to the winning revision, even when strategy bytes are equal.
+
+`GET /market-datasets` and its root-pinned detail route allow the same owner to reopen ready sources across browsers. Research jobs use `dataSource:ready_market`; old runners skip them. Matching runners must declare an exact `marketResearchProfiles` value and bundle/1 capability. The source input route `/runner/research-markets/:jobId/input` supplies bounded content-addressed manifest/plan/scope/part descriptors only to the active exact lease. Legacy upload, unsharded completion and execution-replay paths reject this source.
+
+The API/source-binding slice is verified with synthetic D1/R2 data. It remains disabled by default pending complete raw-archive, F-consumer and result-publication acceptance; enabling the flag is not part of these commits.

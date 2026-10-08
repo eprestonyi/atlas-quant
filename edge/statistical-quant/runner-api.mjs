@@ -24,6 +24,7 @@ export async function statisticalRunnerApi(req, env, path) {
   const input = await body(req, path === '/runner/snapshot' ? 26 * 1024 * 1024 : 12000);
   const job = await leasedJob(env, input),
     link = await quantRun(env, job.id);
+  if (job.data_source === 'ready_market') throw new ApiError('MARKET_TRANSPORT_REQUIRED', '完整市场来源仅允许分片预测，不支持旧快照与执行入口', 409);
   if (job.data_source === 'ready_dataset') throw new ApiError('FINANCIAL_TRANSPORT_REQUIRED', '财务数据集需要独立金融结果协议，不支持旧快照或执行入口', 409);
   if (!link) throw new ApiError('INVALID_RESEARCH_JOB', '此任务不属于预测研究');
   if (path === '/runner/replay') {
