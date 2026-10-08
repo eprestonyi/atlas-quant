@@ -19,7 +19,7 @@ frozen evidence; numerical edits create unvalidated derived functions.
 | Complete filter and Easy flow | Actual local browser saved 1,000 members, then 12 after explicit filters; no subset picker | New production build and authenticated browser readback |
 | Automatic selection | Eight predeclared candidates, date-ordered nested validation, state-only comparator and preserved tails | Exact final commit CI; no claim of unbiased or universally optimal selection |
 | Portable F and diagnostics | Native function download agrees with Python evaluation; joint, marginal and conditional tables checked | Same behavior on deployed assets and independent owner workspace |
-| Market full-pool transport | Two-security loopback HTTP passed; 1,000-security source completed with 2,001 receipts and 261,973 rows. First F publication failed at the legacy 50-target index guard; its failure remains retained | Fix the admitted full-scope index and rejected-output retention; a separately declared correction acceptance reuses this frozen source, followed by independent paired audit under unchanged limits |
+| Market full-pool transport | The declared correction run passed actual loopback HTTP for all 1,000 securities: 41,000 main and baseline predictions each, 190 input pairs, and two frozen archives. Independent paired source/result audit passed. The first rejected run remains preserved separately | Final runtime guard fixes and exact candidate CI, then authenticated deployed readback; this synthetic run proves transport and coverage, not provider authenticity or predictive advantage |
 | Existing financial dataset/2 | Actual browser composition, auto research and native dual downloads passed for one synthetic security | Candidate runtime and authenticated hosted readback using frozen input |
 | Financial dataset/3 | Supervised 50-security F completed with 2,050 main and baseline rows each. Fresh source reconstruction and independent source-derived full-domain audit passed; coordinated member/day/tail deletion attacks rejected | Separate hosted routes, claims, capability, publication and browser acceptance; the existing 50-security F is retained and is not repeated for these checks |
 | Source authenticity | Exact receipt, source and authorized registry identities retained | Synthetic acceptance never substitutes for provider or disclosure authentication; reuse previously frozen real evidence for canary |
@@ -37,6 +37,14 @@ That evidence is incomplete and cannot be presented as a reusable full model
 archive. Rejected deliveries must now retain encrypted original results and source
 references outside the automatic retry queue. A later correction acceptance is a
 new declared run, never a rewrite of that failed job or another source acquisition.
+That single correction run completed as `b3b1c435-fb7e-454c-a852-d4344c914507`;
+its declared compute allowance is exhausted. Neither it nor the source acquisition
+may be repeated for UI checks. The result preserves 35,000 mature observations,
+6,000 tail observations and zero trades. The selected model was the no-change
+baseline: no forecast advantage was validated. The actual browser resolved the
+frozen function, evaluated explicit inputs and downloaded its JSON; independent
+Python evaluation agreed. Its complete 1,000-member scope remains available in
+a bounded expandable list, with actual 390px layout verification.
 
 ## Six services, five compute consumers
 
