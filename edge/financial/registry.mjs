@@ -27,10 +27,29 @@ export function registryDTO(row) {
   };
 }
 export async function inputRegistry(env, input) {
-  const refs = JSON.parse(input.proof_refs);
-  const calendar = await registryEntry(env, input.owner, input.calendar_ref, 'calendar');
-  const proofs = [];
-  for (const ref of refs) proofs.push(await registryEntry(env, input.owner, ref, 'unit_proof'));
+  const refs = parse(input.proof_refs);
+  if (!Array.isArray(refs) || refs.length > 256 || new Set(refs).size !== refs.length)
+    fail('INVALID_INPUT', '证明引用需要唯一且最多256项');
+  const allRefs = [id(input.calendar_ref), ...refs.map(id)];
+  const byId = new Map();
+  // Stay below D1's bind limit, including the owner parameter. Resolve all
+  // descriptors once, then reconstruct the original immutable proof order.
+  for (let offset = 0; offset < allRefs.length; offset += 64) {
+    const batch = allRefs.slice(offset, offset + 64);
+    const rows = await env.DB.prepare(
+      `SELECT * FROM financial_registry_entries WHERE id IN (${batch.map(() => '?').join(',')}) AND (owner=? OR owner='*') AND status='active'`
+    )
+      .bind(...batch, input.owner)
+      .all();
+    for (const row of rows.results) byId.set(row.id, row);
+  }
+  const entry = (ref, kind) => {
+    const row = byId.get(ref);
+    if (!row || row.kind !== kind) fail('NOT_FOUND', '授权证据不存在', 404);
+    return row;
+  };
+  const calendar = entry(input.calendar_ref, 'calendar');
+  const proofs = refs.map((ref) => entry(ref, 'unit_proof'));
   if (
     [calendar, ...proofs].some((r) => r.byte_length > LIMITS.registryEntryBytes) ||
     [calendar, ...proofs].reduce((n, r) => n + r.byte_length, 0) > LIMITS.registryTotalBytes

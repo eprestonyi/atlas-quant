@@ -1,6 +1,6 @@
 # v0.7 candidate — auditable financial workspace
 
-Status: **locally integrated and accepted; production deployment pending**.
+Status: **initial production deployment verified; hosted preparation and registry-read correction acceptance in progress**.
 This is an incremental release of the ongoing Atlas Quant rebuild, not the
 completion of financial-to-F research or the whole community platform.
 
@@ -69,3 +69,31 @@ acquisition is part of this release.
 
 Implementation and reproducible developer workflow:
 [FINANCIAL_WORKSPACE_IMPLEMENTATION.md](FINANCIAL_WORKSPACE_IMPLEMENTATION.md).
+
+## Initial hosted acceptance and correction
+
+PR #11 merged as `35266330750016bf435b6e1b0db452b485b82532`. The initial
+Worker `0.7.0-a83bd2c1fcbe` and both Python 0.7.0 consumers were read back;
+queues resumed, prior research remains readable and the original research
+configuration was preserved. An additive migration created eight financial
+tables after a 93,236,050-byte private database backup passed SQLite restore
+and integrity checks.
+
+The existing two-company provider package completed hosted validation, with
+957 independent D1/R2/source/proof checks. No provider acquisition or model fit
+was repeated. Validation took about 178 seconds: repeated all-proof lookups
+made each proof download do quadratic registry work. The correction batches
+metadata lookups in groups of 64 and authorizes each body by its own reference,
+retaining owner, active state, kind, length and SHA checks. Its hosted preparation
+acceptance remains pending. New-user calendar onboarding and financial forecast
+attachment are separate unfinished work.
+
+The registry correction passed all 171 Node tests and static checks. Candidate
+`0.7.0-44af664ce6dd`, 1,491,290 bytes, SHA-256
+`a9e7bd8758973d3a8859847d1fe456a4cc2eb7cdf956baed1e8ca5789375cf9f`.
+The Python engine and frontend are unchanged from the accepted initial release.
+An unrelated cancellation test counted tiny chunks legitimately read before
+Node-to-workerd cancellation arrived. The test now gates the first storage read
+and cancels inside workerd against the native FixedLengthStream; it precisely
+asserts one in-flight read without sleeps or a relaxed threshold. The production
+archive implementation was not changed.
