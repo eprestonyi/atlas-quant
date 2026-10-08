@@ -1,7 +1,7 @@
 # Hosted frozen dataset → fundamental forecast: contract proposal
 
 Implementation contract, 2026-10-08. Explicit subset views, dataset version 2 and
-profile financial_snapshot_compose_50_v2 are approved; implementation remains
+profile financial_snapshot_view_50_v1 are approved; implementation remains
 default off and local-only until acceptance. This does not enable
 research binding, add an HTTP endpoint, call a provider or fit F. Checked against
 main `189a207` and the current `research_dataset` core. Proposed names below are
@@ -50,7 +50,7 @@ A small independent “研究数据集” area has five pages:
    evidence. Ineligible sources remain visible with an explicit reason.
 2. **研究范围与日历**: original scope is visible and retained. The default is the
    full source. A user may explicitly request a smaller view only if §9A is
-   approved. Show before/after members/dates, and select an exact owner calendar.
+   approved. Show before/after members/dates, and inspect the exact owner calendar derived from the selected financial inputs.
    No calendar means blocked; there is no implicit provider request.
 3. **财务状态**: choose committed preparations. Show original scope, selected states,
    actual observed coverage, disclosure availability dates, units policy and
@@ -83,9 +83,9 @@ compare to stored facts, never permission grants.
 ```json
 {
   "enabled": false,
-  "profile": "financial_snapshot_compose_50_v2",
+  "profile": "financial_snapshot_view_50_v1",
   "composition": {"online": false, "capability": "research-dataset/1"},
-  "forecast": {"online": false, "admissionProfile": "financial_fundamental_ridge_v1"},
+  "forecast": {"online": false, "admissionProfile": "financial_snapshot_view_50_v1"},
   "datasetFormats": ["atlas.quant.research_dataset/2"],
   "financialResultFormats": [],
   "researchBindingEnabled": false,
@@ -104,9 +104,11 @@ The bundle kind and snapshot fingerprint discriminator are both checked.
 
 `GET /datasets/sources/financial?...` returns own committed preparations, their
 exact `financialRef`, original selection, compact coverage and registry status.
-`GET /financial/registry?kind=calendar` may be reused if it already returns exact
-owner grants; otherwise add a bounded owner-only calendar list. No raw evidence
-or full state panel is returned in these lists.
+The market calendar is derived deterministically from the selected financial
+inputs’ existing same-owner grants. Their sessions must agree for the selected
+interval and later match the frozen market view. A browser cannot supply a
+replacement calendar/proof reference. No raw evidence or full state panel is
+returned in these lists.
 
 ### 3.2 Immutable review plan
 
@@ -116,7 +118,7 @@ or full state panel is returned in these lists.
 {
   "requestId":"UUID",
   "name":"年报状态与冻结行情",
-  "profile":"financial_snapshot_compose_50_v2",
+  "profile":"financial_snapshot_view_50_v1",
   "marketSource":{
     "kind":"forecast_snapshot_view",
     "runId":"UUID",
@@ -127,7 +129,6 @@ or full state panel is returned in these lists.
       "symbols":["600690.SH"],"start":"20250101","end":"20251231"
     }
   },
-  "marketCalendarRef":"UUID",
   "financialInputs":[{
     "inputId":"UUID","preparationId":"UUID",
     "inputRoot":"SHA256","packRoot":"SHA256",
@@ -179,7 +180,7 @@ coverage summary, source refs and assumptions, plus independently stated:
 `researchAdmission:{profile,configurationEligible,sampleStatus:'not_checked'}`.
 A ready all-missing dataset remains diagnostically readable; it is not F-ready.
 
-`GET /datasets/:id/coverage?datasetRoot=...&offset=0&limit=25` is backed by bounded
+`GET /datasets/:id/coverage?datasetRoot=...&page=1&pageSize=25` is backed by bounded
 published row indexes, not an R2 scan on every page. Each row separates
 `firstObserved/lastObserved` from `firstAvailable/lastAvailable` and reports
 `okRows,missingRows,latestPeriodEnd,reasonCounts,unitVerified,qualityFlags`.
@@ -194,7 +195,7 @@ one mutually exclusive body:
 {"version":3,"dataSource":"ready_dataset","datasetRef":{
  "datasetId":"UUID","datasetRoot":"SHA256",
  "format":"atlas.quant.research_dataset","version":2},
- "admissionProfile":"financial_fundamental_ridge_v1"}
+ "admissionProfile":"financial_snapshot_view_50_v1"}
 ```
 
 No simultaneous dataset JSON, URL, provider/source parameters or upload fallback.
@@ -211,7 +212,7 @@ points reject financial forecasts explicitly.
 ## 4. Queue, consumer and fixed budgets
 
 Use independent tables/namespace for `dataset_compose` tasks with capability
-`research-dataset/1` + profile `financial_snapshot_compose_50_v2`. Neither old financial nor
+`research-dataset/1` + profile `financial_snapshot_view_50_v1`. Neither old financial nor
 old research claim SQL sees them. A provider-free consumer is responsible only
 for restore-source → scope-view → reprepare/compose → freeze → deliver.
 
@@ -249,7 +250,9 @@ F has no provider-enabled fallback process or provider credential requirement.
 Existing hard ceilings remain: 50 stocks, 110k rows; 1–8 financial packages with
 24MiB aggregate package bytes; market and joined bytes 24MiB each; manifest256KiB;
 registry entry256KiB and sum32MiB; 32 components/depth3; 256×512KiB pieces;
-**64MiB complete source/derived closure**. No byte ceiling is a claim about RSS.
+**64MiB complete source/derived closure**. Hosted coverage indexing additionally
+limits the coverage component to 8MiB; an over-budget index rejects publication
+rather than truncating rows. No byte ceiling is a claim about RSS.
 Origin evidence in §6 must also fit that parent ceiling; a file omitted because
 it is too large makes the task fail, not become an apparently complete dataset.
 
@@ -264,7 +267,7 @@ has landed. Proposed responsibilities:
 | `quant_dataset_jobs` / `quant_dataset_claims` | independent lease/deadline/status and durable receipt |
 | `quant_dataset_stages` / `quant_dataset_parts` | immutable staged manifests/actual R2 receipts; no arrays in D1 |
 | `quant_research_datasets` | owner/id, datasetRoot, status and compact summary |
-| `quant_dataset_components` | bounded descriptors and content-addressed references |
+| `quant_experiment_datasets` | datasetRef/profile pinned to each saved experiment version |
 | `quant_dataset_coverage` | bounded indexed coverage rows for real pagination |
 | `quant_dataset_dependencies` | exact source bundle/input/preparation/publication/registry refs, including original bytes |
 | `quant_run_datasets` | run+dataset+profile, actual numerical/config/resource roots and source closure identity |
@@ -307,7 +310,7 @@ The user must see these distinct evidence levels; absence is never labelled clos
 
 The independent reviewer recommends a versioned dataset extension instead of a
 third companion archive. **Propose `atlas.quant.research_dataset/2`**, with a fixed
-`snapshot_scope_origin` component in the same typed root/dependency closure. Keep
+`marketOrigin` component in the same typed root/dependency closure. Keep
 existing dataset/1 bytes, whitelist, CLI and readers unchanged. Do not extend the
 old version's accepted components silently. The hosted ref retains the same four
 keys but explicitly says version 2; this version change has root approval.
@@ -318,7 +321,7 @@ core proposal is typed canonical JSON with raw UTF-8 strings for the two origina
 documents; decoding those strings must reproduce their original bytes exactly.
 No numeric reserialization of the original snapshot is permitted. Escaping
 overhead is measured as stored, not excluded from the parent budget. The proposed
-new dataset profile is `financial_snapshot_compose_50_v2`; the old
+new dataset profile is `financial_snapshot_view_50_v1`; the old
 `financial_compose_50_v1` profile keeps all existing v1 rules. Snapshot
 bytes are reconstructed from the pinned source snapshotRows chunks before any
 normalization. The original manifest and snapshot document SHA remain verifiable;

@@ -15,7 +15,9 @@ export function createReportSource({ api, render }) {
         .sort(([a], [b]) => a.localeCompare(b))
     );
   const identity = () => `${runId}:${transport?.bundleId}`;
-  const enabled = () => transport?.format === 'atlas.quant.bundle' && transport.version === 1;
+  const enabled = () =>
+    ['atlas.quant.bundle', 'atlas.quant.financial_bundle'].includes(transport?.format) &&
+    transport.version === 1;
   const base = () => `/runs/${encodeURIComponent(runId)}/report`;
 
   function bind(next, nextRunId) {
@@ -96,7 +98,7 @@ export function createReportSource({ api, render }) {
         ...state.params,
         bundleId: transport.bundleId,
         offset: state.offset,
-        limit: 25,
+        limit: 25
       });
       entry = {
         key,
@@ -107,7 +109,7 @@ export function createReportSource({ api, render }) {
         loaded: false,
         error: '',
         value: null,
-        path: `${base()}/pages?${params}`,
+        path: `${base()}/pages?${params}`
       };
       retain(key, entry);
       start(entry, entry.path);
@@ -118,7 +120,7 @@ export function createReportSource({ api, render }) {
       total: entry.value?.total,
       hasMore: !!entry.value?.hasMore,
       previous: state.previous.length > 0,
-      related: entry.value?.related || {},
+      related: entry.value?.related || {}
     };
   }
   function chart() {
@@ -132,7 +134,7 @@ export function createReportSource({ api, render }) {
         loaded: false,
         error: '',
         value: null,
-        path: `${base()}/chart?${new URLSearchParams({ bundleId: transport.bundleId })}`,
+        path: `${base()}/chart?${new URLSearchParams({ bundleId: transport.bundleId })}`
       };
       retain(key, entry);
       start(entry, entry.path);
@@ -181,7 +183,7 @@ export function createReportSource({ api, render }) {
     diagnostics: () => ({
       cachedPages: cache.size,
       maxCachedPages,
-      generation,
-    }),
+      generation
+    })
   };
 }

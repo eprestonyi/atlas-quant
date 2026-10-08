@@ -1,3 +1,5 @@
+import financialDefinitions from '../financial/definitions.json' with { type: 'json' };
+const financialStateIds = new Set(financialDefinitions.items.map(x => x.id));
 import { ApiError } from '../errors.mjs';
 import { validateBindings, validateExpression, validateUniverseState } from '../validation.mjs';
 
@@ -286,7 +288,7 @@ export function validateStatisticalQuant(input) {
     model.family === 'fundamental' &&
     !predictorFields.some(
       (f) =>
-        /^(fd|pcd)_/.test(f) ||
+        /^(fd|pcd)_/.test(f) || financialStateIds.has(f) ||
         [
           'pe',
           'pe_ttm',

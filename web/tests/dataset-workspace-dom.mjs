@@ -1,0 +1,267 @@
+/** Real application + DOM events, explicit HTTP doubles; not browser acceptance. */
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { build } from 'esbuild';
+import { JSDOM } from 'jsdom';
+const dom = new JSDOM(
+    '<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>',
+    {
+      url: 'http://dataset.localhost/quant/#quant/studio/datasets/source',
+      runScripts: 'outside-only',
+      pretendToBeVisual: true,
+    },
+  ),
+  w = dom.window;
+w.matchMedia = () => ({ matches: false, addEventListener() {} });
+w.structuredClone = structuredClone;
+w.scrollTo = () => {};
+const root = 'a'.repeat(64),
+  datasetId = '11111111-1111-4111-8111-111111111111',
+  stateId = 'model_fin_cash_asset_share',
+  scope = { symbols: ['600000.SH'], start: '20240101', end: '20241231' },
+  ref = {
+    datasetId,
+    datasetRoot: root,
+    format: 'atlas.quant.research_dataset',
+    version: 2,
+  },
+  financialRef = {
+    inputId: datasetId,
+    preparationId: datasetId,
+    inputRoot: root,
+    packRoot: root,
+    preparedRoot: root,
+    calendarRoot: root,
+  },
+  detail = {
+    datasetRef: ref,
+    name: '合成固定来源',
+    scope,
+    status: 'ready',
+    summary: {
+      marketRows: 243,
+      availableStateCoverage: 1,
+      stateCoverage: 1,
+      selectedStateIds: [stateId],
+    },
+    researchAdmission: { profile: 'financial_snapshot_view_50_v1' },
+    researchBindingEnabled: true,
+    archiveUrl:
+      '/quant/api/datasets/' + datasetId + '/archive?datasetRoot=' + root,
+  };
+const calls = [];
+let planFailures = 1,
+  lastPlan = null,
+  releaseInitial;
+const initialGate = new Promise((r) => (releaseInitial = r));
+w.fetch = async (url, opts = {}) => {
+  const path = String(url).replace('/quant/api', ''),
+    data = opts.body ? JSON.parse(opts.body) : null;
+  calls.push({ path, data });
+  let value = { items: [], total: 0 };
+  if (path === '/dataset-capabilities') {
+    await initialGate;
+    value = {
+      enabled: true,
+      profile: 'financial_snapshot_view_50_v1',
+      composition: { online: true },
+      researchBindingEnabled: true,
+    };
+  } else if (path === '/financial/definitions')
+    value = { items: [{ id: stateId, name: '现金资产占比' }] };
+  else if (path.startsWith('/datasets/sources/markets'))
+    value = {
+      items: [
+        {
+          name: '明确合成行情',
+          scope,
+          synthetic: true,
+          rowCount: 243,
+          sourceLabel: 'fixture',
+          sourceRef: {
+            kind: 'forecast_snapshot_view',
+            runId: datasetId,
+            expectedBundleId: root,
+            expectedSnapshotSha256: root,
+          },
+          eligibility: { status: 'eligible' },
+        },
+      ],
+      total: 1,
+    };
+  else if (path.startsWith('/datasets/sources/financial'))
+    value = {
+      items: [
+        {
+          name: '已准备合成输入',
+          financialRef,
+          selection: { ...scope, selectedStateIds: [stateId] },
+          unitPolicy: 'allow_declared',
+          hasUsableStates: true,
+        },
+      ],
+      total: 1,
+    };
+  else if (path === '/dataset-plans') {
+    lastPlan = data;
+    if (planFailures-- > 0) throw Error('明确网络失败，选择保留');
+    value = { plan: { id: datasetId, planRoot: root, knownSourceBytes: 2048 } };
+  } else if (path.includes('/start'))
+    value = { preparation: { id: datasetId, status: 'queued' } };
+  else if (path.startsWith('/dataset-preparations/'))
+    value = {
+      preparation: { id: datasetId, status: 'completed' },
+      datasetRef: ref,
+    };
+  else if (path.startsWith('/datasets/' + datasetId + '/coverage'))
+    value = {
+      items: [
+        {
+          symbol: '600000.SH',
+          stateId,
+          okRows: 183,
+          missingRows: 60,
+          firstObserved: '20240401',
+          lastObserved: '20241231',
+          latestPeriodEnd: '20231231',
+        },
+      ],
+      total: 1,
+    };
+  else if (path.startsWith('/datasets/' + datasetId + '?')) value = detail;
+  else if (path === '/statistical-quant/experiments' && opts.method === 'POST')
+    value = {
+      experiment: {
+        id: datasetId,
+        version: 1,
+        strategy: data.strategy,
+        datasetBinding: {
+          datasetRef: data.datasetRef,
+          admissionProfile: data.admissionProfile,
+          scope,
+        },
+      },
+    };
+  else if (path.endsWith('/run'))
+    value = { job: { id: datasetId, status: 'queued' } };
+  return { ok: true, status: 200, text: async () => JSON.stringify(value) };
+};
+const code = await build({
+  entryPoints: ['web/main.js'],
+  bundle: true,
+  write: false,
+  format: 'iife',
+  plugins: [
+    {
+      name: 'no-init',
+      setup(b) {
+        b.onLoad({ filter: /\/web\/app\.js$/ }, async (a) => ({
+          contents: (await fs.readFile(a.path, 'utf8')).replace(
+            '  init();',
+            '  window.qa={state,workspace,parseRoute,render};',
+          ),
+          loader: 'js',
+        }));
+      },
+    },
+  ],
+});
+w.eval(code.outputFiles[0].text);
+const q = w.qa;
+const tick = () => new Promise((r) => setTimeout(r, 35));
+async function route(hash) {
+  w.location.hash = hash;
+  q.parseRoute();
+  q.render();
+  await q.workspace.routeChanged();
+  await tick();
+}
+const click = (a) => {
+    const el = w.document.querySelector(`[data-ds="${a}"]`);
+    assert(el, a);
+    el.click();
+  },
+  input = (selector, value) => {
+    const el = w.document.querySelector(selector);
+    el.value = value;
+    el.dispatchEvent(new w.Event('input', { bubbles: true }));
+  };
+q.parseRoute();
+q.render();
+q.workspace.routeChanged();
+await tick();
+assert(w.document.querySelector('main').textContent.includes('正在读取'));
+assert(!w.document.querySelector('main').textContent.includes('没有可组成'));
+releaseInitial();
+await tick();
+await tick();
+click('choose-market');
+await tick();
+assert(w.location.hash.endsWith('/scope'));
+assert.equal(w.document.querySelectorAll('[data-ds-symbol]').length, 1);
+click('scope-next');
+await tick();
+click('toggle-financial');
+click('review');
+await tick();
+input('#ds-name', '保留当前数据集名');
+click('plan');
+await tick();
+assert(w.document.querySelector('main').textContent.includes('明确网络失败'));
+assert.equal(w.document.querySelector('#ds-name').value, '保留当前数据集名');
+const firstRequest = lastPlan.requestId;
+click('plan');
+await tick();
+assert.equal(lastPlan.requestId, firstRequest);
+assert.equal(lastPlan.marketSource.transform.mode, 'exact');
+assert(!Object.hasOwn(lastPlan, 'marketCalendarRef'));
+click('start');
+await tick();
+await tick();
+assert(w.document.querySelector('main').textContent.includes('已生成数据集'));
+click('open-job-dataset');
+await tick();
+await tick();
+assert(w.document.querySelector('main').textContent.includes('2024-04-01'));
+assert(
+  w.document.querySelector('a[download]').href.includes('archive?datasetRoot='),
+);
+click('bind');
+await tick();
+assert.equal(q.state.dataSource, 'ready_dataset');
+assert.deepEqual(
+  JSON.parse(JSON.stringify(q.state.datasetBinding.datasetRef)),
+  ref,
+);
+assert.equal(q.state.strategy.model.estimator, 'ridge');
+assert.equal(q.state.strategy.execution.enabled, false);
+await route('#quant/universe');
+assert(!w.document.querySelector('[data-sq-config="universe.start"]'));
+assert(
+  w.document.querySelector('main').textContent.includes('已冻结的研究范围'),
+);
+await route('#quant/model');
+assert(
+  w.document.querySelector('main').textContent.includes('基本面 / Ridge 预测'),
+);
+assert(!w.document.querySelector('[data-sq-config="model.family"]'));
+await q.workspace.save();
+const saved = calls.find((x) => x.path === '/statistical-quant/experiments');
+assert.deepEqual(saved.data.datasetRef, ref);
+assert.equal(saved.data.admissionProfile, 'financial_snapshot_view_50_v1');
+q.workspace.datasets.dispose();
+q.workspace.financial.dispose();
+dom.window.close();
+console.log(
+  JSON.stringify({
+    realDOM: true,
+    httpDoubles: true,
+    loadingNotEmpty: true,
+    independentSteps: 4,
+    idempotentPlanRetry: true,
+    inputRetention: true,
+    coverageObservedDates: true,
+    explicitForecastOnlyBinding: true,
+    browserVisualAcceptance: false,
+  }),
+);

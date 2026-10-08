@@ -76,5 +76,80 @@
     "expectedSnapshotSha256",
     "transform"
   ],
-  "transformKeys": ["kind", "version", "mode", "symbols", "start", "end"]
+  "transformKeys": ["kind", "version", "mode", "symbols", "start", "end"],
+  "researchClaimCapabilities": {
+    "datasetFormats": ["atlas.quant.research_dataset/2"],
+    "snapshotFormats": ["financial_json_v1"],
+    "transportFormats": ["atlas.quant.financial_bundle/1"]
+  },
+  "researchInputKeys": [
+    "job",
+    "datasetRef",
+    "admissionProfile",
+    "sourceEvidence",
+    "manifest",
+    "partUrlTemplate",
+    "registry",
+    "limits"
+  ],
+  "researchInputJobKeys": ["id", "kind"],
+  "researchRegistryPageKeys": ["items", "total", "offset", "nextOffset"],
+  "researchRegistryItemKeys": ["ref", "kind", "sha256", "byteLength", "url"],
+  "researchDatasetRefKeys": ["datasetId", "datasetRoot", "format", "version"],
+  "researchSourceEvidenceKeys": ["datasetRef", "admissionProfile"],
+  "researchManifestKeys": ["sha256", "byteLength", "url"],
+  "researchInputExample": {
+    "job": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "kind": "forecast"
+    },
+    "datasetRef": {
+      "datasetId": "22222222-2222-4222-8222-222222222222",
+      "datasetRoot": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "format": "atlas.quant.research_dataset",
+      "version": 2
+    },
+    "admissionProfile": "financial_snapshot_view_50_v1",
+    "sourceEvidence": {
+      "datasetRef": {
+        "datasetId": "22222222-2222-4222-8222-222222222222",
+        "datasetRoot": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "format": "atlas.quant.research_dataset",
+        "version": 2
+      },
+      "admissionProfile": "financial_snapshot_view_50_v1"
+    },
+    "manifest": {
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "byteLength": 12500,
+      "url": "/quant/api/runner/research-datasets/11111111-1111-4111-8111-111111111111/manifest?datasetRoot=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "partUrlTemplate": "/quant/api/runner/research-datasets/11111111-1111-4111-8111-111111111111/parts/{componentId}/{ordinal}?datasetRoot=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "registry": {
+      "count": 1,
+      "totalBytes": 12000,
+      "listUrl": "/quant/api/runner/research-datasets/11111111-1111-4111-8111-111111111111/registry?datasetRoot=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&offset=0"
+    },
+    "limits": {
+      "inputMetadataBytes": 262144,
+      "sourceManifestBytes": 524288,
+      "sourceSnapshotBytes": 25165824,
+      "sourceChunkBytes": 8388608,
+      "registryEntryBytes": 262144,
+      "registryTotalBytes": 33554432,
+      "packageBytes": 25165824,
+      "closureBytes": 67108864,
+      "manifestBytes": 262144,
+      "partBytes": 524288,
+      "parts": 256,
+      "components": 32,
+      "financialInputs": 8,
+      "marketRows": 110000,
+      "symbols": 50,
+      "leaseSeconds": 120,
+      "heartbeatSeconds": 20,
+      "deadlineSeconds": 600,
+      "registryEntries": 2057
+    }
+  }
 }
