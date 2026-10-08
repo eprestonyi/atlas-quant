@@ -9,6 +9,7 @@ import {
   experimentScope,
   experimentScopeStatement,
 } from "../market-preparation/scope.mjs";
+import { validateScopeRef } from "../market-preparation/common.mjs";
 import {
   admitDatasetResearch,
   experimentDatasetBinding,
@@ -45,6 +46,12 @@ const sameDatasetRef = (a, b) =>
   ["datasetId", "datasetRoot", "format", "version"].every(
     (key) => a?.[key] === b?.[key],
   );
+const sameScopeRef = (a, b) => {
+  validateScopeRef(a);
+  return ["scopeId", "scopeRoot", "format", "version"].every(
+    (key) => a[key] === b?.[key],
+  );
+};
 const pagination = (req) => {
   const p = new URL(req.url).searchParams,
     page = Number(p.get("page") ?? 1),
@@ -450,7 +457,7 @@ export async function statisticalQuantPrivate(
       const savedScope = await experimentScope(env, owner, id, row.version);
       if (
         input.universeScopeRef !== undefined &&
-        !same(input.universeScopeRef, savedScope)
+        !sameScopeRef(input.universeScopeRef, savedScope)
       )
         throw new ApiError(
           "UNIVERSE_RUN_BINDING",

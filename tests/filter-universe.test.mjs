@@ -69,7 +69,12 @@ async function fixture() {
 }
 async function freeze(x, override = {}) {
   const resolved = await (
-    await x.request("/universes/resolve", "POST", { selection }, x.cookie)
+    await x.request(
+      "/universes/resolve",
+      "POST",
+      { selection: override.selection ?? selection },
+      x.cookie,
+    )
   ).json();
   const input = {
     selection,
@@ -474,6 +479,112 @@ test("scope binding and experiment revision roll back atomically; concurrent edi
       .bind(e.id)
       .first();
     assert.equal(head.spec, versions.results[1].spec);
+  } finally {
+    await x.mf.dispose();
+  }
+});
+
+test("run scope identity is key-order independent but rejects changed identity, schema and owner before enqueue", async () => {
+  const x = await fixture();
+  try {
+    const { value: f } = await freeze(x, {
+      selection: {
+        version: 1,
+        includeGroups: [],
+        includeSymbols: symbols.slice(0, 3),
+      },
+    });
+    const saved = await x.request(
+      "/statistical-quant/experiments",
+      "POST",
+      { strategy: strategy(f.scope), universeScopeRef: f.scopeRef },
+      x.cookie,
+    );
+    assert.equal(saved.status, 201, await saved.clone().text());
+    const e = (await saved.json()).experiment,
+      path = "/statistical-quant/experiments/" + e.id + "/run",
+      base = { version: 1, dataSource: "demo" },
+      reordered = Object.fromEntries(
+        Object.entries(f.scopeRef).sort(([a], [b]) => a.localeCompare(b)),
+      );
+    assert.notEqual(JSON.stringify(reordered), JSON.stringify(f.scopeRef));
+    assert.deepEqual(reordered, f.scopeRef);
+    const accepted = await x.request(
+      path,
+      "POST",
+      { ...base, universeScopeRef: reordered },
+      x.cookie,
+    );
+    assert.equal(accepted.status, 202, await accepted.clone().text());
+    const job = (await accepted.json()).job;
+    const jobCount = async () =>
+      (await x.db.prepare("SELECT count(*) n FROM jobs").first()).n;
+    assert.equal(await jobCount(), 1);
+    const invalid = [
+      [
+        { ...reordered, scopeId: "00000000-0000-0000-0000-000000000000" },
+        409,
+        "UNIVERSE_RUN_BINDING",
+      ],
+      [
+        { ...reordered, scopeRoot: "f".repeat(64) },
+        409,
+        "UNIVERSE_RUN_BINDING",
+      ],
+      [
+        { ...reordered, format: "atlas.quant.market_dataset" },
+        400,
+        "INVALID_SCOPE",
+      ],
+      [{ ...reordered, version: 2 }, 400, "INVALID_SCOPE"],
+      [{ ...reordered, version: "1" }, 400, "INVALID_SCOPE"],
+      [{ ...reordered, extra: true }, 400, "INVALID_SCOPE"],
+      [{ ...reordered, owner: "foreign-owner" }, 400, "INVALID_SCOPE"],
+      [{ ...reordered, scopeId: 1 }, 400, "INVALID_SCOPE"],
+      [{ ...reordered, scopeRoot: null }, 400, "INVALID_SCOPE"],
+      [
+        Object.fromEntries(
+          Object.entries(reordered).filter(([key]) => key !== "version"),
+        ),
+        400,
+        "INVALID_SCOPE",
+      ],
+      [null, 400, "INVALID_STATISTICAL_QUANT"],
+      [[], 400, "INVALID_SCOPE"],
+    ];
+    for (const [universeScopeRef, status, code] of invalid) {
+      const rejected = await x.request(
+        path,
+        "POST",
+        { ...base, universeScopeRef },
+        x.cookie,
+      );
+      assert.equal(rejected.status, status, JSON.stringify(universeScopeRef));
+      assert.equal(
+        (await rejected.json()).error.code,
+        code,
+        JSON.stringify(universeScopeRef),
+      );
+      assert.equal(await jobCount(), 1);
+    }
+    const other = await x.request("/session"),
+      otherCookie = other.headers.get("set-cookie").split(";")[0];
+    const foreign = await x.request(
+      path,
+      "POST",
+      { ...base, universeScopeRef: reordered },
+      otherCookie,
+    );
+    assert.equal(foreign.status, 404);
+    assert.equal(await jobCount(), 1);
+    const binding = await x.db
+      .prepare("SELECT scope_id,scope_root FROM quant_run_scopes WHERE job_id=?")
+      .bind(job.id)
+      .first();
+    assert.deepEqual(binding, {
+      scope_id: f.scopeRef.scopeId,
+      scope_root: f.scopeRef.scopeRoot,
+    });
   } finally {
     await x.mf.dispose();
   }
