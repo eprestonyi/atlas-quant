@@ -139,6 +139,45 @@ async function finish(fixture, claim, stage) {
 }
 test.after(() => mf.dispose());
 
+test('private bundle archives require ownership, publication and exact bundle identity', async () => {
+  const f = bundleFixture(), q = await queued(f), s = await begin(f, q.claim);
+  const route = `/runs/${q.claim.id}/report/bundle?bundleId=${f.bundleId}`;
+  assert.equal((await call(route, {cookie:await session()})).status, 404);
+  assert.equal((await call(route, {cookie:q.cookie})).status, 409);
+  await upload(f,q.claim,s);
+  await finish(f,q.claim,s);
+  assert.equal((await call(route.replace(f.bundleId,'0'.repeat(64)), {cookie:q.cookie})).status,409);
+  const response=await call(route,{cookie:q.cookie});
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get('content-type'),'application/x-tar');
+  assert.equal(response.headers.get('cache-control'),'private, no-store');
+  assert.equal(response.headers.get('x-atlas-quant-bundle-id'),f.bundleId);
+  assert.equal(response.headers.get('content-disposition'),`attachment; filename="atlas-quant-${q.claim.id}-bundle.tar"`);
+  const raw=Buffer.from(await response.arrayBuffer());
+  assert.equal(Number(response.headers.get('content-length')),raw.length);
+  assert.equal(raw.subarray(0,13).toString(),'manifest.json');
+  const size=parseInt(raw.subarray(124,135).toString(),8);
+  assert.equal(raw.subarray(512,512+size).toString(),f.manifestText);
+  assert(raw.subarray(-1024).equals(Buffer.alloc(1024)));
+  const second=Buffer.from(await (await call(route,{cookie:q.cookie})).arrayBuffer());
+  assert(raw.equals(second),'same committed bytes must produce same archive');
+  const summary=await payload(await call(`/runs/${q.claim.id}/report`,{cookie:q.cookie}));
+  assert.equal(summary.transport.bundleDownloadUrl,'/quant/api'+route);
+  assert.equal(summary.transport.hasFrozenInputs,true);
+});
+
+test('bad private R2 bytes abort archive download without changing a published run', async () => {
+  const f=bundleFixture(),q=await queued(f),s=await begin(f,q.claim);
+  await upload(f,q.claim,s);await finish(f,q.claim,s);
+  const row=await db.prepare("SELECT object_key FROM quant_bundle_chunks WHERE stage_id=? AND collection='forecasts' AND ordinal=0").bind(s.stageId).first();
+  const original=await (await bucket.get(row.object_key)).text();
+  await bucket.put(row.object_key,' '.repeat(Buffer.byteLength(original)));
+  const response=await call(`/runs/${q.claim.id}/report/bundle?bundleId=${f.bundleId}`,{cookie:q.cookie});
+  await assert.rejects(response.arrayBuffer());
+  assert.equal((await db.prepare('SELECT status FROM jobs WHERE id=?').bind(q.claim.id).first()).status,'completed');
+  await bucket.put(row.object_key,original);
+});
+
 test("strict manifest rejects false layout, missing collections, sensitive keys and duplicate keys", async () => {
   const f = bundleFixture();
   assert.equal(

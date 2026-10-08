@@ -121,6 +121,8 @@ const transport = {
     equity: { total: 2000 },
   },
   downloadUrl: '/quant/api/runs/run-a/report/download',
+  bundleDownloadUrl: '/quant/api/runs/run-a/report/bundle?bundleId=fixture',
+  hasFrozenInputs: true,
 };
 const original = JSON.stringify(report);
 function freeze(value) {
@@ -267,6 +269,9 @@ assert.equal(requests.length, 1, 'first render reads only one forecast page');
 assert(document.querySelector('main').textContent.includes('当前 1–2 条'));
 assert(document.querySelector('main').textContent.includes('完整产物已提交'));
 assert.equal(document.querySelector('a[download]').getAttribute('href'), transport.downloadUrl);
+const packLink = [...document.querySelectorAll('a[download]')].find(x=>x.textContent==='下载私有复现包');
+assert.equal(packLink?.getAttribute('href'), transport.bundleDownloadUrl);
+assert(document.querySelector('main').textContent.includes('包含冻结行情、预测与来源'));
 const recordLookup = document.querySelector('#sq-forecast-search').closest('details');
 assert(recordLookup && !recordLookup.open, 'technical record ID lookup is collapsed initially');
 assert.equal(recordLookup.querySelector('summary').textContent, '按记录编号定位');
