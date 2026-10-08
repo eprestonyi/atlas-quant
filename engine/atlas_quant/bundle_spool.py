@@ -15,11 +15,15 @@ from .bundle import (BundleReader, CHUNK_LIMIT, MANIFEST_LIMIT, COLLECTIONS,
 
 
 class BundleSpool:
+    DIRECTORY = "bundles"
+    AAD_TAG = b":bundle-v1:"
+    MAGIC = b"AQB1"
+
     def __init__(self, context):
         self.context = context
         identity = context["identity"]
         self.key = hashlib.sha256((identity["id"] + "\0" + identity["leaseToken"]).encode()).hexdigest()
-        parent = Path(context["root"]) / "bundles"
+        parent = Path(context["root"]) / self.DIRECTORY
         if not parent.is_absolute() or parent.is_symlink():
             fail("DELIVERY_PATH", "分片目录必须是私有绝对路径。")
         parent.mkdir(mode=0o700, exist_ok=True)
@@ -30,7 +34,7 @@ class BundleSpool:
         if any(stat.S_IMODE(path.stat().st_mode) & 0o077 for path in (parent, self.root)):
             fail("DELIVERY_PERMISSIONS", "分片目录权限须为0700。")
         self.cipher = AESGCM(context["encryptionKey"])
-        self.aad = context["aad"] + b":bundle-v1:" + self.key.encode()
+        self.aad = context["aad"] + self.AAD_TAG + self.key.encode()
 
     @staticmethod
     def context_for(completion_spool, identity):
@@ -57,7 +61,7 @@ class BundleSpool:
             fail("BUNDLE_SIZE", "分片文件超出硬上限。")
         target = self._path(name)
         nonce = os.urandom(12)
-        data = b"AQB1" + nonce + self.cipher.encrypt(nonce, raw, self.aad + b":" + name.encode())
+        data = self.MAGIC + nonce + self.cipher.encrypt(nonce, raw, self.aad + b":" + name.encode())
         temp = self.root / (uuid.uuid4().hex + ".tmp")
         try:
             fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -76,7 +80,7 @@ class BundleSpool:
             if path.is_symlink() or stat.S_IMODE(path.stat().st_mode) & 0o077 or path.stat().st_size > CHUNK_LIMIT+64:
                 raise ValueError()
             raw = path.read_bytes()
-            if raw[:4] != b"AQB1":
+            if raw[:4] != self.MAGIC:
                 raise ValueError()
             return self.cipher.decrypt(raw[4:16], raw[16:], self.aad + b":" + name.encode())
         except Exception:
@@ -124,9 +128,9 @@ class BundleSpool:
             fail("DELIVERY_WRITE", "无法清除已确认分片。")
 
 
-def deliver_bundle(client, spool, payload, *, deadline):
+def deliver_bundle(client, spool, payload, *, deadline, store_type=BundleSpool, route_prefix="bundles"):
     """Retry exact encrypted bytes; never regenerate a model or a manifest."""
-    store = BundleSpool.from_spool(spool, payload)
+    store = store_type.from_spool(spool, payload)
     if payload.get("_bundleKey") != store.key:
         fail("DELIVERY_INTEGRITY", "分片与任务身份不一致。")
     reader = store.reader(payload["bundleId"])
@@ -147,7 +151,7 @@ def deliver_bundle(client, spool, payload, *, deadline):
         return True
     if not active():
         return None
-    response = client.post("bundles/begin", dict(identity, bundleId=reader.bundle_id,
+    response = client.post(route_prefix + "/begin", dict(identity, bundleId=reader.bundle_id,
                                                 manifestText=reader.manifest_raw.decode()), deadline=deadline)
     if response.get("terminalDiscard"):
         return None
@@ -170,14 +174,15 @@ def deliver_bundle(client, spool, payload, *, deadline):
             return None
         raw = store.read_chunk(collection, ordinal)
         ack = client.bundle_chunk("PUT", reader.bundle_id, collection, ordinal,
-                                  identity, raw=raw, stage_id=stage, deadline=deadline)
+                                  identity, raw=raw, stage_id=stage, deadline=deadline,
+                                  **({"namespace": route_prefix} if route_prefix != "bundles" else {}))
         if ack.get("terminalDiscard"):
             return None
         if ack.get("bundleId") != reader.bundle_id or ack.get("collection") != collection or ack.get("ordinal") != ordinal or ack.get("sha256") != sha(raw):
             fail("BUNDLE_PROTOCOL", "分片回执身份不匹配。")
     if not active():
         return None
-    verified = client.post("bundles/finalize", dict(identity, bundleId=reader.bundle_id, stageId=stage), deadline=deadline)
+    verified = client.post(route_prefix + "/finalize", dict(identity, bundleId=reader.bundle_id, stageId=stage), deadline=deadline)
     if verified.get("terminalDiscard"):
         return None
     if verified.get("bundleId") != reader.bundle_id or verified.get("status") not in {"verified", "committed"}:
