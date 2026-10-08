@@ -361,22 +361,55 @@ def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None,
     process.start()
     child.close()
     next_heartbeat = time.monotonic() + 15
+
+    def interrupted():
+        nonlocal next_heartbeat
+        if stop_requested and stop_requested():
+            return {"error": {"code": "RUNNER_STOPPED", "message": "运行服务停止，任务已中止。"}}
+        if time.monotonic() >= deadline:
+            return {"error": {"code": "JOB_TIMEOUT", "message": "研究任务超过运行时间限制。"}}
+        if heartbeat and time.monotonic() >= next_heartbeat:
+            state = heartbeat()
+            if state and (state.get("cancelled") or state.get("leaseValid") is False):
+                return {"error": {"code": "JOB_CANCELLED", "message": "任务已取消或租约失效。"}}
+            next_heartbeat = time.monotonic() + 15
+            # A heartbeat request may itself cross the local stop/deadline.
+            return interrupted()
+        return None
+
+    def receive_reply(*, resource_sampled=False):
+        reason = interrupted()
+        if reason:
+            return reason
+        if market_budget and not resource_sampled and process.is_alive():
+            # A ready reply must not bypass the last live resource sample, even
+            # when the ordinary periodic check is not yet due.
+            market_budget.next_check = 0.0
+            try:
+                market_budget.check(process.pid)
+            except RunnerError as exc:
+                if not (exc.code == "CAPACITY_MONITOR" and not process.is_alive() and parent.poll(0)):
+                    return {"error": _safe_error(exc)}
+        reason = interrupted()
+        if reason:
+            return reason
+        try:
+            answer = parent.recv()
+        except EOFError:
+            return {"error": {"code": "RUNNER_CHILD_EXIT", "message": "研究进程意外退出。"}}
+        # Reading a large legacy response can also consume the remaining budget.
+        return interrupted() or answer
+
     try:
         while True:
-            if stop_requested and stop_requested():
-                return {"error": {"code": "RUNNER_STOPPED", "message": "运行服务停止，任务已中止。"}}
-            if time.monotonic() >= deadline:
-                return {"error": {"code": "JOB_TIMEOUT", "message": "研究任务超过运行时间限制。"}}
+            reason = interrupted()
+            if reason:
+                return reason
             if parent.poll(min(0.2, max(0, deadline-time.monotonic()))):
-                try:
-                    return parent.recv()
-                except EOFError:
-                    return {"error": {"code": "RUNNER_CHILD_EXIT", "message": "研究进程意外退出。"}}
-            if heartbeat and time.monotonic() >= next_heartbeat:
-                state = heartbeat()
-                if state and (state.get("cancelled") or state.get("leaseValid") is False):
-                    return {"error": {"code": "JOB_CANCELLED", "message": "任务已取消或租约失效。"}}
-                next_heartbeat = time.monotonic() + 15
+                return receive_reply()
+            reason = interrupted()
+            if reason:
+                return reason
             if not process.is_alive():
                 if parent.poll(0.1):
                     continue
@@ -389,10 +422,7 @@ def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None,
                     # Accept its already serialized final reply, never skip a
                     # failed sample while a model is still executing.
                     if exc.code == "CAPACITY_MONITOR" and not process.is_alive() and parent.poll(0.2):
-                        try:
-                            return parent.recv()
-                        except EOFError:
-                            pass
+                        return receive_reply(resource_sampled=True)
                     return {"error": _safe_error(exc)}
     finally:
         if process.is_alive():
