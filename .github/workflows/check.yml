@@ -30,6 +30,7 @@ jobs:
       - run: node web/tests/research-dom.mjs
       - run: node web/tests/statistical-dom.mjs
       - run: node web/tests/financial-workspace-dom.mjs
+      - run: node web/tests/financial-acquisition-dom.mjs
       - run: node web/tests/sharded-report-dom.mjs
       - run: node web/tests/studio-semantics-dom.mjs
       - run: node web/tests/studio-evidence-adversarial-dom.mjs

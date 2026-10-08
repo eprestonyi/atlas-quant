@@ -1,8 +1,10 @@
+import {createFinancialAcquisition} from './acquisition.js';
 /** Financial inputs are separate from research configurations. This slice never
  * attaches a financial component to a run or labels preparation as F readiness. */
 export function createFinancialWorkspace(C, F) {
   const { esc: e, api, render, toast, state: app } = C;
   const { panel, note, empty, advanced } = F;
+  const acquisition=createFinancialAcquisition(C,F);
   const state = {
     cap: null,
     definitions: null,
@@ -95,6 +97,7 @@ export function createFinancialWorkspace(C, F) {
     return (
       title('财务输入工作区', '冻结报表、核对单位与披露时点，再生成可追溯的研究状态。') +
       busyError() +
+      panel('从授权数据源开始', '<p>先选择股票、年报期和观察区间，核对实际请求与缓存预算，再明确开始。获取能力以当前授权和服务状态为准。</p><a class="sq-button" href="#quant/studio/financial/acquire/source">查看自助来源获取</a>') +
       (state.cap && !state.cap.enabled
         ? note('财务工作区尚未启用。已有定义可以查看；当前不能上传或开始计算。')
         : '') +
@@ -275,6 +278,7 @@ export function createFinancialWorkspace(C, F) {
     );
   }
   function view() {
+    if(acquisition.active()) return acquisition.render();
     return `<div class="fin-workspace">${state.cap?.enabled && !state.cap.runner.online ? note('财务计算节点暂未在线。已上传输入和草稿保留。', 'warning') + btn('retry', '重新检查服务') : ''}${app.quantEntityId ? renderSource() : renderList()}</div>`;
   }
 
@@ -469,6 +473,8 @@ export function createFinancialWorkspace(C, F) {
   }
   async function routeChanged() {
     cancelTimer();
+    if (acquisition.active()) { await acquisition.routeChanged(); return; }
+    acquisition.dispose();
     if (!current()) {
       state.request++;
       return;
@@ -717,6 +723,7 @@ export function createFinancialWorkspace(C, F) {
     state,
     loadSource,
     loadEvidence,
-    dispose: cancelTimer,
+    acquisition,
+    dispose: ()=>{cancelTimer();acquisition.dispose();},
   };
 }
