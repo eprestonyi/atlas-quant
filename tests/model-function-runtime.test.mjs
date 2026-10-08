@@ -7,7 +7,10 @@ const seal=async(a)=>{delete a.artifactId;a.artifactId=await functionDigest(a);r
 function close(a,b){assert.equal(typeof a,typeof b);if(typeof a==='number')assert(Math.abs(a-b)<=1e-12*Math.max(1,Math.abs(b)),`${a} differs from ${b}`);else if(Array.isArray(a)){assert.equal(a.length,b.length);a.forEach((x,i)=>close(x,b[i]));}else if(a&&typeof a==='object'){assert.deepEqual(Object.keys(a).sort(),Object.keys(b).sort());for(const k of Object.keys(a))close(a[k],b[k]);}else assert.equal(a,b);}
 test('Python actual fitted-model golden predictions and canonical identities match JS',async()=>{
   assert.equal(await functionDigest(golden.identityGolden.value),golden.identityGolden.sha256);
-  for(const c of golden.cases){await validateFunction(c.artifact);const r=await evaluateFunction(c.artifact,c.input);close(r.normalizedChanges,c.expected.normalizedChanges);close(r.levels,c.expected.levels);}
+  for(const c of golden.cases){
+    await validateFunction(c.artifact);const r=await evaluateFunction(c.artifact,c.input);close(r.normalizedChanges,c.expected.normalizedChanges);close(r.levels,c.expected.levels);
+    for(const d of c.derivations??[]){const a=await deriveFunction(c.artifact,d.edits);assert.equal(a.artifactId,d.artifactId);const v=await evaluateFunction(a,c.input);close(v.normalizedChanges,d.expected.normalizedChanges);close(v.levels,d.expected.levels);}
+  }
 });
 test('editing coefficients is immutable, changes identity, and cannot inherit fitted evidence',async()=>{
   const c=golden.cases.find(x=>x.name==='ridge'),old=JSON.stringify(c.artifact);
