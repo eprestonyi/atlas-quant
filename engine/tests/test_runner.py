@@ -198,7 +198,7 @@ def test_permanent_result_rejection_converts_to_durable_sanitized_error(tmp_path
                 raise RunnerError("QUEUE_HTTP", "rejected", http_status=status)
             # Confirm sanitized failure was persisted before trying delivery.
             pending = list(CompletionSpool(cfg).pending())
-            assert pending[0][1] == payload
+            assert {k:v for k,v in pending[0][1].items() if not k.startswith("_")} == payload
             if len(self.calls) == 2:
                 raise RunnerError("QUEUE_NETWORK", "transient")
             return {"ok": True, "status": "failed"}

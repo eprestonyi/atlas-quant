@@ -252,7 +252,8 @@ def test_rejection_preserves_claim_identity_and_snapshot_until_terminal_ack(tmp_
     queue.post = reject_snapshot
     runner.flush_completions(queue, spool)
     assert claims.read() is None and not list(spool.pending())
-    assert not list((spool.root / "snapshots").glob("*.enc"))
+    assert list((spool.root / "snapshots").glob("*.enc"))
+    assert list((spool.root / "quarantine").glob("*/record.enc"))
 
 
 def test_unsafe_claim_permissions_or_symlink_stop_before_network(tmp_path, monkeypatch):

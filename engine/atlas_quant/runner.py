@@ -33,9 +33,10 @@ STOP = False
 
 
 class RunnerError(ValueError):
-    def __init__(self, code, message, *, http_status=None):
+    def __init__(self, code, message, *, http_status=None, remote_code=None):
         self.code = code
         self.http_status = http_status
+        self.remote_code = remote_code
         super().__init__(message)
 
 
@@ -375,7 +376,7 @@ def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None,
                     # A completed child can disappear between is_alive and ps.
                     # Accept its already serialized final reply, never skip a
                     # failed sample while a model is still executing.
-                    if parent.poll(0.2):
+                    if exc.code == "CAPACITY_MONITOR" and not process.is_alive() and parent.poll(0.2):
                         try:
                             return parent.recv()
                         except EOFError:
@@ -389,6 +390,27 @@ def execute_bounded(job, *, timeout=DEFAULT_TIMEOUT, token=None, cache_dir=None,
             process.kill()
             process.join(timeout=3)
         parent.close()
+
+
+def _http_rejection(response):
+    """Keep only a bounded machine code; never retain server message/body text."""
+    remote = None
+    try:
+        parts, size = [], 0
+        for block in response.iter_content(4096):
+            size += len(block)
+            if size > 4096:
+                break
+            parts.append(block)
+        else:
+            value = json.loads(b"".join(parts))
+            candidate = value.get("error", value) if isinstance(value, dict) else None
+            candidate = candidate.get("code") if isinstance(candidate, dict) else None
+            if isinstance(candidate, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{1,79}", candidate):
+                remote = candidate
+    except Exception:
+        pass
+    return RunnerError("QUEUE_HTTP", "队列服务未成功响应。", http_status=response.status_code, remote_code=remote)
 
 
 class QueueClient:
@@ -414,7 +436,7 @@ class QueueClient:
                 timeout=(min(10, remaining), min(35, remaining)), allow_redirects=False, stream=True)
             with response:
                 if response.status_code != 200:
-                    raise RunnerError("QUEUE_HTTP", "队列服务未成功响应。", http_status=response.status_code)
+                    raise _http_rejection(response)
                 parts, size = [], 0
                 for block in response.iter_content(65536):
                     if time.monotonic() > deadline:
@@ -452,7 +474,7 @@ class QueueClient:
             with self.session.request(method, url, data=raw, headers=headers, allow_redirects=False,
                     timeout=(min(10, remaining), min(35, remaining)), stream=True) as response:
                 if response.status_code != 200:
-                    raise RunnerError("QUEUE_HTTP", "分片服务未成功响应。", http_status=response.status_code)
+                    raise _http_rejection(response)
                 parts, size = [], 0
                 for piece in response.iter_content(65536):
                     size += len(piece)
@@ -542,8 +564,15 @@ class CompletionSpool:
 def flush_completions(client, spool):
     from .runner_claims import ClaimIntent, claim_request, validate_receipt
     from .bundle_spool import BundleSpool, deliver_bundle
-    private_keys = {"_snapshotKey", "_claimRequestId", "_bundleKey", "_bundleFormat", "_datasetKey", "_marketKey", "_terminalConfirmed"}
+    private_keys = {"_snapshotKey", "_claimRequestId", "_bundleKey", "_bundleFormat", "_datasetKey", "_marketKey", "_terminalConfirmed", "_quarantined"}
+    from .delivery_quarantine import read as read_quarantine, preserve as preserve_rejection, rejected
     for path, payload in spool.pending():
+        quarantine = read_quarantine(spool, payload)
+        if quarantine is not None and not payload.get("_quarantined"):
+            payload = rejected(payload)
+            path = spool.write(payload)
+        if payload.get("_quarantined") and quarantine is None:
+            raise RunnerError("DELIVERY_QUARANTINE", "缺少原始拒绝证据；停止清理。")
         bundle_format = payload.get("_bundleFormat", "atlas.quant.bundle/1")
         if bundle_format not in {"atlas.quant.bundle/1", "atlas.quant.financial_bundle/1"}:
             raise RunnerError("DELIVERY_INTEGRITY", "未知的持久结果格式；保留原件。")
@@ -620,11 +649,12 @@ def flush_completions(client, spool):
                     if not payload.get("_terminalConfirmed"):
                         payload = dict(payload, _terminalConfirmed=True)
                         path = spool.write(payload)
-                    if bundle_store is not None:
-                        bundle_store.cleanup()
-                    if dataset_store is not None:
-                        dataset_store.cleanup()
-                if snapshot_store is not None:
+                    if not payload.get("_quarantined"):
+                        if bundle_store is not None:
+                            bundle_store.cleanup()
+                        if dataset_store is not None:
+                            dataset_store.cleanup()
+                if snapshot_store is not None and not payload.get("_quarantined"):
                     snapshot_store.acknowledge(snapshot_key)
                 spool.acknowledge(path)
                 delivered = True
@@ -633,9 +663,8 @@ def flush_completions(client, spool):
                 if exc.code.startswith(("CLAIM_", "DELIVERY_", "BUNDLE_PROTOCOL")):
                     raise
                 if submitting_result and exc.http_status in (400, 413) and ("result" in payload or "bundleId" in payload):
-                    payload = {"id": payload["id"], "leaseToken": payload["leaseToken"],
-                               "error": {"code": "RESULT_REJECTED", "message": "研究结果未通过服务端接收校验，此次实验已停止；请检查策略与数据后重新运行。"},
-                               **{key: payload[key] for key in private_keys if key in payload}}
+                    preserve_rejection(spool, payload, exc)
+                    payload = rejected(payload)
                     path = spool.write(payload)
                     continue
                 _wait(min(2**attempt, 10, max(0., delivery_deadline-time.monotonic())) if delivery_deadline is not None else min(2**attempt, 10))
