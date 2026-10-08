@@ -29,6 +29,7 @@ export function createForecastReports(C, F) {
   const functionEditor = createModelFunctionEditor(C, F);
   const financialReport = () => remote.transport?.format === 'atlas.quant.financial_bundle';
   const marketReport = r => !!r.provenance?.marketSource;
+  const factorOnlyReport = r => financialReport() || marketReport(r) || r.execution?.enabled === false;
   function financialSourceRef() {
     const ref = remote.transport?.sourceEvidence?.datasetRef;
     return ref?.format === 'atlas.quant.research_dataset' &&
@@ -216,7 +217,7 @@ export function createForecastReports(C, F) {
       tags
     )
       .map(([id, label]) =>
-        F.button('forecast-tab', (financialReport() || marketReport(r)) && id === 'execution' ? '研究边界' : label, {
+        F.button('forecast-tab', factorOnlyReport(r) && id === 'execution' ? '研究边界' : label, {
           id,
           primary: ui.tab === id,
           pressed: ui.tab === id,
@@ -668,11 +669,11 @@ export function createForecastReports(C, F) {
     );
   }
   function execution(r) {
-    if (financialReport() || marketReport(r))
+    if (factorOnlyReport(r))
       return F.panel(
-        financialReport() ? '仅预测的财务研究' : '仅预测的市场研究',
+        financialReport() ? '仅预测的财务研究' : marketReport(r) ? '仅预测的市场研究' : '因子研究边界',
         F.note(
-          (financialReport() ? '此产物检验财务状态对未来价格的预测' : '此产物检验完整冻结票池的未来状态') + '，没有生成仓位、交易或净值。交易执行与执行重放尚未开放。'
+          (financialReport() ? '此产物检验财务状态对未来价格的预测' : '此产物检验冻结票池的未来状态') + '，没有生成仓位、交易或净值。' + (financialReport() || marketReport(r) ? '交易执行与执行重放尚未开放。' : '策略研究与交易执行将在独立模块接入。')
         ) + '<p>预测误差与历史损失改善不等于可交易收益。</p>'
       );
     const x = r.execution || {},
