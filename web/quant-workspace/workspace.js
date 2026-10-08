@@ -700,8 +700,8 @@ window.AtlasQuantV4 = {
       }
     }
     const scopeKey = universe => JSON.stringify({ selection: universe.selection, resolutionHash: universe.resolutionHash, snapshotHash: universe.snapshotHash, symbols: universe.symbols, start: universe.start, end: universe.end });
-    async function freezeScope(universe) {
-      if (!universe.selection || s.dataSource === 'ready_dataset') return null;
+    async function freezeScope(universe, dataSource) {
+      if (!universe.selection || dataSource === 'ready_dataset') return null;
       const key = scopeKey(universe);
       if (ui.universeScope?.key === key) return clone(ui.universeScope.ref);
       const response = await api('/universe-scopes', {
@@ -731,12 +731,14 @@ window.AtlasQuantV4 = {
       ui.pageErrors = []; // Keep the submitted version separate from inputs that change while the request is in flight.
       const draft = s.strategy,
         submitted = clone(draft),
+        submittedSource = s.dataSource,
+        submittedDatasetBinding = s.datasetBinding ? clone(s.datasetBinding) : null,
         id = ui.activeId,
         version = ui.activeVersion;
       s.saving = true;
       render();
       try {
-        const universeScopeRef = await freezeScope(submitted.universe);
+        const universeScopeRef = await freezeScope(submitted.universe, submittedSource);
         const response = await api(
           id
             ? '/statistical-quant/experiments/' + encodeURIComponent(id)
@@ -746,10 +748,10 @@ window.AtlasQuantV4 = {
             body: JSON.stringify({
               strategy: submitted,
               ...(universeScopeRef ? { universeScopeRef } : {}),
-              ...(s.dataSource === 'ready_dataset' && s.datasetBinding
+              ...(submittedSource === 'ready_dataset' && submittedDatasetBinding
                 ? {
-                    datasetRef: s.datasetBinding.datasetRef,
-                    admissionProfile: s.datasetBinding.admissionProfile,
+                    datasetRef: submittedDatasetBinding.datasetRef,
+                    admissionProfile: submittedDatasetBinding.admissionProfile,
                   }
                 : {}),
               ...(id ? { version } : {}),
@@ -757,7 +759,7 @@ window.AtlasQuantV4 = {
           },
         );
         const item = response.experiment || response.item || response;
-        const sameDraft = s.strategy === draft && ui.activeId === id;
+        const sameDraft = s.strategy === draft && ui.activeId === id && s.dataSource === submittedSource && JSON.stringify(s.datasetBinding || null) === JSON.stringify(submittedDatasetBinding);
         if (sameDraft) {
           ui.activeId = item.id;
           ui.activeVersion = item.version;

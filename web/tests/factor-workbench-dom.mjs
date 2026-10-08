@@ -9,7 +9,7 @@ w.structuredClone = structuredClone;
 w.scrollTo = () => {};
 w.matchMedia = () => ({ matches: false, addEventListener() {} });
 const symbols = Array.from({ length: 1000 }, (_, n) => `${600000 + n}.SH`);
-let saved, savedPayload;
+let saved, savedPayload, scopeGate;
 const scopeRequests = [];
 w.fetch = async (url, options = {}) => {
   const path = String(url), body = options.body ? JSON.parse(options.body) : null;
@@ -21,6 +21,7 @@ w.fetch = async (url, options = {}) => {
     catalogSnapshot: { hash: 'a'.repeat(64), asOf: '2026-10-08', historicalMembershipVerified: false }, steps: [],
   };
   if (path.endsWith('/universe-scopes')) {
+    if (scopeGate) await scopeGate;
     scopeRequests.push(body);
     result = { scopeRef: { scopeId: 'scope-' + scopeRequests.length, scopeRoot: 'c'.repeat(64), format: 'atlas.quant.universe_scope', version: 1 }, scope: { symbols, symbolCount: symbols.length, start: body.start, end: body.end } };
   }
@@ -109,6 +110,19 @@ q.studio.flow.reset(); q.render();
 assert(q.validateStrategy().some(x => x.includes('完整筛选集合')));
 s.strategy.universe = preservedUniverse;
 q.studio.flow.reset(); q.render();
+// A delayed scope freeze belongs to the submitted study, even if another data binding is chosen.
+let releaseScope;
+scopeGate = new Promise(resolve => { releaseScope = resolve; });
+s.strategy.universe.start = '20240301';
+s.dirty = true;
+const pendingSave = q.workspace.save();
+await tick();
+s.dataSource = 'ready_dataset';
+s.datasetBinding = { datasetRef: { datasetId: 'other-dataset', datasetRoot: 'd'.repeat(64) }, admissionProfile: 'other-profile' };
+releaseScope(); await pendingSave; scopeGate = null;
+assert(!Object.hasOwn(savedPayload, 'datasetRef'), 'late binding must not contaminate older save');
+assert(s.dirty, 'data source change is not marked saved by the old response');
+s.dataSource = 'tushare'; s.datasetBinding = null;
 for (const path of ['strategies', 'instruments', 'monitor']) {
   await route('easy/' + path);
   assert(!w.document.querySelector('[data-sq="run"]'));
