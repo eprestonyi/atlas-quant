@@ -11,7 +11,7 @@ import pytest
 from atlas_quant import bundle
 from atlas_quant.fixtures import make_demo_data
 from atlas_quant.runner_artifacts import freeze_input
-from atlas_quant.statistical_quant.schema import validate
+from atlas_quant.statistical_quant.schema import validate, digest, prediction_config
 from atlas_quant.research_dataset import (
     DatasetError,
     DatasetProfile,
@@ -32,9 +32,12 @@ from test_research_dataset_components import sources, long_sources
 def pack(strategy, snapshot):
     """A declared transport-only fixture, with no invented model result."""
     artifact = {
+        "schemaVersion": 1,
+        "totalRows": 0,
+        "truncated": False,
         "sourceStrategy": strategy,
         "dataFingerprint": snapshot["dataFingerprint"],
-        "predictionConfigHash": "a" * 64,
+        "predictionConfigHash": digest(prediction_config(strategy)),
         "rows": [],
         "targetDefinitions": [],
         "modelFits": [],
@@ -43,7 +46,12 @@ def pack(strategy, snapshot):
     }
     artifact["artifactId"] = bundle.sha(bundle.encode(artifact))
     report = {
-        "research": {"executionOnly": False},
+        "schemaVersion": 2,
+        "status": "completed",
+        "strategy": strategy,
+        "provenance": snapshot["provenance"],
+        "selection": {"reason": "SYNTHETIC_TRANSPORT_FIXTURE_NO_FIT"},
+        "research": {"executionOnly": False, "mode": "statistical_quant"},
         "forecasts": artifact,
         "equity": [],
         "trades": [],
@@ -53,7 +61,12 @@ def pack(strategy, snapshot):
     manifest = bundle.build_bundle(
         report,
         snapshot,
-        {"origins": []},
+        {
+            "schemaVersion": 1,
+            "source": "legacy_artifact_derived",
+            "baselineRequired": False,
+            "origins": [],
+        },
         lambda c, n, b: chunks.__setitem__((c, n), b),
         lambda c, n: chunks[c, n],
     )

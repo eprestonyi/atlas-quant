@@ -1,0 +1,80 @@
+{
+  "protocol": "research-dataset/1",
+  "profile": "financial_snapshot_view_50_v1",
+  "datasetFormat": "atlas.quant.research_dataset",
+  "datasetVersion": 2,
+  "resultTransport": "atlas.quant.financial_bundle/1",
+  "featureFlag": "RESEARCH_DATASETS_ENABLED",
+  "researchFlag": "FINANCIAL_DATASET_RESEARCH_ENABLED",
+  "limits": {
+    "inputMetadataBytes": 262144,
+    "sourceManifestBytes": 524288,
+    "sourceSnapshotBytes": 25165824,
+    "sourceChunkBytes": 8388608,
+    "registryEntryBytes": 262144,
+    "registryTotalBytes": 33554432,
+    "packageBytes": 25165824,
+    "closureBytes": 67108864,
+    "manifestBytes": 262144,
+    "partBytes": 524288,
+    "parts": 256,
+    "components": 32,
+    "financialInputs": 8,
+    "marketRows": 110000,
+    "symbols": 50,
+    "leaseSeconds": 120,
+    "heartbeatSeconds": 20,
+    "deadlineSeconds": 600,
+    "registryEntries": 2057
+  },
+  "phases": [
+    "checking_sources",
+    "deriving_scope",
+    "composing_states",
+    "writing_evidence"
+  ],
+  "paths": {
+    "runner": "/quant/api/runner/datasets",
+    "researchReader": "/quant/api/runner/research-datasets",
+    "leaseHeader": "X-Dataset-Lease"
+  },
+  "inputKeys": ["job", "planRoot", "plan", "sources", "registry", "limits"],
+  "inputJobKeys": ["id", "kind", "planId", "deadline"],
+  "inputSourceKeys": ["market", "financial"],
+  "inputRegistryKeys": ["count", "totalBytes", "listUrl"],
+  "publicationBeginKeys": ["leaseToken", "datasetRoot", "manifestText"],
+  "publicationCompleteKeys": ["leaseToken", "publicationId", "datasetRoot"],
+  "claimKeys": ["requestId", "capability", "engineVersion"],
+  "heartbeatKeys": [
+    "capability",
+    "engineVersion",
+    "state",
+    "jobId",
+    "leaseToken",
+    "phase"
+  ],
+  "failKeys": ["leaseToken", "error"],
+  "publicPlanKeys": [
+    "requestId",
+    "name",
+    "profile",
+    "marketSource",
+    "financialInputs"
+  ],
+  "financialRefKeys": [
+    "inputId",
+    "preparationId",
+    "inputRoot",
+    "packRoot",
+    "preparedRoot",
+    "calendarRoot"
+  ],
+  "marketSourceKeys": [
+    "kind",
+    "runId",
+    "expectedBundleId",
+    "expectedSnapshotSha256",
+    "transform"
+  ],
+  "transformKeys": ["kind", "version", "mode", "symbols", "start", "end"]
+}
