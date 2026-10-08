@@ -57,6 +57,7 @@ def config(tmp_path):
         "acquisition_enabled": True,
         "allow_acquisition_fixtures": True,
         "counter_path": str(tmp_path / "calls.jsonl"),
+        "tushare_token": "FIXTURE_ONLY_NOT_A_REAL_TOKEN",
     }
 
 
@@ -954,3 +955,86 @@ def test_network_error_cannot_extend_last_confirmed_lease(tmp_path):
     with pytest.raises(RunnerError) as error:
         m.attempt()
     assert error.value.code == "ACQUISITION_LEASE"
+
+
+def test_stop_during_begin_ack_prevents_child_start(tmp_path):
+    c, client, cfg = consumer(tmp_path)
+    stopped = [False]
+    called = []
+    original = client.post
+
+    def post(route, payload, **kwargs):
+        answer = original(route, payload, **kwargs)
+        if route.endswith("/begin"):
+            stopped[0] = True
+        return answer
+
+    client.post = post
+    c.stop_requested = lambda: stopped[0]
+    c.executor = lambda *args: called.append(True)
+    with c.spool.locked():
+        c.once()
+    assert client.status == "failed" and call_count(cfg) == 0 and not called
+
+
+def test_execute_one_checks_stop_before_spawning_child(tmp_path):
+    cfg = config(tmp_path)
+    spool = AcquisitionSpool(cfg)
+    job, meta = planned()
+    request = {
+        k: v for k, v in meta["executionPlan"]["requests"][0].items() if k != "cache"
+    }
+
+    def stop():
+        raise RunnerError("ACQUISITION_STOPPED", "fixture stop")
+
+    with pytest.raises(RunnerError):
+        execute_one(
+            cfg,
+            spool,
+            job,
+            request,
+            4194304,
+            time.monotonic() + 10,
+            stop,
+            FixtureProvider,
+        )
+    assert call_count(cfg) == 0 and spool.receipt(job, request["requestKey"]) is None
+
+
+@pytest.mark.parametrize("mutation", ["missing-token", "unsafe-proxy", "bad-scope"])
+def test_known_provider_configuration_error_fails_before_spool_or_claim(
+    tmp_path, mutation
+):
+    cfg = config(tmp_path)
+    if mutation == "missing-token":
+        cfg.pop("tushare_token")
+    if mutation == "unsafe-proxy":
+        cfg["provider_access"] = {
+            "proxyUrl": "https://unapproved.example/path",
+            "serviceToken": "x" * 40,
+        }
+    if mutation == "bad-scope":
+        cfg["authorization_scope"] = "not a scope"
+    job, meta = planned()
+    client = FakeClient(job, meta)
+    with pytest.raises(RunnerError):
+        AcquisitionConsumer(cfg, client)
+    assert (
+        client.request_id is None and not Path(cfg["acquisition_delivery_dir"]).exists()
+    )
+
+
+def test_provider_config_preflight_does_not_open_network(monkeypatch):
+    from atlas_quant.financial_acquisition.provider import preflight_provider_config
+
+    def network(*args, **kwargs):
+        raise AssertionError("Preflight must not open HTTP")
+
+    monkeypatch.setattr(requests.Session, "request", network)
+    preflight_provider_config(
+        {
+            "authorization_scope": SCOPE,
+            "tushare_token": "LOCAL_FIXTURE_NOT_A_REAL_TOKEN",
+        }
+    )

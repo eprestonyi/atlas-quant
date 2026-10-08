@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import time
+import re
 from urllib.parse import urlsplit
 
 import requests
@@ -37,7 +38,13 @@ class RawTushareAdapter:
     source_kind = "provider"
 
     def __init__(self, config, session=None):
-        self.scope = config["authorization_scope"]
+        self.scope = config.get("authorization_scope")
+        require(
+            isinstance(self.scope, str)
+            and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,79}", self.scope),
+            "ACQUISITION_SCOPE",
+            "A fixed bounded authorization scope is required",
+        )
         access = config.get("provider_access")
         self.proxy = access is not None
         if self.proxy:
@@ -140,3 +147,9 @@ class RawTushareAdapter:
             raise
         except (requests.RequestException, OSError, TimeoutError):
             raise OutcomeUnknown() from None
+
+
+def preflight_provider_config(config):
+    """Pure configuration check; no request, token verification or claim."""
+    adapter = RawTushareAdapter(config)
+    adapter.session.close()

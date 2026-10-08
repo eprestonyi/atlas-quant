@@ -45,6 +45,12 @@ private `provider_access` (or explicit `tushare_token`), the process requires:
 - Production CLI always rejects `allow_acquisition_fixtures: true`. Tests inject
   that switch and an explicit fixture provider through the library only.
 
+The real adapter configuration is checked locally before any spool or claim:
+missing credentials, an invalid scope or an unapproved proxy URL cannot consume
+an irreversible provider intent. This check opens no HTTP connection and does
+not establish that the token has vendor permission. Explicit injected fixture
+providers retain their separate test-only construction path.
+
 No acquisition launcher is installed or started by importing the module. Tokens
 stay in private process configuration; they are excluded from plans, cache keys,
 publications, logs and research artifacts. The provider adapter has a fixed HTTPS

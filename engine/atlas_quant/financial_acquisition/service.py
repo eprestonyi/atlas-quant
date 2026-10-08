@@ -26,7 +26,7 @@ from .protocol import (
     sha,
     timestamp,
 )
-from .provider import OutcomeUnknown, RawTushareAdapter
+from .provider import OutcomeUnknown, RawTushareAdapter, preflight_provider_config
 from .spool import AcquisitionSpool
 
 TERMINAL = {"completed", "failed", "cancelled", "empty"}
@@ -89,6 +89,7 @@ def execute_one(
         target=_provider_child,
         args=(config, spool.context(), job, request, remaining_bytes, limit, factory),
     )
+    check()
     process.start()
     try:
         while process.is_alive():
@@ -219,6 +220,8 @@ class AcquisitionConsumer:
             "ACQUISITION_DISABLED",
             "Separate provider process requires explicit enablement",
         )
+        if provider_factory is RawTushareAdapter:
+            preflight_provider_config(config)
         self.config = config
         self.stop_requested = stop_requested or (lambda: False)
         self.client = client or AcquisitionClient(config)
@@ -387,6 +390,7 @@ class AcquisitionConsumer:
             )
             if ack["maySend"] is not True:
                 self._unknown(state, request, entry["attemptId"])
+            self.check(monitor)
             # Persist before child creation; even a crash before its first byte
             # is conservatively unknown rather than assumed safe to resend.
             entry["phase"] = "calling"
