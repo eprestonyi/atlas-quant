@@ -194,7 +194,7 @@ window.AtlasQuantV4 = {
       s.marketDatasetBinding = clone(binding);
       s.datasetBinding = null;
       s.dataset = null;
-      ui.universeScope = { ref: clone(binding.universeScopeRef), key: scopeKey(s.strategy.universe) };
+      ui.universeScope = { ref: clone(binding.universeScopeRef), key: scopeKey(s.strategy.universe), workspaceId: s.session?.workspace?.id };
       persistDraft();
     }
     async function bindDataset(detail, stateIds, stateDefinitions = []) {
@@ -661,6 +661,7 @@ window.AtlasQuantV4 = {
     }
     async function loadExperiment(id, edit = false) {
       const request = ++ui.experimentDetailRequest,
+        expectedOwner = s.session?.workspace?.id,
         routeAtStart = location.hash;
       ui.experimentDetailId = id;
       ui.experimentDetailLoading = true;
@@ -670,7 +671,7 @@ window.AtlasQuantV4 = {
         const response = await api(
           '/statistical-quant/experiments/' + encodeURIComponent(id),
         );
-        if (request !== ui.experimentDetailRequest) return;
+        if (request !== ui.experimentDetailRequest || expectedOwner !== s.session?.workspace?.id) return;
         ui.viewedExperiment = response;
         const item = response.experiment || response.item || response;
         if (edit && location.hash === routeAtStart) {
@@ -679,7 +680,7 @@ window.AtlasQuantV4 = {
           ui.boundSource = item.marketDatasetBinding ? 'ready_market' : item.datasetBinding ? 'ready_dataset' : null;
           ui.activeId = item.id;
           ui.activeVersion = item.version;
-          ui.universeScope = item.universeScopeRef ? { ref: clone(item.universeScopeRef), key: scopeKey(s.strategy.universe) } : null;
+          ui.universeScope = item.universeScopeRef ? { ref: clone(item.universeScopeRef), key: scopeKey(s.strategy.universe), workspaceId: s.session?.workspace?.id } : null;
           C.legacy.flow.reset();
           s.strategyId = null;
           s.strategyVersion = null;
@@ -701,8 +702,8 @@ window.AtlasQuantV4 = {
     }
     async function freezeScope(universe, dataSource) {
       if (!universe.selection || dataSource === 'ready_dataset') return null;
-      const key = scopeKey(universe);
-      if (ui.universeScope?.key === key) return clone(ui.universeScope.ref);
+      const key = scopeKey(universe), expectedOwner = s.session?.workspace?.id;
+      if (ui.universeScope?.key === key && ui.universeScope.workspaceId === expectedOwner) return clone(ui.universeScope.ref);
       const response = await api('/universe-scopes', {
         method: 'POST',
         body: JSON.stringify({ selection: universe.selection, expectedResolutionHash: universe.resolutionHash, expectedSnapshotHash: universe.snapshotHash, start: universe.start, end: universe.end }),
@@ -710,7 +711,8 @@ window.AtlasQuantV4 = {
       const ref = response.scopeRef;
       if (ref?.format !== 'atlas.quant.universe_scope' || ref.version !== 1 || !ref.scopeId || !/^[a-f0-9]{64}$/.test(ref.scopeRoot || '')) throw Error('筛选集合未返回有效的冻结引用，研究尚未保存。');
       if (response.scope && (response.scope.symbolCount !== universe.symbols.length || JSON.stringify(response.scope.symbols) !== JSON.stringify(universe.symbols) || response.scope.start !== universe.start || response.scope.end !== universe.end)) throw Error('冻结结果与本次完整筛选范围不一致，请重新计算筛选集合。');
-      ui.universeScope = { ref: clone(ref), key };
+      if (expectedOwner !== s.session?.workspace?.id) throw Error('工作区身份已变化，冻结响应未写入当前研究。');
+      ui.universeScope = { ref: clone(ref), key, workspaceId: expectedOwner };
       return ref;
     }
     async function save() {
@@ -731,6 +733,7 @@ window.AtlasQuantV4 = {
       const draft = s.strategy,
         submitted = clone(draft),
         submittedSource = s.dataSource,
+        expectedOwner = s.session?.workspace?.id,
         submittedBinding = activeBinding(s) ? clone(activeBinding(s)) : null,
         previousId = ui.activeId,
         id = ui.boundSource && ui.boundSource !== submittedSource ? null : ui.activeId,
@@ -739,6 +742,7 @@ window.AtlasQuantV4 = {
       render();
       try {
         const universeScopeRef = await freezeScope(submitted.universe, submittedSource);
+        if (expectedOwner !== s.session?.workspace?.id) throw Error('工作区身份已变化，此前研究尚未提交。');
         const response = await api(
           id
             ? '/statistical-quant/experiments/' + encodeURIComponent(id)
@@ -754,7 +758,7 @@ window.AtlasQuantV4 = {
           },
         );
         const item = response.experiment || response.item || response;
-        const sameDraft = s.strategy === draft && ui.activeId === previousId && s.dataSource === submittedSource && JSON.stringify(activeBinding(s) || null) === JSON.stringify(submittedBinding);
+        const sameDraft = expectedOwner === s.session?.workspace?.id && s.strategy === draft && ui.activeId === previousId && s.dataSource === submittedSource && JSON.stringify(activeBinding(s) || null) === JSON.stringify(submittedBinding);
         if (sameDraft) {
           ui.activeId = item.id;
           ui.activeVersion = item.version;
@@ -771,6 +775,7 @@ window.AtlasQuantV4 = {
               : '提交时的版本已保存；之后的修改保留为未保存草稿。',
           );
         } else toast('此前提交的研究版本已保存；当前研究保持不变。');
+        if (expectedOwner !== s.session?.workspace?.id) return item;
         ui.experiments = [
           item,
           ...ui.experiments.filter((x) => x.id !== item.id),
@@ -807,6 +812,7 @@ window.AtlasQuantV4 = {
         return;
       }
       const submitted = clone(s.strategy),
+        expectedOwner = s.session?.workspace?.id,
         dataSource = s.dataSource,
         dataset = s.dataset,
         submittedBinding = activeBinding(s) ? clone(activeBinding(s)) : null;
@@ -823,6 +829,7 @@ window.AtlasQuantV4 = {
           item = await save();
           if (!item) return;
         }
+        if (expectedOwner !== s.session?.workspace?.id) throw Error('工作区身份已变化，此前研究未运行。');
         const response = await api(
           '/statistical-quant/experiments/' +
             encodeURIComponent(item.id) +
@@ -837,6 +844,7 @@ window.AtlasQuantV4 = {
             }),
           },
         );
+        if (expectedOwner !== s.session?.workspace?.id) return;
         const job = response.job;
         s.runs = [
           { ...job, strategy: clone(item.strategy || submitted) },

@@ -21,6 +21,7 @@ export function marketBindingErrors(s, { run = false } = {}) {
   if (s.dataSource !== 'ready_market') return [];
   const b = s.marketDatasetBinding, errors = [];
   if (!b) return ['市场数据尚未完成准备并绑定；模型研究不会代为请求供应商。'];
+  if (!s.session?.workspace?.id || b.workspaceId !== s.session.workspace.id) errors.push('此本地数据绑定尚未在当前工作区核验。请从“我的研究”重新读取已保存版本；本地原记录保留。');
   if (!matchesMarketScope(b, s.strategy.universe)) errors.push('筛选规则、完整成员或研究日期已变化。请为当前完整范围重新核对数据准备；旧数据不会自动截取或补齐。');
   if (run) {
     const profile = marketAdmission(s.strategy);
@@ -37,6 +38,7 @@ export function restoreBindings(s, item) {
     s.dataSource = 'ready_dataset';
   } else if (s.marketDatasetBinding) {
     // The immutable experiment supplies the frozen rules; no current catalog lookup.
+    s.marketDatasetBinding.workspaceId = s.session?.workspace?.id || null;
     s.marketDatasetBinding.selectionKey = scopeKey(s.strategy.universe);
     s.dataSource = 'ready_market';
   } else if (['ready_dataset', 'ready_market'].includes(s.dataSource)) s.dataSource = 'tushare';
