@@ -12,7 +12,7 @@ const sourceDownload=marketDatasetDownload(marketRef);
 assert.equal(sourceDownload,`/quant/api/market-datasets/${id(4)}/download?datasetRoot=${'d'.repeat(64)}`);
 for(const ref of [null,{}, {...marketRef,version:2},{...marketRef,format:'atlas.quant.research_dataset'},{...marketRef,datasetRoot:'x'.repeat(64)},{...marketRef,datasetId:'../foreign'}])assert.equal(marketDatasetDownload(ref),null);
 const admissions = [{ admissionProfile: 'pooled_asset_1000_auto_candidate_v1', available: true, families: ['mean_reversion'], estimator: 'auto', targetKind: 'asset_price', executionEnabled: false, maxFactors: 16, innerFolds: 2, outerFolds: 2, minRefitDays: 20 }];
-const calls = []; let plan, job, saved, startFail = true, saveGate, jobGate, completed = false;
+const calls = []; let plan, job, saved, startFail = true, saveGate, jobGate, completed = false, sourceKind = 'fixture', wrongSource = false;
 const dom = new JSDOM('<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>', { url: 'http://localhost/quant/#quant/easy/settings', runScripts: 'outside-only', pretendToBeVisual: true });
 const w = dom.window; w.structuredClone = structuredClone; w.scrollTo = () => {}; w.matchMedia = () => ({ matches: false, addEventListener() {} });
 w.fetch = async (url, options = {}) => {
@@ -32,6 +32,9 @@ w.fetch = async (url, options = {}) => {
     if (jobGate) await jobGate;
     if (completed) job = { ...job, status: 'completed', phase: 'ready', result: { marketDatasetRef: marketRef, universeScopeRef: scopeRef, profile: 'pooled_asset_1000_v1', symbolCount: 1000, rowCount: 262000 } };
     result = { job, researchAdmissions: admissions, preferredResearchAdmission: admissions[0].admissionProfile };
+  } else if (path.startsWith('/market-datasets/')) {
+    assert.equal(path, `/market-datasets/${marketRef.datasetId}?datasetRoot=${marketRef.datasetRoot}`, 'source details use the exact frozen ref');
+    result = { marketDatasetRef: wrongSource ? { ...marketRef, datasetRoot: 'e'.repeat(64) } : marketRef, universeScopeRef: scopeRef, scope: plan.scope, rowCount: 262000, sourceKind };
   } else if (path.includes('/statistical-quant/experiments') && !path.endsWith('/run') && ['POST','PUT'].includes(options.method)) {
     if (saveGate) await saveGate;
     saved = { id: id(5), version: (saved?.version || 0) + 1, strategy: data.strategy, universeScopeRef: data.universeScopeRef, marketDatasetBinding: data.marketDatasetRef ? { marketDatasetRef: data.marketDatasetRef, universeScopeRef: data.universeScopeRef, admissionProfile: data.admissionProfile, scope: { symbols: data.strategy.universe.symbols, start: data.strategy.universe.start, end: data.strategy.universe.end, symbolCount: 1000, scopeRoot: root } } : null };
@@ -69,6 +72,7 @@ completed=true; admissions[0].available=false; admissions[0].reason='RUNNER_OFFL
 assert(w.document.querySelector('[data-sq="market-bind"]').disabled,'ready data alone does not grant compute availability');
 assert(w.document.querySelector('main').textContent.includes('计算节点当前离线'));
 assert(w.document.querySelector(`a[download][href="${sourceDownload}"]`),'completed source can be downloaded independently of compute availability');
+assert(w.document.querySelector('main').textContent.includes('合成行情 · 仅供测试'),'fixture source is explicit before binding');
 admissions[0].available=true; admissions[0].reason=null; await click('market-refresh'); await click('market-bind');
 assert.equal(s.marketDatasetBinding.admissionProfile,'pooled_asset_1000_auto_candidate_v1');
 assert.equal(s.strategy.model.estimator,'auto'); assert.equal(s.strategy.universe.symbols.length,1000);
@@ -90,6 +94,18 @@ assert.equal(await q.workspace.save(),null); s.strategy.universe.selection=oldSe
 await route('report'); const open=w.document.createElement('button');open.dataset.sq='experiment-load';open.dataset.id=id(5);w.document.body.append(open);open.click();await tick();
 assert.equal(s.dataSource,'ready_market'); assert.deepEqual(JSON.parse(JSON.stringify(s.marketDatasetBinding.marketDatasetRef)),marketRef);
 assert.equal(s.strategy.universe.symbols.length,1000);
+// Saved immutable source identity is checked without this browser's preparation history.
+const preparation = q.workspace.market.state, oldPlan = preparation.plan, oldJob = preparation.job;
+preparation.plan = null; preparation.job = null; preparation.sources = {};
+await route('settings');
+assert(w.document.querySelector('main').textContent.includes('合成行情 · 仅供测试'),'saved source retains fixture warning after a fresh detail read');
+assert.equal(Object.keys(preparation.sources).length,1);
+preparation.sources = {}; wrongSource = true; await route('report'); await route('settings');
+assert(w.document.querySelector('main').textContent.includes('来源类型尚未核对'),'mismatched detail cannot certify source kind');
+assert(!w.document.querySelector('main').textContent.includes('合成行情 · 仅供测试'));
+wrongSource = false; sourceKind = 'provider'; await route('report'); await route('settings');
+assert(w.document.querySelector('main').textContent.includes('来源类型：供应商冻结行情'));
+sourceKind = 'fixture'; preparation.plan = oldPlan; preparation.job = oldJob;
 // No automatic model downgrade when the mechanism is outside the registered auto profile.
 s.strategy.model.family='trend'; s.dirty=true; const beforeUnsupported=calls.length; await q.workspace.run();
 assert.equal(s.strategy.model.estimator,'auto'); assert(!calls.slice(beforeUnsupported).some(x=>x.path.endsWith('/run')));
@@ -124,5 +140,5 @@ assert.equal(await q.workspace.save(),null,'unverified global draft binding cann
 s.session.workspace.id='owner_a';q.render();assert(q.workspace.market.state.plan,'returning owner can recover its own evidence');
 s.session=null;q.render();assert(w.document.querySelector('main').textContent.includes('正在确认私有工作区身份'));
 assert.equal(w.localStorage.getItem('atlas-quant-market-preparation-v1'),legacyRecord);
-console.log(JSON.stringify({exactSavedSourceDownload:true,downloadIndependentOfCompute:true,invalidRefNoDownload:true,workspaceStoragePartition:true,ownerResponseFence:true,legacyEvidencePreserved:true,realDOM:true,httpDoubles:true,completePool:1000,explicitProviderStart:true,idempotentUnknownStart:true,separateSourceAndComputeProfiles:true,readyOnly:true,immutableReopen:true,scopeChangesInvalidate:true,noEstimatorDowngrade:true,lateBindingAndSaveIsolated:true,providerCalls:0}));
+console.log(JSON.stringify({fixtureWarningBeforeBindingAndAfterReopen:true,exactSourceKindRead:true,mismatchedSourceUnknown:true,exactSavedSourceDownload:true,downloadIndependentOfCompute:true,invalidRefNoDownload:true,workspaceStoragePartition:true,ownerResponseFence:true,legacyEvidencePreserved:true,realDOM:true,httpDoubles:true,completePool:1000,explicitProviderStart:true,idempotentUnknownStart:true,separateSourceAndComputeProfiles:true,readyOnly:true,immutableReopen:true,scopeChangesInvalidate:true,noEstimatorDowngrade:true,lateBindingAndSaveIsolated:true,providerCalls:0}));
 dom.window.close();

@@ -9,7 +9,7 @@ export function createMarketPreparation(C, F, { freezeScope, onBind }) {
   const extraFields = 'turnover_rate turnover_rate_f volume_ratio pe pe_ttm pb ps ps_ttm dv_ratio dv_ttm total_share float_share free_share total_mv circ_mv'.split(' ');
   const names = { queued: '等待独立数据准备', running: '正在准备完整行情', cancel_requested: '正在取消', cancelled: '已取消', failed: '准备未完成', completed: '完整行情已冻结' };
   const phases = { checking_plan: '核对冻结请求计划', fetching_sources: '读取声明的供应商数据', normalizing: '核对完整成员与行情', writing_evidence: '保存来源与数据', ready: '准备完成' };
-  const blank = () => ({ plan: null, selectionKey: '', job: null, startRequestId: null, startUnknown: false, extra: [], verified: false, admissions: null, busy: '', error: '', requests: null, page: 1 });
+  const blank = () => ({ plan: null, selectionKey: '', job: null, startRequestId: null, startUnknown: false, extra: [], verified: false, admissions: null, busy: '', error: '', requests: null, page: 1, sources: {} });
   const s = blank();
   let timer = null, readSequence = 0, owner = null;
   const workspaceId = () => typeof app.session?.workspace?.id === 'string' && app.session.workspace.id ? app.session.workspace.id : null;
@@ -41,6 +41,21 @@ export function createMarketPreparation(C, F, { freezeScope, onBind }) {
   const hash = x => /^[a-f0-9]{64}$/.test(x || '');
   const uuid = x => /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(x || '');
   const sameRef = (a, b) => a?.scopeId === b?.scopeId && a?.scopeRoot === b?.scopeRoot && a?.format === b?.format && a?.version === b?.version;
+  const sourceKey = ref => marketDatasetDownload(ref);
+  async function readSource(expectedOwner, ref, scopeRef, scope) {
+    const key = sourceKey(ref);
+    if (!key) throw Error('行情来源身份无效，不能核对来源类型。');
+    const detail = await ownerApi(expectedOwner, key.replace('/quant/api', '').replace('/download?', '?'));
+    if (sourceKey(detail.marketDatasetRef) !== key || !sameRef(detail.universeScopeRef, scopeRef) || detail.scope?.start !== scope.start || detail.scope?.end !== scope.end || detail.scope?.symbolCount !== scope.symbolCount || JSON.stringify(detail.scope?.symbols) !== JSON.stringify(scope.symbols)) throw Error('行情来源详情与冻结身份或完整范围不一致。');
+    s.sources[key] = detail;
+    return detail;
+  }
+  function sourceNote(ref) {
+    const kind = s.sources[sourceKey(ref)]?.sourceKind;
+    if (kind === 'fixture') return note('合成行情 · 仅供测试。此来源不是真实市场行情，所得研究不能作为真实市场预测或收益证据。', 'warning');
+    if (kind === 'provider') return note('来源类型：供应商冻结行情；供应商读取记录随完整来源包保存。');
+    return note('来源类型尚未核对；当前不能将这份行情视为真实市场数据。', 'warning');
+  }
   function validatePlan(p, expectedUniverse, expectedRef) {
     if (!uuid(p.planRef?.planId) || !hash(p.planRef?.planRoot) || p.profile !== DATA_PROFILE || p.planRef.format !== 'atlas.quant.market_acquisition_plan' || p.planRef.version !== 1) throw Error('市场准备计划身份无效。');
     if (!sameRef(p.universeScopeRef, expectedRef) || p.scope.start !== expectedUniverse.start || p.scope.end !== expectedUniverse.end || p.scope.symbolCount !== expectedUniverse.symbols.length || JSON.stringify(p.scope.symbols) !== JSON.stringify(expectedUniverse.symbols)) throw Error('准备计划与完整冻结范围不一致；不会启动。');
@@ -72,7 +87,7 @@ export function createMarketPreparation(C, F, { freezeScope, onBind }) {
     }
     const download = url => url ? `<a class="sq-button small" href="${e(url)}" download>下载完整行情来源包</a><p class="sq-subtle">包含冻结输入与来源证据；模型预测结果保存在独立报告包中。</p>` : '';
     const profile = marketAdmission(app.strategy), declared = admission(), blockedByJob = running() || s.startUnknown;
-    return panel('完整筛选池 · 先准备行情，再研究', `${note('数据准备与模型拟合分开进行。仅“明确开始一次数据准备”会启动已声明的供应商请求；运行 F 只读取完成的冻结数据。')}${!active ? button('market-select', '使用完整池的独立数据准备', { small: true }) : ''}${active && b ? `<dl class="fin-summary"><dt>已绑定行情</dt><dd>${e(b.scope.symbolCount ?? b.scope.symbols.length)} 只 · ${e(C.dateText(b.scope.start))} — ${e(C.dateText(b.scope.end))}</dd><dt>计算协议</dt><dd>${b.admissionProfile === 'pooled_asset_1000_auto_candidate_v1' ? '状态均值回归 · 自动选择' : 'Studio 声明的拟合协议'}</dd></dl>${download(boundDownload)}${matchesMarketScope(b, app.strategy.universe) ? note('当前完整范围与冻结行情一致。模型运行不会重新请求供应商。') : note('当前范围已改变，原行情绑定失配。需重新核对并准备完整范围。', 'warning')}` : ''}${s.error ? note(s.error, 'error') : ''}${advanced('补充数据字段', '<p>行情与复权字段自动纳入；已选因子引用的已注册估值字段自动纳入。附加字段会增加明确列出的请求。</p><div class="ds-members">' + extraFields.map(name => `<label class="fin-checkbox"><input type="checkbox" data-market-field="${name}" ${s.extra.includes(name) ? 'checked' : ''} ${s.busy ? 'disabled' : ''}>${e(name)}</label>`).join('') + '</div>')}${planView()}${requestsView()}<div class="sq-actions">${button('market-plan', s.busy === 'plan' ? '正在核对…' : '核对完整范围与请求预算', { disabled: !!s.busy || blockedByJob, primary: !s.plan })}${button('market-start', s.startUnknown ? '读取原启动请求结果' : '明确开始一次数据准备', { disabled: !!s.busy || !s.plan || (!s.startUnknown && (!s.verified || !same() || !s.plan.canStart || !!s.job)), primary: true })}</div>${s.startUnknown ? note('上次启动响应未知，保留同一启动标识读取原结果，不创建第二次准备。', 'warning') : ''}${s.job ? `<div class="fin-progress" role="status"><strong>${e(names[s.job.status] || '状态待确认')}</strong><span>${e(phases[s.job.phase] || '')}</span></div>${s.job.error ? note(s.job.error.message, 'error') : ''}${button('market-refresh', '刷新任务', { small: true, disabled: !!s.busy })}${running() ? button('market-cancel', '取消剩余准备', { small: true, disabled: !!s.busy || s.job.status === 'cancel_requested' }) : ''}${s.job.status === 'completed' ? `${completedDownload !== boundDownload ? download(completedDownload) : ''}<p>${e(s.job.result?.symbolCount)} 个完整成员 · ${e(s.job.result?.rowCount)} 行。覆盖完成不意味着模型有效。</p>${button('market-bind', '绑定完整行情用于本次研究', { primary: true, disabled: !!s.busy || !same() || !declared?.available })}` : ''}` : ''}${profile && s.verified && !declared?.available ? note(({ MARKET_RESEARCH_DISABLED: '服务器尚未开放完整池模型计算。', RUNNER_OFFLINE: '完整池计算节点当前离线。', RUNNER_UPGRADE_REQUIRED: '计算节点尚未声明支持此模型协议。' })[declared?.reason] || '服务器尚未声明此机制有可用计算协议。', 'warning') : ''}${!profile ? note('当前完整池计算尚未接通此机制与估计器组合。保留当前选择，不自动更换模型。', 'warning') : advanced('完整池计算预算与协议', `<p>最多 16 因子、重拟合至少 20 交易日、2×2 时间验证。实际运行资格由服务器与计算节点核验。</p><code>${e(profile)}</code>`)}<p class="sq-subtle">本页保留此浏览器最近一次准备。跨浏览器来源列表尚未接通；保存后的研究保留其冻结数据引用。</p>`);
+    return panel('完整筛选池 · 先准备行情，再研究', `${note('数据准备与模型拟合分开进行。仅“明确开始一次数据准备”会启动已声明的供应商请求；运行 F 只读取完成的冻结数据。')}${!active ? button('market-select', '使用完整池的独立数据准备', { small: true }) : ''}${active && b ? `<dl class="fin-summary"><dt>已绑定行情</dt><dd>${e(b.scope.symbolCount ?? b.scope.symbols.length)} 只 · ${e(C.dateText(b.scope.start))} — ${e(C.dateText(b.scope.end))}</dd><dt>计算协议</dt><dd>${b.admissionProfile === 'pooled_asset_1000_auto_candidate_v1' ? '状态均值回归 · 自动选择' : 'Studio 声明的拟合协议'}</dd></dl>${sourceNote(b.marketDatasetRef)}${download(boundDownload)}${matchesMarketScope(b, app.strategy.universe) ? note('当前完整范围与冻结行情一致。模型运行不会重新请求供应商。') : note('当前范围已改变，原行情绑定失配。需重新核对并准备完整范围。', 'warning')}` : ''}${s.error ? note(s.error, 'error') : ''}${advanced('补充数据字段', '<p>行情与复权字段自动纳入；已选因子引用的已注册估值字段自动纳入。附加字段会增加明确列出的请求。</p><div class="ds-members">' + extraFields.map(name => `<label class="fin-checkbox"><input type="checkbox" data-market-field="${name}" ${s.extra.includes(name) ? 'checked' : ''} ${s.busy ? 'disabled' : ''}>${e(name)}</label>`).join('') + '</div>')}${planView()}${requestsView()}<div class="sq-actions">${button('market-plan', s.busy === 'plan' ? '正在核对…' : '核对完整范围与请求预算', { disabled: !!s.busy || blockedByJob, primary: !s.plan })}${button('market-start', s.startUnknown ? '读取原启动请求结果' : '明确开始一次数据准备', { disabled: !!s.busy || !s.plan || (!s.startUnknown && (!s.verified || !same() || !s.plan.canStart || !!s.job)), primary: true })}</div>${s.startUnknown ? note('上次启动响应未知，保留同一启动标识读取原结果，不创建第二次准备。', 'warning') : ''}${s.job ? `<div class="fin-progress" role="status"><strong>${e(names[s.job.status] || '状态待确认')}</strong><span>${e(phases[s.job.phase] || '')}</span></div>${s.job.error ? note(s.job.error.message, 'error') : ''}${button('market-refresh', '刷新任务', { small: true, disabled: !!s.busy })}${running() ? button('market-cancel', '取消剩余准备', { small: true, disabled: !!s.busy || s.job.status === 'cancel_requested' }) : ''}${s.job.status === 'completed' ? `${completedDownload !== boundDownload ? sourceNote(s.job.result?.marketDatasetRef) + download(completedDownload) : ''}<p>${e(s.job.result?.symbolCount)} 个完整成员 · ${e(s.job.result?.rowCount)} 行。覆盖完成不意味着模型有效。</p>${button('market-bind', '绑定完整行情用于本次研究', { primary: true, disabled: !!s.busy || !same() || !declared?.available })}` : ''}` : ''}${profile && s.verified && !declared?.available ? note(({ MARKET_RESEARCH_DISABLED: '服务器尚未开放完整池模型计算。', RUNNER_OFFLINE: '完整池计算节点当前离线。', RUNNER_UPGRADE_REQUIRED: '计算节点尚未声明支持此模型协议。' })[declared?.reason] || '服务器尚未声明此机制有可用计算协议。', 'warning') : ''}${!profile ? note('当前完整池计算尚未接通此机制与估计器组合。保留当前选择，不自动更换模型。', 'warning') : advanced('完整池计算预算与协议', `<p>最多 16 因子、重拟合至少 20 交易日、2×2 时间验证。实际运行资格由服务器与计算节点核验。</p><code>${e(profile)}</code>`)}<p class="sq-subtle">本页保留此浏览器最近一次准备。跨浏览器来源列表尚未接通；保存后的研究保留其冻结数据引用。</p>`);
   }
   async function refresh() {
     const expectedOwner = syncOwner();
@@ -86,6 +101,11 @@ export function createMarketPreparation(C, F, { freezeScope, onBind }) {
       const result = await ownerApi(expectedOwner, '/market-preparation-jobs/' + encodeURIComponent(job.id));
       if (result.job?.id !== job.id || result.job?.planId !== planId) throw Error('任务不属于当前准备计划。');
       job = result.job; admissions = result.researchAdmissions;
+    }
+    if (token !== readSequence || s.plan?.planRef.planId !== planId) return;
+    if (job?.status === 'completed') {
+      const result = completion(job);
+      await readSource(expectedOwner, result.marketDatasetRef, result.universeScopeRef, p.scope);
     }
     if (token !== readSequence || s.plan?.planRef.planId !== planId) return;
     s.plan = p; s.job = job; s.admissions = Array.isArray(admissions) ? admissions : null; s.verified = true; save(); present();
@@ -150,6 +170,12 @@ export function createMarketPreparation(C, F, { freezeScope, onBind }) {
     s.extra = el.checked ? [...new Set([...s.extra, el.dataset.marketField])] : s.extra.filter(x => x !== el.dataset.marketField);
     save(); present(); return true;
   }
-  function routeChanged() { const expectedOwner = syncOwner(); clearTimeout(timer); if (current() && s.plan) { refresh().catch(error => { if (syncOwner() === expectedOwner) { s.error = error.message; present(); } }).finally(() => { if (syncOwner() === expectedOwner) schedule(); }); } }
+  function routeChanged() {
+    const expectedOwner = syncOwner(); clearTimeout(timer);
+    if (!current() || !expectedOwner) return;
+    const b = app.dataSource === 'ready_market' && app.marketDatasetBinding?.workspaceId === expectedOwner ? app.marketDatasetBinding : null;
+    const reads = [s.plan ? refresh() : null, b ? readSource(expectedOwner, b.marketDatasetRef, b.universeScopeRef, b.scope) : null].filter(Boolean);
+    Promise.all(reads).then(present).catch(error => { if (syncOwner() === expectedOwner) { s.error = error.message; present(); } }).finally(() => { if (syncOwner() === expectedOwner) schedule(); });
+  }
   return { view, handle, onChange, routeChanged, state: s };
 }
