@@ -2,6 +2,8 @@
 
 Atlas Quant 是嵌入 Atlas 的开源统计量化研究工作区。先建立条件价格模型、保存完整预测，再用独立的对冲、风险和成交配置检验执行结果。代码采用 [Apache-2.0](LICENSE)，第三方数据许可另计。
 
+本 financial 分支新增[冻结财报离线准备内核](docs/FINANCIAL_INPUT_PACKAGE.md)：16 个公式已通过 synthetic 多期数据回归，支持默认严格单位证明和显式、始终未核验的用户单位声明。它尚未接入线上目录或 F。两家公司 2024 年报的窄核验不能推广为全市场可用；真实每日面板仍缺可核验的官方日历来源，其他多期依赖也须分别满足。
+
 [Atlas Quant](https://atlas-aletheia.com/quant/) · [源码](https://github.com/eprestonyi/atlas-quant) · [Discussions](https://github.com/eprestonyi/atlas-quant/discussions) · [Issues](https://github.com/eprestonyi/atlas-quant/issues)
 
 **v0.5 已于 2026-10-08 部署并完成正式分片和冻结预测重放验收**，部署构建为 `0.5.0-bc615b2893be`。发布证据见 [v0.5 验收记录](docs/RELEASE_V05.md)，既有真实数据研究见 [v0.4 验收记录](docs/RELEASE_V04.md)，当前服务状态以 [health](https://atlas-aletheia.com/quant/api/health) 为准。大规模整池研究与四库历史覆盖仍在继续建设；实施进度与未完成项见 [REBUILD_PLAN.md](docs/REBUILD_PLAN.md)。

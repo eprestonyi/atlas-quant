@@ -3,6 +3,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {researchPresets} from './presets.mjs';
 import {loadWebAssets, buildWorkerSource} from './worker-source.mjs';
+import {checkDslContract} from './check-dsl-contract.mjs';
+checkDslContract();
 const root=path.resolve(import.meta.dirname,'..');
 const {version}=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
 const assets=await loadWebAssets();

@@ -1,29 +1,11 @@
 import {validateUniverseSelection} from './universe.mjs';
 import {ApiError} from './errors.mjs';
 export {ApiError} from './errors.mjs';
-export const FIELDS=new Set('open high low close raw_close vol amount adj_factor turnover_rate turnover_rate_f volume_ratio pe pe_ttm pb ps ps_ttm dv_ratio dv_ttm total_share float_share free_share total_mv circ_mv'.split(' '));
-const WINDOWS=new Set('lag returns delta ts_mean ts_std ts_min ts_max ts_sum ts_rank'.split(' '));
-const UNARY=new Set('rank zscore log abs sqrt sign'.split(' '));
+import {FIELDS, validateExpression} from './factor-language.mjs';
+export {FIELDS, validateExpression} from './factor-language.mjs';
 const MODELS=new Set(['factor_score','ridge','elastic_net','hist_gradient_boosting','bayesian_ridge','huber','random_forest','extra_trees']);
 function fail(message){throw new ApiError('INVALID_INPUT',message);}
 export function textField(value,label,max=200){if(typeof value!=='string'||!value.trim()||value.length>max)fail(`${label}需为 1–${max} 字符`);return value.trim();}
-export function validateExpression(expression){
- const text=textField(expression,'因子表达式',500);let pos=0,nodes=0;const fields=new Set();
- const tokens=[];while(pos<text.length){if(/\s/.test(text[pos])){pos++;continue;}const m=/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|^[a-zA-Z_][a-zA-Z_0-9]*|^[()+\-*/,]/.exec(text.slice(pos));if(!m)fail('表达式包含不支持的字符；仅支持因果数学运算');tokens.push(m[0]);pos+=m[0].length;}
- let i=0;const peek=()=>tokens[i];const take=()=>tokens[i++];const expect=t=>{if(take()!==t)fail('表达式括号或参数格式无效');};
- function expr(depth=0){let a=term(depth+1);while(['+','-'].includes(peek())){take();const b=term(depth+1);a={lookback:Math.max(a.lookback,b.lookback)};}return a;}
- function term(depth){let a=atom(depth+1);while(['*','/'].includes(peek())){take();const b=atom(depth+1);a={lookback:Math.max(a.lookback,b.lookback)};}return a;}
- function atom(depth){if(depth>48||++nodes>128)fail('表达式过于复杂');const t=take();if(!t)fail('表达式不完整');if(t==='+'||t==='-'){const x=atom(depth+1);return {...x,...(x.literal!==undefined?{literal:(t==='-'?-1:1)*x.literal}:{})};}if(t==='('){const x=expr(depth+1);expect(')');return x;}
- if(/^\d|^\./.test(t)){const v=Number(t);if(!Number.isFinite(v)||Math.abs(v)>1e6)fail('数字常量超出范围');return {lookback:0,literal:v};}
- if(peek()!=='('){if(!FIELDS.has(t)&&!/^(?:pcd|fd|ext|model)_[a-z0-9_]{1,60}$/.test(t))fail(`不支持的数据字段：${t}`);fields.add(t);return {lookback:0};}
- take();const args=[];if(peek()!==')'){do{args.push(expr(depth+1));if(peek()!==',')break;take();}while(true);}expect(')');
- if(WINDOWS.has(t)){if(args.length!==2||!Number.isInteger(args[1].literal)||args[1].literal<1||args[1].literal>252)fail(`${t} 的窗口必须是 1–252 的正整数`);return {lookback:args[0].lookback+args[1].literal-(WINDOWS.has(t)&&!(['lag','returns','delta'].includes(t))?1:0)};}
- if(UNARY.has(t)){if(args.length!==1)fail(`${t} 需要一个参数`);return {lookback:args[0].lookback};}
- if(t==='min'||t==='max'){if(args.length!==2)fail(`${t} 需要两个参数`);return {lookback:Math.max(...args.map(a=>a.lookback))};}
- if(t==='clip'){if(args.length!==3||args[1].literal===undefined||args[2].literal===undefined||args[1].literal>=args[2].literal)fail('clip 需要表达式与递增的数值上下限');return {lookback:args[0].lookback};}fail(`不支持的因子函数：${t}`);
- }
- const ast=expr();if(i!==tokens.length)fail('表达式包含多余内容');if(!fields.size)fail('因子必须引用至少一个数据字段');if(ast.lookback>504)fail('因子总回看窗口不可超过 504 个交易日');return {fields:[...fields].sort(),lookback:ast.lookback,validation:'syntax_validated',language:'atlas-factor-dsl/v1'};
-}
 function number(v,label,min,max,integer=false){if(typeof v!=='number'||!Number.isFinite(v)||v<min||v>max||(integer&&!Number.isInteger(v)))fail(`${label} 必须介于 ${min}–${max}`);return v;}
 function date(v){if(typeof v!=='string'||!/^\d{8}$/.test(v))fail('日期应为 YYYYMMDD');const d=new Date(`${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}T00:00:00Z`);if(!Number.isFinite(+d)||d.toISOString().slice(0,10).replaceAll('-','')!==v)fail('日期无效');return v;}
 export function validateStrategy(input){

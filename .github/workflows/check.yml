@@ -29,6 +29,8 @@ jobs:
       - run: node web/tests/research-dom.mjs
       - run: node web/tests/statistical-dom.mjs
       - run: node web/tests/sharded-report-dom.mjs
+      - run: node web/tests/studio-semantics-dom.mjs
+      - run: node web/tests/studio-evidence-adversarial-dom.mjs
       - name: Reproduce the complete synthetic report
         run: |
           .venv/bin/python scripts/local-run.py engine/examples/basic.json --source demo --output private/first.json
