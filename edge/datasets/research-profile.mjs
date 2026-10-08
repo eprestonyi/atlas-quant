@@ -6,10 +6,10 @@ export const FINANCIAL_AUTO_LIMITS = Object.freeze({symbols:50,factors:16,calend
 const day = x => typeof x === 'string' && /^\d{8}$/.test(x)
   ? Date.UTC(+x.slice(0,4),+x.slice(4,6)-1,+x.slice(6,8))/86400000 : NaN;
 function autoScopeEligible(scope) {
-  const span = day(scope?.end)-day(scope?.start);
+  const span = day(scope?.end)-day(scope?.start)+1;
   return Array.isArray(scope?.symbols) && scope.symbols.length > 0 &&
     scope.symbols.length <= FINANCIAL_AUTO_LIMITS.symbols && Number.isFinite(span) &&
-    span >= 0 && span <= FINANCIAL_AUTO_LIMITS.calendarDays;
+    span >= 1 && span <= FINANCIAL_AUTO_LIMITS.calendarDays;
 }
 export function financialResearchAdmissions(enabled, availability, scope) {
   const autoEligible = scope === undefined || autoScopeEligible(scope);

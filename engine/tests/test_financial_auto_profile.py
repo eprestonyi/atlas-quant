@@ -32,6 +32,10 @@ def test_auto_requires_explicit_new_profile_and_original_composition_stays_v2(fr
     for mutate in [lambda s:s['execution'].update(enabled=True),lambda s:s['model'].update(estimator='ridge'),lambda s:s['model'].update(refitDays=1),lambda s:s['model'].update(family='trend'),lambda s:s['validation'].update(innerFolds=3),lambda s:s['universe'].update(start='20230101')]:
         bad=deepcopy(task['strategy']);mutate(bad)
         with pytest.raises(ValueError): validate_research_profile(bad,scope,research_profile=AUTO_PROFILE,dataset_version=2)
+    extended_scope = dict(scope,end='20250101')
+    extended = deepcopy(task['strategy']);extended['universe'] = extended_scope
+    with pytest.raises(ValueError):
+        validate_research_profile(extended,extended_scope,research_profile=AUTO_PROFILE,dataset_version=2)
     bad=deepcopy(task['sourceEvidence']);bad['admissionProfile']=None
     with pytest.raises(ValueError): validate_source_evidence(bad)
     capabilities=claim_request(task['id'],financial_datasets=True)

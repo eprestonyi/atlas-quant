@@ -209,8 +209,8 @@ class FinancialBundleAudit(BundleAudit):
             if self.manifest["sourceEvidence"]["admissionProfile"] == AUTO_PROFILE:
                 from datetime import datetime
                 u = strategy["universe"]
-                span = (datetime.strptime(u["end"], "%Y%m%d")-datetime.strptime(u["start"], "%Y%m%d")).days
-                require(not u.get("selection") and 1 <= len(u["symbols"]) <= 50 and 0 <= span <= 366 and len(strategy["factors"]) <= 16
+                span = (datetime.strptime(u["end"], "%Y%m%d")-datetime.strptime(u["start"], "%Y%m%d")).days+1
+                require(not u.get("selection") and 1 <= len(u["symbols"]) <= 50 and 1 <= span <= 366 and len(strategy["factors"]) <= 16
                         and strategy["validation"]["innerFolds"] == strategy["validation"]["outerFolds"] == 2
                         and strategy["model"]["refitDays"] >= 20
                         and all(f["role"] == "predictor" for f in strategy["factors"])

@@ -35,8 +35,8 @@ def validate_research_profile(strategy, scope, *, research_profile=None, dataset
             and not any(normalized["dataBindings"].values()), "DATASET_RESEARCH_PROFILE",
             "Financial research accepts predictor factors and no temporary bindings")
     if profile == AUTO_PROFILE:
-        span = (datetime.strptime(scope["end"], "%Y%m%d")-datetime.strptime(scope["start"], "%Y%m%d")).days
-        require(len(scope["symbols"]) <= 50 and span <= 366 and len(normalized["factors"]) <= 16
+        span = (datetime.strptime(scope["end"], "%Y%m%d")-datetime.strptime(scope["start"], "%Y%m%d")).days+1
+        require(len(scope["symbols"]) <= 50 and 1 <= span <= 366 and len(normalized["factors"]) <= 16
                 and normalized["validation"]["innerFolds"] == normalized["validation"]["outerFolds"] == 2
                 and normalized["model"]["refitDays"] >= 20,
                 "DATASET_RESEARCH_PROFILE", "Financial auto/1 requires <=50 symbols, <=16 factors, <=366 days, 2x2 folds and refit>=20")

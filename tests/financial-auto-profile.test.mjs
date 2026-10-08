@@ -37,7 +37,8 @@ test('new fundamental auto admission is explicit, v2-only, and preserves legacy 
   for (const change of [
     s=>s.execution.enabled=true,s=>s.model.estimator='ridge',s=>s.model.family='trend',
     s=>s.model.refitDays=19,s=>s.validation.innerFolds=3,s=>s.validation.outerFolds=3,
-    s=>s.universe.start='20230101',s=>s.universe.symbols=Array.from({length:51},(_,i)=>`${600000+i}.SH`),
+    s=>s.universe.start='20230101',s=>s.universe.end='20250101',
+    s=>s.universe.symbols=Array.from({length:51},(_,i)=>`${600000+i}.SH`),
     s=>s.factors=Array.from({length:17},()=>s.factors[0]),s=>s.factors[0].role='hedge',
     s=>s.universe.selection={id:'unrelated'},s=>s.dataBindings={financial:{field:'temporary'}},
   ]) {
