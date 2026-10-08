@@ -68,7 +68,7 @@ class MarketSpool(AcquisitionSpool):
 
     def _part(self, job, collection, ordinal):
         require(
-            collection in {"rows", "provenance", "receipts"}
+            collection in {"rows", "provenance", "receipts", "raw"}
             and type(ordinal) is int
             and 0 <= ordinal < MAX_CHUNKS,
             "MARKET_SPOOL_PART",
@@ -77,10 +77,15 @@ class MarketSpool(AcquisitionSpool):
         return f'{identifier(job["id"])}-{collection}-{ordinal}.part.enc'
 
     def write_chunk(self, job, collection, ordinal, raw):
-        self._write(self._part(job, collection, ordinal), raw, CHUNK_BYTES)
+        self._write(self._part(job, collection, ordinal), raw, RAW_CHUNK_BYTES if collection=="raw" else CHUNK_BYTES)
+
+    def chunk(self,job,collection,part):
+        raw=self._read(self._part(job,collection,part['ordinal']),RAW_CHUNK_BYTES if collection=='raw' else CHUNK_BYTES)
+        require(raw is not None and len(raw)==part['byteLength'] and sha(raw)==part['sha256'],'MARKET_SPOOL_INTEGRITY','Missing or changed market source part')
+        return raw
 
     def save_manifest(self, job, manifest):
-        for name, c in manifest["collections"].items():
+        for name, c in output_collections(manifest).items():
             for p in c["chunks"]:
                 self.chunk(job, name, p)
         self._write(

@@ -1,3 +1,8 @@
+import {
+  RAW_ARCHIVE_LIMITS,
+  validateRawArchive,
+  verifyRawArchive,
+} from "./raw-archive.mjs";
 /** Content-addressed, lease-fenced publication. No price series enter D1. */
 import { NOW, random, parse } from "../runtime.mjs";
 import { object, integer, hashBytes, string } from "../financial/common.mjs";
@@ -21,8 +26,13 @@ export const PUBLICATION_LIMITS = Object.freeze({
   chunkBytes: 512 * 1024,
   chunks: 320,
   totalBytes: 128 * 1024 * 1024,
+  ...RAW_ARCHIVE_LIMITS,
 });
 const collections = ["rows", "provenance", "receipts"];
+export const outputCollections = (m) => ({
+  ...m.collections,
+  raw: m.rawArchive,
+});
 export const datasetRef = (r) => ({
   datasetId: r.id,
   datasetRoot: r.dataset_root,
@@ -42,6 +52,7 @@ export function validateManifest(m, job, plan) {
     "rowCount",
     "sourceKind",
     "collections",
+    "rawArchive",
   ]);
   if (
     m.format !== DATASET_FORMAT ||
@@ -69,6 +80,7 @@ export function validateManifest(m, job, plan) {
     m.calendar.length * plan.scope.symbolCount > MARKET_LIMITS.maxRows
   )
     fail("MARKET_CALENDAR", "完整市场日历无效或超过全池预算");
+  validateRawArchive(m.rawArchive, plan.requests.length);
   object(m.collections, collections);
   let total = 0,
     count = 0;
@@ -134,10 +146,10 @@ export async function publicationStatus(env, p) {
   return {
     manifestSha256: p.manifest_hash,
     missing: Object.fromEntries(
-      collections.map((name) => [
+      Object.keys(outputCollections(m)).map((name) => [
         name,
-        m.collections[name].chunks
-          .filter((c) => !have.has(name + ":" + c.ordinal))
+        outputCollections(m)
+          [name].chunks.filter((c) => !have.has(name + ":" + c.ordinal))
           .map((c) => c.ordinal),
       ]),
     ),
@@ -190,10 +202,10 @@ export async function putPart(env, jobId, token, root, name, ordinal, raw) {
   if (
     pub.manifest_hash !== hash(root) ||
     pub.lease_token !== token ||
-    !collections.includes(name)
+    (!collections.includes(name) && name !== "raw")
   )
     fail("MARKET_PUBLICATION_CONFLICT", "市场片段归属错误", 409);
-  const p = JSON.parse(pub.manifest).collections[name].chunks[ordinal];
+  const p = outputCollections(JSON.parse(pub.manifest))[name].chunks[ordinal];
   if (
     !p ||
     p.ordinal !== ordinal ||
@@ -339,6 +351,7 @@ async function verify(env, job, m, plan) {
       "httpStatus",
       "retrievedAt",
       "sourceKind",
+      "rawLocation",
     ]);
     const expected = plan.requests[i],
       a = byKey.get(r.requestKey);
@@ -356,6 +369,7 @@ async function verify(env, job, m, plan) {
     )
       fail("MARKET_RECEIPTS_INTEGRITY", "来源回执与完整计划不符", 409);
   }
+  await verifyRawArchive(m, receipts, (p) => readPart(env, job, m, "raw", p));
   let p;
   for await (const row of records(env, job, m, "provenance")) p = row;
   object(p, [

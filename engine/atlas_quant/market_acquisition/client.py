@@ -32,10 +32,10 @@ class MarketClient(AcquisitionClient):
 
     def put_chunk(self, job, manifest_hash, collection, ordinal, raw, *, deadline=None):
         require(
-            collection in {"rows", "receipts", "provenance"}
+            collection in {"rows", "receipts", "provenance", "raw"}
             and type(ordinal) is int
             and 0 <= ordinal < MAX_CHUNKS
-            and len(raw) <= CHUNK_BYTES,
+            and len(raw) <= (RAW_CHUNK_BYTES if collection=="raw" else CHUNK_BYTES),
             "MARKET_PART",
             "Invalid market output part",
         )

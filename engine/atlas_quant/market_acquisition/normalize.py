@@ -210,6 +210,25 @@ class ChunkWriter:
 
 
 def build_publication(job, plan, read_receipt, write_chunk):
+    raw_chunks = []
+    pending = bytearray()
+
+    def flush_raw():
+        if not pending:
+            return
+        require(
+            len(raw_chunks) < RAW_CHUNKS,
+            "MARKET_RAW_BUDGET",
+            "Raw archive chunk budget exceeded",
+        )
+        raw = bytes(pending)
+        ordinal = len(raw_chunks)
+        write_chunk("raw", ordinal, raw)
+        raw_chunks.append(
+            {"ordinal": ordinal, "sha256": sha(raw), "byteLength": len(raw)}
+        )
+        pending.clear()
+
     kinds = set()
     raw_total = 0
     receipt_meta = []
@@ -218,6 +237,19 @@ def build_publication(job, plan, read_receipt, write_chunk):
         table(r, rec)
         kinds.add(rec["sourceKind"])
         raw_total += rec["byteLength"]
+        require(
+            raw_total <= RAW_BYTES,
+            "MARKET_RAW_BUDGET",
+            "Raw parent budget exceeded before archive write",
+        )
+        if pending and len(pending) + rec["byteLength"] > RAW_CHUNK_BYTES:
+            flush_raw()
+        location = {
+            "ordinal": len(raw_chunks),
+            "offset": len(pending),
+            "byteLength": rec["byteLength"],
+        }
+        pending.extend(rec["raw"])
         receipt_meta.append(
             {
                 k: rec[k]
@@ -232,6 +264,8 @@ def build_publication(job, plan, read_receipt, write_chunk):
                 ]
             }
         )
+        receipt_meta[-1]["rawLocation"] = location
+    flush_raw()
     require(
         raw_total <= RAW_BYTES and len(kinds) == 1 and kinds <= {"fixture", "provider"},
         "MARKET_SOURCE",
@@ -318,6 +352,11 @@ def build_publication(job, plan, read_receipt, write_chunk):
         "rowCount": parts["rows"]["rowCount"],
         "sourceKind": source_kind,
         "collections": parts,
+        "rawArchive": {
+            "chunks": raw_chunks,
+            "byteLength": raw_total,
+            "receiptCount": len(receipt_meta),
+        },
     }
     require(
         len(encode(manifest)) <= MANIFEST_BYTES,

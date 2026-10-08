@@ -1,3 +1,4 @@
+import { marketArchiveResponse } from "./archive.mjs";
 import { readyDataset, validateMarketRef } from "./research.mjs";
 import { DATASET_FORMAT, datasetRef } from "./publication.mjs";
 import { pageQuery } from "../financial/common.mjs";
@@ -49,7 +50,9 @@ export async function marketPreparationApi(req, env, path, owner) {
       ...(await marketResearchAdmissions(env)),
     });
   }
-  const datasetMatch = /^\/market-datasets\/([a-f0-9-]{36})$/.exec(path);
+  const datasetMatch = /^\/market-datasets\/([a-f0-9-]{36})(\/download)?$/.exec(
+    path,
+  );
   if (datasetMatch && req.method === "GET") {
     const query = new URL(req.url).searchParams;
     if ([...query.keys()].some((k) => k !== "datasetRoot"))
@@ -61,6 +64,7 @@ export async function marketPreparationApi(req, env, path, owner) {
       version: 1,
     };
     const a = await readyDataset(env, owner, ref);
+    if (datasetMatch[2]) return marketArchiveResponse(env, a, owner);
     return json({
       marketDatasetRef: ref,
       universeScopeRef: a.manifest.universeScopeRef,
