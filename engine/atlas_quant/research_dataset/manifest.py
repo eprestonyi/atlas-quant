@@ -1,0 +1,282 @@
+"""Closed typed graph; descriptors cannot request arbitrary paths or decoding."""
+
+import re
+
+from ..financial_statements.contracts import parse_date
+from .codec import decode, digest, encode, keys, require, sha, uuid
+from .profile import DEFAULT_PROFILE, FORMAT, PROFILE_ID, VERSION, check_profile
+
+TYPES = {
+    "registry_evidence": set(),
+    "market_dataset": {"marketRoot"},
+    "financial_input": {"inputRoot", "packRoot"},
+    "financial_prepared": {"packRoot", "preparedRoot", "calendarRoot"},
+    "research_rows": {"financialDatasetRoot"},
+    "dataset_schema": set(),
+    "dataset_coverage": set(),
+}
+
+
+def scope(value, profile=DEFAULT_PROFILE):
+    keys(value, {"symbols", "start", "end"})
+    symbols = value["symbols"]
+    require(
+        isinstance(symbols, list)
+        and 1 <= len(symbols) <= profile.max_symbols
+        and all(
+            isinstance(s, str) and re.fullmatch(r"\d{6}\.(SH|SZ)", s) for s in symbols
+        )
+        and symbols == sorted(set(symbols)),
+        "DATASET_SCOPE",
+        "A sorted exact 1–50 Shanghai/Shenzhen universe is required",
+    )
+    try:
+        start, end = parse_date(value["start"]), parse_date(value["end"])
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Invalid dataset dates") from exc
+    require(
+        start <= end
+        and isinstance(value["start"], str)
+        and len(value["start"]) == 8
+        and isinstance(value["end"], str)
+        and len(value["end"]) == 8,
+        "DATASET_SCOPE",
+        "Dataset interval must be exact YYYYMMDD",
+    )
+    return value
+
+
+def component_root(item):
+    return sha(encode({k: v for k, v in item.items() if k != "componentRoot"}))
+
+
+def validate_manifest(raw, *, expected_root=None, profile=DEFAULT_PROFILE):
+    check_profile(profile)
+    value = decode(raw, profile.manifest_bytes)
+    keys(
+        value,
+        {
+            "format",
+            "version",
+            "profile",
+            "scope",
+            "marketCalendarRef",
+            "financialSources",
+            "components",
+            "roots",
+        },
+    )
+    require(
+        value["format"] == FORMAT
+        and type(value["version"]) is int
+        and value["version"] == VERSION
+        and value["profile"] == PROFILE_ID,
+        "DATASET_FORMAT",
+        "Unknown dataset format or profile",
+    )
+    if expected_root is not None:
+        require(
+            sha(raw) == digest(expected_root), "DATASET_ROOT", "Dataset root mismatch"
+        )
+    scope(value["scope"], profile)
+    uuid(value["marketCalendarRef"])
+    keys(value["roots"], {"marketRoot", "financialDatasetRoot"})
+    for root in value["roots"].values():
+        digest(root)
+    components = value["components"]
+    require(
+        isinstance(components, list) and 1 <= len(components) <= profile.max_components,
+        "DATASET_BUDGET",
+        "Component count exceeds profile",
+    )
+    ids, roots, depth, total, parts, input_bytes = {}, {}, {}, len(raw), 0, 0
+    for item in components:
+        keys(
+            item,
+            {
+                "componentId",
+                "type",
+                "version",
+                "componentRoot",
+                "semanticRoots",
+                "encoding",
+                "payloadSha256",
+                "byteLength",
+                "dependencies",
+                "parts",
+            },
+        )
+        name = item["componentId"]
+        require(
+            isinstance(name, str)
+            and re.fullmatch(r"[a-z][A-Za-z0-9]{0,39}", name)
+            and name not in ids,
+            "DATASET_IDENTITY",
+            "Duplicate or invalid component ID",
+        )
+        require(
+            isinstance(item["type"], str)
+            and item["type"] in TYPES
+            and type(item["version"]) is int
+            and item["version"] == 1
+            and item["encoding"] == "raw_bytes",
+            "DATASET_TYPE",
+            "Unregistered component encoding",
+        )
+        keys(item["semanticRoots"], TYPES[item["type"]])
+        for root in item["semanticRoots"].values():
+            digest(root)
+        digest(item["payloadSha256"])
+        require(
+            digest(item["componentRoot"]) == component_root(item)
+            and item["componentRoot"] not in roots,
+            "DATASET_ROOT",
+            "Changed or duplicated component root",
+        )
+        dependencies = item["dependencies"]
+        require(
+            isinstance(dependencies, list)
+            and all(isinstance(root, str) and root in roots for root in dependencies)
+            and dependencies == sorted(set(dependencies)),
+            "DATASET_GRAPH",
+            "Dependencies must be unique earlier component roots",
+        )
+        depth[item["componentRoot"]] = (
+            0 if not dependencies else 1 + max(depth[d] for d in dependencies)
+        )
+        require(
+            depth[item["componentRoot"]] <= profile.max_depth,
+            "DATASET_GRAPH",
+            "Component dependency graph is too deep",
+        )
+        require(
+            type(item["byteLength"]) is int
+            and item["byteLength"] > 0
+            and isinstance(item["parts"], list)
+            and item["parts"],
+            "DATASET_BUDGET",
+            "Nonempty bounded component bytes required",
+        )
+        size = 0
+        for ordinal, part in enumerate(item["parts"]):
+            keys(part, {"ordinal", "byteLength", "sha256"})
+            require(
+                type(part["ordinal"]) is int
+                and part["ordinal"] == ordinal
+                and type(part["byteLength"]) is int
+                and 1 <= part["byteLength"] <= profile.part_bytes,
+                "DATASET_BUDGET",
+                "Invalid part ordinal or byte length",
+            )
+            digest(part["sha256"])
+            size += part["byteLength"]
+        require(
+            size == item["byteLength"], "DATASET_BUDGET", "Component byte count differs"
+        )
+        ceiling = {
+            "market_dataset": profile.market_bytes,
+            "financial_input": profile.package_bytes,
+            "research_rows": profile.joined_bytes,
+        }.get(item["type"], profile.total_bytes)
+        require(
+            size <= ceiling,
+            "DATASET_BUDGET",
+            "Component exceeds its typed byte ceiling",
+        )
+        if item["type"] == "financial_input":
+            input_bytes += size
+            require(
+                input_bytes <= profile.package_bytes,
+                "DATASET_BUDGET",
+                "Financial packages exceed their shared budget",
+            )
+        total += size
+        parts += len(item["parts"])
+        require(
+            total <= profile.total_bytes and parts <= profile.max_parts,
+            "DATASET_BUDGET",
+            "Closure exceeds its shared byte/part budget",
+        )
+        ids[name] = item
+        roots[item["componentRoot"]] = item
+    sources = value["financialSources"]
+    require(
+        isinstance(sources, list) and 1 <= len(sources) <= profile.max_inputs,
+        "DATASET_BUDGET",
+        "Financial source count exceeds profile",
+    )
+    fixed = {
+        "registryEvidence": "registry_evidence",
+        "marketDataset": "market_dataset",
+        "researchRows": "research_rows",
+        "schema": "dataset_schema",
+        "coverage": "dataset_coverage",
+    }
+    for i, source in enumerate(sources):
+        keys(source, {"componentId", "calendarRef", "proofRefs", "preparedRoot"})
+        require(
+            source["componentId"] == f"financialInput{i}",
+            "DATASET_TYPE",
+            "Financial source order differs",
+        )
+        uuid(source["calendarRef"])
+        require(
+            isinstance(source["proofRefs"], list) and len(source["proofRefs"]) <= 256,
+            "DATASET_BUDGET",
+            "Too many proof references",
+        )
+        for ref in source["proofRefs"]:
+            uuid(ref)
+        require(
+            source["proofRefs"] == sorted(set(source["proofRefs"])),
+            "DATASET_IDENTITY",
+            "Duplicate proof reference",
+        )
+        digest(source["preparedRoot"])
+        fixed[f"financialInput{i}"] = "financial_input"
+        fixed[f"financialPrepared{i}"] = "financial_prepared"
+    require(
+        set(ids) == set(fixed) and all(ids[k]["type"] == v for k, v in fixed.items()),
+        "DATASET_TYPE",
+        "Missing or unexpected typed component",
+    )
+    registry = ids["registryEvidence"]["componentRoot"]
+    expected_dependencies = {"registryEvidence": [], "marketDataset": [registry]}
+    for i in range(len(sources)):
+        expected_dependencies[f"financialInput{i}"] = [registry]
+        expected_dependencies[f"financialPrepared{i}"] = [
+            ids[f"financialInput{i}"]["componentRoot"]
+        ]
+    derived = sorted(
+        [
+            ids["marketDataset"]["componentRoot"],
+            *[
+                ids[f"financialPrepared{i}"]["componentRoot"]
+                for i in range(len(sources))
+            ],
+        ]
+    )
+    expected_dependencies.update(researchRows=derived, schema=derived, coverage=derived)
+    require(
+        all(ids[k]["dependencies"] == v for k, v in expected_dependencies.items()),
+        "DATASET_GRAPH",
+        "Typed dependencies differ from the registered closure",
+    )
+    require(
+        ids["marketDataset"]["semanticRoots"]["marketRoot"]
+        == value["roots"]["marketRoot"]
+        and ids["researchRows"]["semanticRoots"]["financialDatasetRoot"]
+        == value["roots"]["financialDatasetRoot"],
+        "DATASET_ROOT",
+        "Manifest semantic roots differ from components",
+    )
+    for i, source in enumerate(sources):
+        financial, prepared = ids[f"financialInput{i}"], ids[f"financialPrepared{i}"]
+        require(
+            prepared["semanticRoots"]["packRoot"]
+            == financial["semanticRoots"]["packRoot"]
+            and prepared["semanticRoots"]["preparedRoot"] == source["preparedRoot"],
+            "DATASET_ROOT",
+            "Prepared/source references disagree",
+        )
+    return value
