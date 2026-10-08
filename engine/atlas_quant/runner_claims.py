@@ -17,10 +17,15 @@ def _error(code, message):
     return RunnerError(code, message)
 
 
-def claim_request(request_id):
+def claim_request(request_id, *, financial_datasets=False):
     from . import __version__
-    return {"requestId": request_id, "runnerVersion": "atlas-quant-runner/" + __version__,
+    request = {"requestId": request_id, "runnerVersion": "atlas-quant-runner/" + __version__,
             "engineVersion": __version__, "transportFormats": ["atlas.quant.bundle/1"]}
+    if financial_datasets is True:
+        request["transportFormats"].append("atlas.quant.financial_bundle/1")
+        request["datasetFormats"] = ["atlas.quant.research_dataset/2"]
+        request["snapshotFormats"] = ["financial_json_v1"]
+    return request
 
 
 def validate_receipt(response, intent, *, terminal_only=False):
@@ -113,7 +118,8 @@ class ClaimIntent:
         current = self.read()
         if current != intent or intent["phase"] != "pending_claim":
             raise _error("CLAIM_INTEGRITY", "领取意图发生变化；停止执行。")
-        return self._write(dict(intent, phase="executing", jobId=job["id"], leaseToken=job["leaseToken"]))
+        extra = {"sourceKind": "ready_dataset"} if job.get("dataSource") == "ready_dataset" else {}
+        return self._write(dict(intent, **extra, phase="executing", jobId=job["id"], leaseToken=job["leaseToken"]))
 
     def clear(self, expected):
         current = self.read()

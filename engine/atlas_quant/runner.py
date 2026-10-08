@@ -94,6 +94,8 @@ def load_config(path):
     if not delivery.is_absolute() or delivery.is_symlink():
         raise RunnerError("CONFIG_DELIVERY", "结果重试目录必须是绝对私有路径。")
     config["delivery_dir"] = str(delivery)
+    if type(config.get("financial_dataset_research_enabled", False)) is not bool:
+        raise RunnerError("CONFIG_DATASET", "冻结财务预测开关必须是布尔值。")
     try:
         config["job_timeout"] = max(30, min(900, int(config.get("job_timeout", DEFAULT_TIMEOUT))))
         config["poll_seconds"] = max(3, min(60, int(config.get("poll_seconds", 10))))
@@ -117,7 +119,7 @@ def _safe_error(exc):
 def prepare_job(job, config):
     """Keep fixed private provider access in process memory, never in queue artifacts."""
     prepared = dict(job)
-    if job.get("jobKind") == "execution":
+    if job.get("jobKind") == "execution" or job.get("dataSource") == "ready_dataset":
         # Replay is strictly an immutable-input operation. No provider or PCD
         # credentials should be present even when the original source was real.
         prepared.pop("providerAccess", None)
@@ -160,8 +162,10 @@ def run_job(job, *, token=None, cache_dir=None, allowed_proxy_hosts=None, snapsh
         if (not isinstance(job.get("forecastArtifactId"), str) or not job["forecastArtifactId"]
                 or artifact.get("artifactId") != job["forecastArtifactId"]):
             raise RunnerError("REPLAY_IDENTITY", "执行实验与原始预测身份不一致。")
-        data, provenance = restore_input(strategy, replay.get("snapshot"), artifact.get("dataFingerprint"), max_bytes=result_limit)
-        result = execute_forecasts(strategy, data, artifact, provenance=provenance)
+        from .compute_slot import compute_slot
+        with compute_slot(compute_lock_path, deadline=deadline):
+            data, provenance = restore_input(strategy, replay.get("snapshot"), artifact.get("dataFingerprint"), max_bytes=result_limit)
+            result = execute_forecasts(strategy, data, artifact, provenance=provenance)
         return _validate_result(result, limit=result_limit)
     data_bindings = strategy.get("dataBindings") or {}
     if not isinstance(data_bindings, dict):
@@ -246,6 +250,15 @@ def _validate_result(result, *, limit=None):
 
 def _child_entry(connection, job, token, cache_dir, allowed_proxy_hosts, capture_snapshot=False, bundle_context=None, compute_lock_path=None, deadline=None):
     try:
+        if job.get("dataSource") == "ready_dataset":
+            if bundle_context is None or token is not None:
+                raise RunnerError("DATASET_INPUT_IDENTITY", "数据集预测须使用隔离冻结输入。")
+            os.environ.pop("TUSHARE_TOKEN", None)
+            from .research_dataset_runner.compute import compute
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                answer = compute(job, bundle_context, slot_path=compute_lock_path, deadline=deadline)
+            connection.send(answer)
+            return
         snapshots, plans = [], []
         if bundle_context is not None:
             from .bundle import BUNDLE_LIMIT
@@ -494,7 +507,12 @@ def flush_completions(client, spool):
         request_id = payload.get("_claimRequestId")
         intent = {"requestId": request_id, "jobId": payload["id"], "leaseToken": payload["leaseToken"]}
         snapshot_key = payload.get("_snapshotKey")
-        snapshot_store = bundle_store = None
+        snapshot_store = bundle_store = dataset_store = None
+        if payload.get("_datasetKey") is not None:
+            from .research_dataset_runner.spool import ResearchDatasetSpool
+            dataset_store = ResearchDatasetSpool.from_spool(spool, payload)
+            if dataset_store.key != payload["_datasetKey"]:
+                raise RunnerError("DELIVERY_INTEGRITY", "冻结数据集与待回传任务身份不一致。")
         if snapshot_key is not None:
             from .runner_artifacts import SnapshotSpool
             snapshot_store = SnapshotSpool(spool)
@@ -534,13 +552,16 @@ def flush_completions(client, spool):
                                else client.post("claim", claim_request(request_id), deadline=delivery_deadline))
                     validate_receipt(receipt, intent, terminal_only=True)
                     ClaimIntent(spool).clear(intent)
-                if bundle_store is not None:
+                if bundle_store is not None or dataset_store is not None:
                     # A crash halfway through deleting multiple chunk files must
                     # resume cleanup, never re-upload a now-incomplete directory.
                     if not payload.get("_terminalConfirmed"):
                         payload = dict(payload, _terminalConfirmed=True)
                         path = spool.write(payload)
-                    bundle_store.cleanup()
+                    if bundle_store is not None:
+                        bundle_store.cleanup()
+                    if dataset_store is not None:
+                        dataset_store.cleanup()
                 if snapshot_store is not None:
                     snapshot_store.acknowledge(snapshot_key)
                 spool.acknowledge(path)
@@ -635,11 +656,27 @@ def _serve(config, spool, *, once=False):
     while not STOP:
         try:
             intent = claims.current_or_create()
-            claimed = client.post("claim", claim_request(intent["requestId"]))
+            claimed = client.post("claim", claim_request(intent["requestId"],
+                financial_datasets=config.get("financial_dataset_research_enabled", False)))
             status = validate_receipt(claimed, intent)
             job = claimed.get("job")
             if job is None:
-                claims.clear(dict(intent, jobId=claimed["claim"].get("jobId")))
+                if intent["phase"] == "executing" and intent.get("sourceKind") == "ready_dataset":
+                    # A server-side expiry/cancellation may have happened while
+                    # this process was offline. Persist cleanup before clearing
+                    # the only durable reference to its encrypted directories.
+                    from .financial_bundle_spool import FinancialBundleSpool
+                    from .research_dataset_runner.spool import ResearchDatasetSpool
+                    identity = {"id": intent["jobId"], "leaseToken": intent["leaseToken"]}
+                    spool.write({**identity, "_claimRequestId": intent["requestId"],
+                        "_bundleFormat": "atlas.quant.financial_bundle/1",
+                        "_bundleKey": FinancialBundleSpool.from_spool(spool, identity).key,
+                        "_datasetKey": ResearchDatasetSpool.from_spool(spool, identity).key,
+                        "error": {"code": "REMOTE_TERMINAL", "message": "终态已确认，仅清理本地私有中间文件。"},
+                        "_terminalConfirmed": True})
+                    flush_completions(client, spool)
+                else:
+                    claims.clear(dict(intent, jobId=claimed["claim"].get("jobId")))
                 if once:
                     return 0
                 _wait(config.get("poll_seconds", 10))
@@ -647,25 +684,60 @@ def _serve(config, spool, *, once=False):
             if not isinstance(job, dict) or not all(isinstance(job.get(k), str) and job[k] for k in ("id", "leaseToken")):
                 raise RunnerError("QUEUE_JOB", "队列任务格式无效。")
             identity = {"id": job["id"], "leaseToken": job["leaseToken"]}
+            financial = job.get("dataSource") == "ready_dataset"
+            from .bundle_spool import BundleSpool
+            store_class = BundleSpool
+            private_format = {}
+            if financial:
+                from .financial_bundle_spool import FinancialBundleSpool
+                from .research_dataset_runner.spool import ResearchDatasetSpool
+                store_class = FinancialBundleSpool
+                private_format = {"_bundleFormat": "atlas.quant.financial_bundle/1",
+                                  "_datasetKey": ResearchDatasetSpool.from_spool(spool, identity).key}
             if intent["phase"] == "executing":
                 # Input/provider acquisition may already have started before the
                 # process died. Do not replay paid reads or numerical computation.
-                from .bundle_spool import BundleSpool
-                interrupted_bundle = BundleSpool.from_spool(spool, identity)
-                spool.write(dict(identity, _claimRequestId=intent["requestId"], _bundleKey=interrupted_bundle.key,
-                    error={"code": "RUNNER_INTERRUPTED", "message": "运行服务在计算或取数期间中断；本次实验停止，未自动重放。"}))
+                interrupted_bundle = store_class.from_spool(spool, identity)
+                recovered = {"error": {"code": "RUNNER_INTERRUPTED", "message": "运行服务在计算或取数期间中断；本次实验停止，未自动重放。"}}
+                if financial and (interrupted_bundle.root / "manifest.enc").exists():
+                    reader = interrupted_bundle.reader()
+                    reader.verify_integrity()
+                    if reader.manifest["sourceEvidence"] != job.get("sourceEvidence"):
+                        raise RunnerError("DELIVERY_INTEGRITY", "已保存金融结果与领取的数据集身份不符。")
+                    recovered = {"bundleId": reader.bundle_id}
+                spool.write({**identity, **private_format, **recovered,
+                    "_claimRequestId": intent["requestId"], "_bundleKey": interrupted_bundle.key})
                 flush_completions(client, spool)
                 if once:
                     return 0
                 continue
             claims.executing(intent, job)
             job_deadline = time.monotonic()+config.get("job_timeout", DEFAULT_TIMEOUT)
+            if financial:
+                job_deadline = min(job_deadline, time.monotonic() + 600)
             bundle_context = None
             if (isinstance(job.get("strategy"), dict) and job["strategy"].get("schemaVersion") == 2
-                    and job.get("resultTransport") == {"format": "atlas.quant.bundle", "version": 1}):
-                from .bundle_spool import BundleSpool
-                bundle_context = BundleSpool.context_for(spool, identity)
+                    and job.get("resultTransport") == {"format": "atlas.quant.financial_bundle" if financial else "atlas.quant.bundle", "version": 1}):
+                bundle_context = store_class.context_for(spool, identity)
             input_error = None
+            last_input_heartbeat = 0.
+            def check_dataset_input():
+                nonlocal last_input_heartbeat
+                if STOP or time.monotonic() >= job_deadline:
+                    raise RunnerError("JOB_TIMEOUT", "读取冻结输入超过任务时限或服务已停止。")
+                if time.monotonic() >= last_input_heartbeat + 15:
+                    state = client.post("heartbeat", dict(identity, status="running"), deadline=job_deadline)
+                    if state.get("cancelled") or state.get("leaseValid") is False:
+                        raise RunnerError("JOB_CANCELLED", "任务已取消或租约失效。")
+                    last_input_heartbeat = time.monotonic()
+            if financial:
+                try:
+                    if config.get("financial_dataset_research_enabled") is not True or bundle_context is None:
+                        raise RunnerError("DATASET_RESEARCH_DISABLED", "此运行端未启用冻结财务数据集预测。")
+                    from .research_dataset_runner.client import ResearchDatasetClient
+                    job = ResearchDatasetClient(config).prepare(job, spool, deadline=job_deadline, check=check_dataset_input)
+                except Exception as exc:
+                    input_error = {"error": _safe_error(exc)}
             if job.get("jobKind") == "execution":
                 try:
                     replay_deadline = min(job_deadline, time.monotonic()+60)
@@ -690,14 +762,14 @@ def _serve(config, spool, *, once=False):
             if remaining <= 0 and input_error is None:
                 input_error = {"error": {"code": "JOB_TIMEOUT", "message": "读取冻结输入后研究时间预算已耗尽。"}}
             answer = input_error or execute_bounded(prepare_job(job, config), timeout=remaining,
-                token=None if job.get("jobKind") == "execution" else os.environ.get("TUSHARE_TOKEN"), cache_dir=config.get("cache_dir"),
+                token=None if financial or job.get("jobKind") == "execution" else os.environ.get("TUSHARE_TOKEN"), cache_dir=config.get("cache_dir"),
                 allowed_proxy_hosts=config.get("allowed_proxy_hosts"), heartbeat=heartbeat,
                 stop_requested=lambda: STOP, capture_snapshot=job.get("jobKind") != "execution", bundle_context=bundle_context,
                 compute_lock_path=config.get("compute_lock_path"))
             # Persist authenticated encrypted bytes before exact idempotent delivery.
-            complete = dict(identity, _claimRequestId=intent["requestId"], **answer)
+            complete = {**identity, **private_format, **answer, "_claimRequestId": intent["requestId"]}
             if bundle_context is not None:
-                complete["_bundleKey"] = BundleSpool(bundle_context).key
+                complete["_bundleKey"] = store_class(bundle_context).key
             spool.write(complete)
             flush_completions(client, spool)
             if once:
