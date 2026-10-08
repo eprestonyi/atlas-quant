@@ -47,10 +47,16 @@ export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
     const featureRows = featurePage ? featurePage.items : d.features || [];
     const pairs = jointPage ? jointPage.items : d.dependence?.jointDistributions || [];
     const dep = d.dependence || {};
-    return F.panel('因子样本与统计口径', `<dl class="sq-key-values"><dt>诊断区间</dt><dd>${e(C.dateText(d.firstDate))} — ${e(C.dateText(d.lastDate))}</dd><dt>成熟有效观察</dt><dd>${fmt(d.maturedValidOrigins, 0)} / ${fmt(d.origins, 0)}</dd><dt>标签定义</dt><dd>${e(d.targetDefinition || d.target || '未提供')}</dd><dt>用途</dt><dd>模型选择后计算的报告诊断，未用于本次候选选择</dd></dl>${F.note(d.significance?.reason || '当前未提供依赖感知的统计显著性；重叠标签不视为独立样本。')}`) +
+    const significance = d.significance?.reason === 'overlapping_labels_and_cross_sectional_temporal_dependence_not_adjusted_for_factor_tests'
+      ? '未校正标签重叠及横截面、时序依赖，暂不报告因子显著性。'
+      : d.significance?.reason || '当前未提供依赖感知的统计显著性；重叠标签不视为独立样本。';
+    const pairSelection = dep.jointPairSelection === 'declared_factor_order_then_derived_states_no_outcome_ranking'
+      ? '按预先声明的因子顺序，再列内置状态；不按结果挑选'
+      : dep.jointPairSelection || '未提供';
+    return F.panel('因子样本与统计口径', `<dl class="sq-key-values"><dt>诊断区间</dt><dd>${e(C.dateText(d.firstDate))} — ${e(C.dateText(d.lastDate))}</dd><dt>成熟有效观察</dt><dd>${fmt(d.maturedValidOrigins, 0)} / ${fmt(d.origins, 0)}</dd><dt>标签定义</dt><dd>${e(d.targetDefinition || d.target || '未提供')}</dd><dt>用途</dt><dd>模型选择后计算的报告诊断，未用于本次候选选择</dd></dl>${F.note(significance)}${F.advanced('显著性口径原始记录', raw(d.significance))}`) +
       F.panel('因子分布与关联', featurePage ? remoteState(featurePage, features(featureRows), '没有因子统计记录') : features(featureRows), { description: 'IC / Rank IC 为逐日期横截面相关；有效横截面至少需要三个非恒定标的。时序相关另列。' }) +
       F.panel('输入间相关与协方差', matrix('相关矩阵', dep.featureNames || [], dep.correlation) + matrix('协方差矩阵', dep.featureNames || [], dep.covariance) + matrix('每对有效观测数', dep.featureNames || [], dep.pairCounts, true) + F.note('矩阵按每对共同有效观测计算。缺失样本不一致时，协方差矩阵不保证半正定。')) +
-      F.panel('联合分布表', (jointPage ? remoteState(jointPage, pairs.map(joint).join(''), '没有联合分布记录') : pairs.map(joint).join('')) + `<p class="sq-subtle">共 ${fmt(dep.totalPossiblePairs, 0)} 对可组合输入；本报告计算预算 ${fmt(dep.jointPairBudget, 0)} 对，省略 ${fmt(dep.omittedPairs, 0)} 对。选择规则：${e(dep.jointPairSelection || '未提供')}。</p>`);
+      F.panel('联合分布表', (jointPage ? remoteState(jointPage, pairs.map(joint).join(''), '没有联合分布记录') : pairs.map(joint).join('')) + `<p class="sq-subtle">共 ${fmt(dep.totalPossiblePairs, 0)} 对可组合输入；本报告计算预算 ${fmt(dep.jointPairBudget, 0)} 对，省略 ${fmt(dep.omittedPairs, 0)} 对。选择规则：${e(pairSelection)}。</p>` + F.advanced('联合分布选择口径原始记录', raw({ jointPairSelection: dep.jointPairSelection })));
   }
   return { render };
 }

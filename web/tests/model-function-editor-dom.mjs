@@ -56,6 +56,9 @@ assert(host.textContent.includes('102.000000'));
 assert(host.textContent.includes('没有调用实时市场数据'));
 assert.equal(apiCalls.at(-1).body.edits[0].path,'/estimator/coefficients/1/0');
 assert.equal(apiCalls.at(-1).body.input.rows[0].factor_x,1);
+assert.equal(document.querySelector('[data-mfe-stale]').hidden,true);
+field('name','name only');assert.equal(document.querySelector('[data-mfe-stale]').hidden,true,'name does not affect inference');
+param('/estimator/coefficients/1/0','0.350');assert.equal(document.querySelector('[data-mfe-stale]').hidden,true,'equivalent numeric text does not affect inference');
 field('currentState','101');assert.equal(document.querySelector('[data-mfe-stale]').hidden,false);
 await click('mfe-derive');assert(host.textContent.includes('保存结果未知'));
 const firstSave=apiCalls.at(-1).body;
@@ -63,6 +66,8 @@ assert.equal(document.querySelector('[data-mfe-input="currentState"]').value,'10
 await click('mfe-derive');assert.deepEqual(apiCalls.at(-1).body,firstSave,'unknown save retries same ID and payload');
 assert(host.textContent.includes('UNVALIDATED_USER_EDIT'));
 assert.equal(JSON.stringify(artifact),frozen,'parameter editing never mutates frozen report');
+assert.equal(document.querySelector('[data-sq="mfe-download"]').textContent.trim(),'下载当前版本 JSON');
+assert(host.textContent.includes('未保存的参数修改不包含在 JSON 中'));
 await click('mfe-download');assert.equal(JSON.stringify(lastDownload.value),frozen);
 field('name','new derived name');await click('mfe-derive');assert.notEqual(apiCalls.at(-1).body.requestId,firstSave.requestId,'new payload gets new identity');
 // Edits during a request remain in the editor; the result identifies the submitted revision.
@@ -71,6 +76,18 @@ field('name','before delayed save');document.querySelector('[data-sq="mfe-derive
 field('name','after delayed save');releaseSave();await inFlightSave;waitSave=null;
 assert.equal(document.querySelector('[data-mfe-input="name"]').value,'after delayed save');
 assert(host.textContent.includes('当前后续修改尚未保存'));
+// Inference inputs do not change the function payload being saved.
+waitSave=new Promise(resolve=>{releaseSave=resolve;});
+document.querySelector('[data-sq="mfe-derive"]').click();const inputChangedDuringSave=pending;
+field('currentState','103');releaseSave();await inputChangedDuringSave;waitSave=null;
+assert(host.textContent.includes('新函数版本已保存'));
+assert(!host.textContent.includes('当前后续修改尚未保存'));
+// Renaming while inference is running must not mark its numeric result stale.
+let releaseNameEval;waitEval=new Promise(resolve=>{releaseNameEval=resolve;});
+document.querySelector('[data-sq="mfe-evaluate"]').click();const renamedDuringEval=pending;
+field('name','renamed during inference');releaseNameEval();await renamedDuringEval;waitEval=null;
+assert.equal(document.querySelector('[data-mfe-stale]').hidden,true);
+assert.equal(document.querySelector('[data-mfe-input="name"]').value,'renamed during inference');
 // A late result from a different function cannot replace the active function or its inputs.
 let releaseEval;waitEval=new Promise(resolve=>{releaseEval=resolve;});
 document.querySelector('[data-sq="mfe-evaluate"]').click();const inFlight=pending;
@@ -90,6 +107,19 @@ const tree={...structuredClone(artifact),artifactId:'e'.repeat(64),estimator:{ki
 show(tree,source);assert(!document.querySelector('[data-mfe-param*="threshold"]'));
 field('leafValue','.8');await click('mfe-leaf');assert(host.textContent.includes('/estimator/outputs/1/trees/0/1/0'));
 assert.equal(tree.estimator.outputs[1].trees[0][1][0],.3);
+field('currentState','100');field('scale','100');await click('mfe-evaluate');
+assert.equal(document.querySelector('[data-mfe-stale]').hidden,true);
+field('output','0');field('tree','0');field('leaf','2');field('leafValue','.6');
+assert.equal(document.querySelector('[data-mfe-stale]').hidden,true,'tree navigation and staged leaf text do not modify F');
+await click('mfe-leaf');assert.equal(document.querySelector('[data-mfe-stale]').hidden,false,'applying a leaf edit modifies F');
+// Constant functions ignore X and have no imputation or training transforms.
+const constant={...structuredClone(artifact),artifactId:'f'.repeat(64),estimator:{kind:'constant',value:[0,0]},transforms:{imputeMedian:null,winsorLower:null,winsorUpper:null,scaleMean:null,scaleScale:null}};
+show(constant,source);
+assert(host.textContent.includes('常量模型忽略 X，不使用训练输入变换'));
+assert(host.textContent.includes('不进行缺失填充'));
+assert(!host.textContent.includes('null 会使用训练时冻结的缺失处理'));
+assert(!host.textContent.includes('T 使用本次训练冻结'));
+param('/estimator/value/1','.01');await click('mfe-download');assert.deepEqual(lastDownload.value,constant,'JSON contains the saved version only');
 assert(editor.render({id:'old-fit'},source).includes('不能从旧报告'));
-console.log(JSON.stringify({numericParameterEditing:true,explicitInputOnly:true,priceGapOutput:true,idempotentUnknownSave:true,newPayloadNewId:true,lateResponseIsolation:true,closedLibraryStaysClosed:true,leafOnlyTreeEditing:true,originalImmutable:true,escapedValues:true,apiDoubles:true}));
+console.log(JSON.stringify({separateInferenceAndSaveRevisions:true,treeNavigationPreservesInference:true,constantInputDescription:true,currentVersionDownload:true,numericParameterEditing:true,explicitInputOnly:true,priceGapOutput:true,idempotentUnknownSave:true,newPayloadNewId:true,lateResponseIsolation:true,closedLibraryStaysClosed:true,leafOnlyTreeEditing:true,originalImmutable:true,escapedValues:true,apiDoubles:true}));
 dom.window.close();
