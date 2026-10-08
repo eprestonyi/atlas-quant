@@ -399,28 +399,87 @@ def test_internal_evidence_aliases_and_malformed_shapes(source, tmp_path, case):
         audit_market_dataset(write_dir(tmp_path, value))
 
 
-def paired_fixture(source, damage=None):
+@pytest.fixture(scope="module")
+def paired_source():
+    # A full-year SYNTHETIC source supports the declared 61-session warmup and
+    # terminal clock. Generating raw tables/normalization invokes no estimator.
+    script = r"""
+import importlib.util,json,uuid
+from pathlib import Path
+from atlas_quant.market_acquisition.normalize import build_publication
+from atlas_quant.market_acquisition.protocol import encode,sha
+spec=importlib.util.spec_from_file_location("fixture",Path("scripts/fixtures/market_source.py"))
+fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
+scope,plan,_=fixture.source_plan(2)
+plan["fields"]=sorted(plan["fields"]+["pb"])
+for symbol in scope["symbols"]:
+    d={"provider":"TUSHARE_PRO","authorizationScope":plan["authorizationScope"],"apiName":"daily_basic","params":{"ts_code":symbol,"start_date":scope["start"],"end_date":scope["end"]},"fields":"ts_code,trade_date,pb","responseBytes":262144,"maxAttempts":1}
+    plan["requests"].append({"ordinal":len(plan["requests"]),**d,"requestKey":sha(encode(d))})
+plan["requests"].sort(key=lambda r:(r["params"].get("ts_code",""),["trade_cal","daily","adj_factor","daily_basic"].index(r["apiName"])))
+for i,r in enumerate(plan["requests"]):r["ordinal"]=i
+plan["budget"].update(declaredRequests=len(plan["requests"]),materializedRequests=len(plan["requests"]),rawResponseCeilingBytes=sum(r["responseBytes"] for r in plan["requests"]))
+plan["planRoot"]=sha(encode({k:v for k,v in plan.items() if k!="planRoot"}))
+provider=fixture.SyntheticMarketProvider({"allow_market_fixtures":True})
+receipts={};chunks={}
+for r in plan["requests"]:
+    raw=encode({"code":0,"data":{"fields":r["fields"].split(","),"items":[]}}) if r["apiName"]=="daily_basic" else provider.call_once(r,maximum_bytes=r["responseBytes"]).raw
+    receipts[r["requestKey"]]={"requestKey":r["requestKey"],"receiptId":str(uuid.uuid5(uuid.NAMESPACE_URL,r["requestKey"])),"raw":raw,"sha256":sha(raw),"byteLength":len(raw),"httpStatus":200,"retrievedAt":"2026-10-08T00:00:00Z","sourceKind":"fixture"}
+manifest=build_publication({},plan,lambda r:receipts[r["requestKey"]],lambda n,i,b:chunks.__setitem__((n,i),b))
+print(json.dumps({"scope":scope,"plan":plan,"manifest":manifest,"chunks":{n:{str(i):raw.decode() for (c,i),raw in chunks.items() if c==n} for n in ("rows","receipts","provenance","raw")}}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "engine")},
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    return json.loads(result.stdout)
+
+
+def paired_fixture(source, damage=None, clock="daily"):
     # Structural SYNTHETIC result only: no model is run or imported here.
     script = r"""
 import fs from 'node:fs';
-import {bundleFixture,canonical} from './tests/fixtures/bundle-fixture.mjs';
+import {bundleFixture,canonical,hash} from './tests/fixtures/bundle-fixture.mjs';
 const source=JSON.parse(fs.readFileSync(0,'utf8')), m=source.manifest, scope=source.scope;
-const damage=process.argv[1];
+const damage=process.argv[1],clock=process.argv[2];
 const evidence={admissionProfile:'pooled_asset_1000_v1',marketDatasetRef:{datasetId:'22222222-2222-2222-2222-222222222222',datasetRoot:source.root,format:'atlas.quant.market_dataset',version:1},universeScopeRef:m.universeScopeRef,rowValueRoot:'7'.repeat(64)};
 if(damage==='different_source')evidence.marketDatasetRef.datasetRoot='8'.repeat(64);
 if(damage==='phantom_profile')evidence.admissionProfile='pooled_asset_999999_v9';
 if(damage==='wrong_auto')evidence.admissionProfile='pooled_asset_1000_auto_candidate_v1';
 if(damage==='unverified_id')evidence.marketDatasetRef.datasetId='33333333-3333-3333-3333-333333333333';
-const fixture=bundleFixture({mutate:({forecast,report,snapshot,coverage})=>{
+const fixture=bundleFixture({count:1,rowsPerChunk:100,mutate:({forecast,report,snapshot,coverage})=>{
  const u=forecast.sourceStrategy.universe;
  for(const key of ['symbols','start','end','selection','snapshotHash','resolutionHash'])u[key]=scope[key];
  u.subsetPolicy='all';
+ const s=forecast.sourceStrategy, observation=clock==='stride'?7:clock==='nested'?5:1;
+ s.research.observationDays=observation;
+ s.factors=[{id:'f1',expression:clock==='nested'?'lag(ts_mean(close,70),3)':'close',direction:1,role:'predictor'}];
+ if(clock==='no_factors')s.factors=[];
+ s.model.refitDays=20;s.validation.holdoutFraction=0.2;
  report.strategy=forecast.sourceStrategy;
- for(const row of forecast.rows){row.date=row.date.replace('202501','202401');row.entryDate=row.entryDate.replace('202501','202401');row.targetDate='20240110';row.labelMaturedAt='20240110';row.informationCutoff=row.date;}
- forecast.targetDefinitions[0].formationEnd=null;
- forecast.modelFits[0].fitDate='20240102';forecast.modelFits[0].labelEndMax='20231229';
+ const start=clock==='nested'?73:61, horizon=s.target.horizonSessions, calendar=m.calendar;
+ const holdout=calendar[start+Math.floor((calendar.length-start)*0.8)];
+ const definition=symbol=>{const d={kind:'asset_price',symbols:[symbol],quantities:[1],unit:'CNY_adjusted_research_price',construction:'single_asset',formationStart:null,formationEnd:null,hedgeAudit:{}};return {id:'target_'+hash(canonical(d)).slice(0,24),...d};};
+ forecast.targetDefinitions=scope.symbols.map(definition);
+ const template=forecast.rows[0];let sampleCount=0;
+ forecast.rows=[];
+ for(let t=start;t<calendar.length;t+=observation){sampleCount+=scope.symbols.length;if(calendar[t]<holdout)continue;
+  for(const target of forecast.targetDefinitions){const entry=calendar[t+1]??null,end=calendar[t+1+horizon]??null;
+   forecast.rows.push({...template,forecastId:'review-'+t+'-'+target.id,date:calendar[t],targetId:target.id,informationCutoff:calendar[t]+'_AFTER_CLOSE',entryDate:entry,targetDate:end,horizonSessions:horizon,labelMaturedAt:entry&&end?end:null,realizedEntry:entry?10:null,realizedFuture:end?11:null,forecastError:end?0:null,status:entry&&end?'valid':'invalid',invalidReason:entry&&end?null:'target_outside_available_calendar'});
+  }
+ }
+ forecast.modelFits[0].fitDate=holdout;forecast.modelFits[0].labelEndMax='20231229';
  forecast.modelFits[0].trainStart='20230101';forecast.modelFits[0].trainEnd='20231229';
- coverage.holdoutStart='20240102';coverage.origins=forecast.rows.map(r=>({date:r.date,targetId:r.targetId,entryDate:r.entryDate,targetDate:r.targetDate,inputValid:true}));
+ coverage.holdoutStart=holdout;coverage.baselineRequired=true;
+ coverage.origins=forecast.rows.map(r=>({date:r.date,targetId:r.targetId,entryDate:r.entryDate,targetDate:r.targetDate,inputValid:true}));
+ forecast.diagnostics={...forecast.diagnostics,holdoutStart:holdout,holdoutEnd:calendar.at(-1),factorIncrement:{status:'available',baselineRows:structuredClone(forecast.rows),baselineModelFits:structuredClone(forecast.modelFits),baselineValidation:{holdoutStart:holdout,holdoutEnd:calendar.at(-1)}}};
+ report.validation={holdoutStart:holdout,holdoutEnd:calendar.at(-1)};
+ report.research.observationDays=observation;
+ report.capacity={holdoutStart:holdout,symbols:scope.symbols,sampleRows:sampleCount,completeGridRows:calendar.length*scope.symbols.length,inputRows:m.rowCount,forecastRows:forecast.rows.length,baselineRequired:true};
  const provenance={marketSource:evidence,synthetic:true,source:'SYNTHETIC_MARKET_FIXTURE',tradingDates:m.calendar};
  report.provenance={...provenance,dataSha256:forecast.dataFingerprint};report.execution.enabled=false;
  snapshot.rows=Object.keys(source.chunks.rows).sort((a,b)=>+a-+b).flatMap(i=>JSON.parse(source.chunks.rows[i]));
@@ -432,12 +491,45 @@ const fixture=bundleFixture({mutate:({forecast,report,snapshot,coverage})=>{
  if(damage==='wrong_kind')report.provenance.synthetic=false;
  if(damage==='mismatched_assertion')snapshot.provenance.marketSource={...evidence,rowValueRoot:'9'.repeat(64)};
  if(damage==='prediction_arithmetic')forecast.rows[0].expectedChange=999;
+ const baseline=forecast.diagnostics.factorIncrement;
+ if(['half_pool','whole_day','tail'].includes(damage)){
+  const firstDate=forecast.rows[0].date,firstTarget=forecast.targetDefinitions[0].id;
+  const retain=r=>damage==='half_pool'?r.targetId===firstTarget:damage==='whole_day'?r.date!==firstDate:r.targetDate!==null;
+  forecast.rows=forecast.rows.filter(retain);coverage.origins=coverage.origins.filter(retain);baseline.baselineRows=baseline.baselineRows.filter(retain);
+ }
+ if(damage==='duplicate_symbol')forecast.targetDefinitions[1]={...forecast.targetDefinitions[1],symbols:[scope.symbols[0]]};
+ if(damage==='extra_target')forecast.targetDefinitions.push(definition('999999.SZ'));
+ if(damage==='missing_target'){
+  const keep=forecast.targetDefinitions[0].id;forecast.targetDefinitions.pop();
+  forecast.rows=forecast.rows.filter(r=>r.targetId===keep);coverage.origins=coverage.origins.filter(r=>r.targetId===keep);baseline.baselineRows=baseline.baselineRows.filter(r=>r.targetId===keep);
+ }
+ if(damage==='hidden_baseline'){coverage.baselineRequired=false;delete baseline.baselineRows;delete baseline.baselineModelFits;delete baseline.baselineValidation;}
+ if(damage==='coverage_clock')coverage.holdoutStart=calendar[calendar.indexOf(holdout)-1];
+ if(damage==='report_clock')report.validation.holdoutStart=calendar[calendar.indexOf(holdout)-1];
+ if(damage==='baseline_clock')baseline.baselineValidation.holdoutStart=calendar[calendar.indexOf(holdout)-1];
+ if(damage==='end_clock')forecast.diagnostics.holdoutEnd=calendar.at(-2);
+ if(damage==='endpoint')for(const rows of [forecast.rows,coverage.origins,baseline.baselineRows])rows[0].entryDate=calendar[calendar.indexOf(rows[0].date)+2];
+ if(damage==='invalid_tail_valid')for(const rows of [forecast.rows,baseline.baselineRows]){const row=rows.find(r=>r.targetDate===null);row.status='valid';}
+ if(damage==='shifted_declared_clock'){
+  const shifted=calendar[calendar.indexOf(holdout)+1];coverage.holdoutStart=shifted;forecast.diagnostics.holdoutStart=shifted;report.validation.holdoutStart=shifted;baseline.baselineValidation.holdoutStart=shifted;report.capacity.holdoutStart=shifted;
+  forecast.rows=forecast.rows.filter(r=>r.date>=shifted);coverage.origins=coverage.origins.filter(r=>r.date>=shifted);baseline.baselineRows=baseline.baselineRows.filter(r=>r.date>=shifted);
+ }
+ if(damage==='phase'){
+  for(const rows of [forecast.rows,coverage.origins,baseline.baselineRows])for(const row of rows){const t=calendar.indexOf(row.date)-1;row.date=calendar[t];row.entryDate=calendar[t+1]??null;row.targetDate=calendar[t+1+horizon]??null;if('informationCutoff' in row)row.informationCutoff=row.date+'_AFTER_CLOSE';}
+  for(const fits of [forecast.modelFits,baseline.baselineModelFits])fits[0].fitDate=holdout;
+ }
+ if(clock==='no_factors'){coverage.baselineRequired=false;report.capacity.baselineRequired=false;delete forecast.diagnostics.factorIncrement;}
+ if(damage==='factor_shape')s.factors.push(1);
+ if(damage==='capacity_shape')report.capacity=[];
+ if(damage==='validation_shape')report.validation=[];
+ if(damage==='selection_shape')forecast.diagnostics.selectionAudit=[];
+ forecast.totalRows=forecast.rows.length;
 }});
 process.stdout.write(JSON.stringify({manifest:fixture.manifest,manifestText:fixture.manifestText,chunks:Object.fromEntries(fixture.chunks)}));
 """
     value = {**source, "root": sha(encode(source["manifest"]))}
     result = subprocess.run(
-        ["node", "--input-type=module", "-e", script, damage or "valid"],
+        ["node", "--input-type=module", "-e", script, damage or "valid", clock],
         cwd=ROOT,
         input=json.dumps(value),
         text=True,
@@ -477,7 +569,10 @@ def write_result(tmp_path, value, tar=False):
 
 
 @pytest.mark.parametrize("tar", [False, True])
-def test_paired_complete_result_audit_and_full_source_comparison(source, tmp_path, tar):
+def test_paired_complete_result_audit_and_full_source_comparison(
+    paired_source, tmp_path, tar
+):
+    source = paired_source
     dataset = write_dir(tmp_path, source)
     result = write_result(tmp_path, paired_fixture(source), tar)
     report = audit_market_dataset(
@@ -487,9 +582,14 @@ def test_paired_complete_result_audit_and_full_source_comparison(source, tmp_pat
     paired = report["pairedResult"]
     assert (
         paired["bundleAudit"]["status"] == "passed"
-        and paired["bundleAudit"]["forecastRows"] == 4
+        and paired["bundleAudit"]["forecastRows"] == 82
     )
-    assert paired["fullSnapshotRowsVerified"] is True and paired["snapshotRows"] == 15
+    assert paired["fullSnapshotRowsVerified"] is True
+    assert paired["snapshotRows"] == source["manifest"]["rowCount"]
+    assert paired["fullAssetCoverageVerified"] is True
+    assert paired["expectedForecastRows"] == 82
+    assert paired["expectedOriginDates"] == 41
+    assert paired["baselineRequired"] is True
     assert paired["sourceContentRootVerified"] is True
     assert (
         paired["rowValueRootInternallyConsistent"] is True
@@ -518,8 +618,9 @@ def test_paired_complete_result_audit_and_full_source_comparison(source, tmp_pat
     ],
 )
 def test_pair_rejects_individually_rehashed_but_unbound_or_invalid_result(
-    source, tmp_path, damage
+    paired_source, tmp_path, damage
 ):
+    source = paired_source
     dataset = write_dir(tmp_path, source)
     result = write_result(tmp_path, paired_fixture(source, damage))
     with pytest.raises(AuditError):
@@ -527,8 +628,9 @@ def test_pair_rejects_individually_rehashed_but_unbound_or_invalid_result(
 
 
 def test_pair_cannot_authenticate_dataset_id_and_cli_accepts_result_tar(
-    source, tmp_path
+    paired_source, tmp_path
 ):
+    source = paired_source
     dataset = write_dir(tmp_path, source)
     result = write_result(tmp_path, paired_fixture(source, "unverified_id"), tar=True)
     completed = subprocess.run(
@@ -557,7 +659,10 @@ def test_pair_cannot_authenticate_dataset_id_and_cli_accepts_result_tar(
 @pytest.mark.parametrize(
     "damage", ["tar_trailer", "tar_traversal", "directory_link", "directory_extra"]
 )
-def test_pair_result_input_strict_paths_and_archive_eof(source, tmp_path, damage):
+def test_pair_result_input_strict_paths_and_archive_eof(
+    paired_source, tmp_path, damage
+):
+    source = paired_source
     dataset = write_dir(tmp_path, source)
     result = write_result(
         tmp_path, paired_fixture(source), tar=damage.startswith("tar")
@@ -586,3 +691,129 @@ def test_paired_numeric_comparison_does_not_round_changed_integers():
         number(2**53 + 1, Checks())
     assert number(2**53, Checks()) == 2**53
     assert encode(number(-0.0, Checks())) == encode(number(0, Checks()))
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "half_pool",
+        "whole_day",
+        "tail",
+        "duplicate_symbol",
+        "extra_target",
+        "missing_target",
+        "hidden_baseline",
+        "coverage_clock",
+        "report_clock",
+        "baseline_clock",
+        "end_clock",
+        "endpoint",
+        "shifted_declared_clock",
+    ],
+)
+def test_self_consistent_rehashed_result_cannot_remove_complete_source_grid(
+    paired_source, tmp_path, damage
+):
+    from market_dataset_audit import open_result_bundle
+
+    dataset = write_dir(tmp_path, paired_source)
+    result = write_result(tmp_path, paired_fixture(paired_source, damage))
+    # Rehashing every changed collection, document and manifest remains sufficient
+    # for the unchanged legacy audit. The paired check must independently reject.
+    with open_result_bundle(result) as (_, report):
+        assert report["status"] == "passed"
+    with pytest.raises(AuditError) as error:
+        audit_market_dataset(dataset, result_bundle=result)
+    assert error.value.code in {"RESULT_COVERAGE", "RESULT_TARGETS", "RESULT_CLOCK"}
+
+
+@pytest.mark.parametrize(
+    "clock,start,lookback", [("stride", 61, 0), ("nested", 73, 72)]
+)
+def test_origin_phase_and_nested_factor_warmup_use_complete_source_calendar(
+    paired_source, tmp_path, clock, start, lookback
+):
+    dataset = write_dir(tmp_path, paired_source)
+    result = write_result(tmp_path, paired_fixture(paired_source, clock=clock))
+    report = audit_market_dataset(dataset, result_bundle=result)["pairedResult"]
+    calendar = paired_source["manifest"]["calendar"]
+    step = 7 if clock == "stride" else 5
+    boundary = start + int((len(calendar) - start) * 0.8)
+    expected = [i for i in range(start, len(calendar), step) if i >= boundary]
+    assert expected[0] > boundary  # Catch resetting the sampling phase at holdout.
+    assert report["holdoutStart"] == calendar[boundary]
+    assert report["expectedForecastRows"] == 2 * len(expected)
+    assert report["sampleStartIndex"] == start and report["factorLookback"] == lookback
+    assert report["invalidTailOriginsRetained"] is True
+
+
+def test_self_consistent_sampling_phase_shift_is_rejected(paired_source, tmp_path):
+    from market_dataset_audit import open_result_bundle
+
+    dataset = write_dir(tmp_path, paired_source)
+    result = write_result(tmp_path, paired_fixture(paired_source, "phase", "stride"))
+    with open_result_bundle(result) as (_, report):
+        assert report["status"] == "passed"
+    with pytest.raises(AuditError) as error:
+        audit_market_dataset(dataset, result_bundle=result)
+    assert error.value.code == "RESULT_COVERAGE"
+
+
+def test_factor_free_full_grid_does_not_require_a_baseline(paired_source, tmp_path):
+    dataset = write_dir(tmp_path, paired_source)
+    result = write_result(tmp_path, paired_fixture(paired_source, clock="no_factors"))
+    report = audit_market_dataset(dataset, result_bundle=result)["pairedResult"]
+    assert report["fullAssetCoverageVerified"] is True
+    assert report["expectedForecastRows"] == 82
+    assert report["baselineRequired"] is False
+    assert report["originalRequestedStrategyAuthenticated"] is False
+
+
+@pytest.mark.parametrize(
+    "damage", ["factor_shape", "capacity_shape", "validation_shape", "selection_shape"]
+)
+def test_malformed_declared_clock_shapes_return_audit_failure(
+    paired_source, tmp_path, damage
+):
+    dataset = write_dir(tmp_path, paired_source)
+    result = write_result(tmp_path, paired_fixture(paired_source, damage))
+    with pytest.raises(AuditError):
+        audit_market_dataset(dataset, result_bundle=result)
+
+
+@pytest.mark.parametrize(
+    "expression,expected",
+    [
+        ("close", 0),
+        ("lag(close,61)", 61),
+        ("ts_mean(close,61)", 60),
+        ("lag(ts_mean(close,70),3)", 72),
+        ("max(delta(close,10),ts_std(returns(close,20),70))", 89),
+        ("clip(-rank(ts_mean(close,20)),-1,1)", 19),
+    ],
+)
+def test_independent_registered_causal_lookback_clock(expression, expected):
+    from market_dataset_audit import Checks, factor_lookback
+
+    assert factor_lookback(expression, ["close"], Checks()) == expected
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "unknown(close)",
+        "lag(close,253)",
+        "lag(close,True)",
+        "lag(close,1,)",
+        "lag(close,-1)",
+        "close.__class__",
+        "lag(close,252)+missing",
+        "1e999+close",
+        "(" * 129 + "close" + ")" * 129,
+    ],
+)
+def test_independent_clock_rejects_unregistered_factor_syntax(expression):
+    from market_dataset_audit import Checks, factor_lookback
+
+    with pytest.raises(AuditError):
+        factor_lookback(expression, ["close"], Checks())

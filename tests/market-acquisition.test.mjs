@@ -11,8 +11,6 @@ import { canonical, digest } from "../edge/market-preparation/common.mjs";
 import { createMarketPlan } from "../edge/market-preparation/planner.mjs";
 import { marketTarHeader } from "../edge/market-preparation/archive.mjs";
 import { bundleFixture } from "./fixtures/bundle-fixture.mjs";
-import { beginBundle } from "../edge/bundles/storage.mjs";
-import { completeBundle } from "../edge/bundles/publication.mjs";
 import {
   begin as beginRequest,
   getReceipt,
@@ -274,7 +272,7 @@ async function marketForecastJob(x) {
 }
 
 test("server-bound market bundle pins complete rows; ordinary profile claims and rehashed changed snapshots cannot replace it", async () => {
-  for (const variant of ["valid", "changed-row", "forged-source"]) {
+  for (const variant of ["incomplete-clock", "changed-row", "forged-source"]) {
     const x = await setup({
       MARKET_RESEARCH_ENABLED: "true",
       BUNDLE_SNAPSHOT_SORTED_V1: "true",
@@ -287,7 +285,10 @@ test("server-bound market bundle pins complete rows; ordinary profile claims and
         mutate({ forecast, report, snapshot }) {
           forecast.sourceStrategy = job.strategy;
           report.strategy = job.strategy;
-          report.provenance = {...JSON.parse(p.chunks.provenance[0])[0], marketSource: job.sourceEvidence};
+          report.provenance = {
+            ...JSON.parse(p.chunks.provenance[0])[0],
+            marketSource: job.sourceEvidence,
+          };
           snapshot.provenance = {
             ...JSON.parse(p.chunks.provenance[0])[0],
             marketSource: job.sourceEvidence,
@@ -341,26 +342,21 @@ test("server-bound market bundle pins complete rows; ordinary profile claims and
         );
         continue;
       }
-      assert.equal(verify.status, 200, await verify.clone().text());
-      const completed = await x.req("/runner/complete", "POST", packet);
-      assert.equal(completed.status, 200, await completed.clone().text());
-      const off = { ...x.env, MARKET_RESEARCH_ENABLED: "false" };
+      // This intentionally tiny source has no reportable research window. The
+      // unchanged source alone cannot justify a fabricated forecast calendar.
+      assert.equal(verify.status, 409, await verify.clone().text());
       assert.equal(
-        (await beginBundle(off, { ...identity, manifestText: f.manifestText }))
-          .status,
-        "committed",
+        (await verify.json()).error.code,
+        "MARKET_FORECAST_COVERAGE",
       );
-      assert.equal((await completeBundle(off, packet)).idempotent, true);
       assert.equal(
         (
           await x.db
-            .prepare(
-              "SELECT count(*) n FROM quant_bundle_records WHERE stage_id=? AND collection='snapshotRows'",
-            )
+            .prepare("SELECT status FROM quant_bundle_stages WHERE id=?")
             .bind(staged.stageId)
             .first()
-        ).n,
-        0,
+        ).status,
+        "staging",
       );
     } finally {
       await x.mf.dispose();

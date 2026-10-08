@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+import ast
 import json
 import math
 import os
@@ -1239,6 +1240,346 @@ def open_result_bundle(path):
             yield audit, report
 
 
+def factor_lookback(expression, fields, check):
+    """Independently interpret only the registered DSL's causal window lengths.
+
+    No evaluator, production parser, feature cache, or reported lookback is trusted.
+    Rolling windows include the current session; lag/delta/returns count intervals.
+    """
+    check.require(
+        isinstance(expression, str) and 0 < len(expression) <= 500,
+        "Invalid declared factor expression",
+        "RESULT_CLOCK",
+    )
+    token = re.compile(
+        r"(?:0|[1-9][0-9]*)(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?"
+        r"|\.[0-9]+(?:[eE][+-]?[0-9]+)?|[A-Za-z_][A-Za-z_0-9]*|[()+\-*/,]"
+    )
+    tokens, position, nesting = [], 0, 0
+    while position < len(expression):
+        if expression[position] in " \t\r\n":
+            position += 1
+            continue
+        match = token.match(expression, position)
+        check.require(match is not None, "Unsupported factor token", "RESULT_CLOCK")
+        value = match.group()
+        if value == "(":
+            nesting += 1
+            check.require(
+                nesting <= 128,
+                "Factor parentheses exceed language budget",
+                "RESULT_CLOCK",
+            )
+        elif value == ")":
+            nesting -= 1
+        check.require(
+            not (value == ")" and tokens and tokens[-1] == ","),
+            "Trailing factor argument",
+            "RESULT_CLOCK",
+        )
+        tokens.append(value)
+        position = match.end()
+    try:
+        tree = ast.parse(" ".join(tokens), mode="eval").body
+    except (SyntaxError, RecursionError) as exc:
+        raise AuditError("RESULT_CLOCK", "Invalid declared factor syntax") from exc
+    pending, count = [(tree, 0)], 0
+    while pending:
+        node, depth = pending.pop()
+        count += 1
+        check.require(
+            count <= 128 and depth <= 16,
+            "Declared factor tree exceeds bounded language",
+            "RESULT_CLOCK",
+        )
+        if isinstance(node, ast.Call):
+            children = node.args
+        elif isinstance(node, ast.BinOp):
+            children = [node.left, node.right]
+        elif isinstance(node, ast.UnaryOp):
+            children = [node.operand]
+        else:
+            children = []
+        pending.extend((child, depth + 1) for child in children)
+
+    def constant(node):
+        sign = 1
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            sign = -1 if isinstance(node.op, ast.USub) else 1
+            node = node.operand
+        check.require(
+            isinstance(node, ast.Constant)
+            and type(node.value) in (int, float)
+            and math.isfinite(node.value)
+            and abs(node.value) <= 1000000,
+            "Invalid factor numeric constant",
+            "RESULT_CLOCK",
+        )
+        return sign * node.value
+
+    observed = set()
+    intervals = {"lag", "delta", "returns"}
+    rolling = {"ts_mean", "ts_std", "ts_min", "ts_max", "ts_sum", "ts_rank"}
+
+    def visit(node):
+        if isinstance(node, ast.Constant):
+            constant(node)
+            return 0
+        if isinstance(node, ast.Name):
+            check.require(
+                node.id in fields,
+                "Factor field absent from frozen source",
+                "RESULT_CLOCK",
+            )
+            observed.add(node.id)
+            return 0
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            return visit(node.operand)
+        if isinstance(node, ast.BinOp) and isinstance(
+            node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)
+        ):
+            return max(visit(node.left), visit(node.right))
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and not node.keywords
+        ):
+            name, args = node.func.id, node.args
+            if name in intervals | rolling and len(args) == 2:
+                window = constant(args[1])
+                check.require(
+                    int(window) == window and 1 <= window <= 252,
+                    "Invalid factor window",
+                    "RESULT_CLOCK",
+                )
+                return visit(args[0]) + int(window) - (name in rolling)
+            if (
+                name in {"rank", "zscore", "log", "sqrt", "abs", "sign"}
+                and len(args) == 1
+            ):
+                return visit(args[0])
+            if name in {"min", "max"} and len(args) == 2:
+                return max(visit(args[0]), visit(args[1]))
+            if name == "clip" and len(args) == 3:
+                check.require(
+                    constant(args[1]) < constant(args[2]),
+                    "Invalid factor clipping bounds",
+                    "RESULT_CLOCK",
+                )
+                return visit(args[0])
+        raise AuditError("RESULT_CLOCK", "Unsupported declared factor operation")
+
+    lookback = visit(tree)
+    check.require(
+        observed and lookback <= 504, "Invalid factor lookback", "RESULT_CLOCK"
+    )
+    return lookback
+
+
+def validate_asset_coverage(audit, manifest, strategy, check):
+    """Derive the full symbol × terminal-origin grid without trusting plan/targets."""
+    calendar, symbols = manifest["calendar"], manifest["scope"]["symbols"]
+    observation = strategy["research"]["observationDays"]
+    horizon = strategy["target"]["horizonSessions"]
+    fraction = strategy["validation"]["holdoutFraction"]
+    check.require(
+        type(observation) is int
+        and 1 <= observation <= 60
+        and type(horizon) is int
+        and 1 <= horizon <= 60
+        and type(fraction) in (int, float)
+        and math.isfinite(fraction)
+        and 0.1 <= fraction <= 0.4,
+        "Invalid declared observation, horizon or holdout clock",
+        "RESULT_CLOCK",
+    )
+    factors = strategy["factors"]
+    check.require(
+        all(
+            isinstance(f, dict) and f.get("role") in {"predictor", "event"}
+            for f in factors
+        ),
+        "Asset-price factors cannot declare hedge or unknown roles",
+        "RESULT_PROFILE",
+    )
+    warmup = max(
+        (factor_lookback(f["expression"], manifest["fields"], check) for f in factors),
+        default=0,
+    )
+    start = max(61, warmup + 1)
+    eligible = len(calendar) - start
+    boundary = int(eligible * (1 - fraction))
+    check.require(
+        eligible > 0 and boundary >= 1 and eligible - boundary >= 10,
+        "Frozen calendar cannot support declared terminal holdout",
+        "RESULT_CLOCK",
+    )
+    holdout = calendar[start + boundary]
+    positions = [
+        t for t in range(start, len(calendar), observation) if calendar[t] >= holdout
+    ]
+    expected_count = len(positions) * len(symbols)
+    sample_count = len(range(start, len(calendar), observation)) * len(symbols)
+    check.require(
+        0 < expected_count <= 80000 and sample_count <= 300000,
+        "Complete declared asset grid exceeds profile or is empty",
+        "RESULT_COVERAGE",
+    )
+    report, forecast, coverage = (
+        audit.documents[k] for k in ("report", "forecast", "coverage")
+    )
+    baseline = bool(factors)
+    check.require(
+        coverage["source"] == "samples_before_model_fitting"
+        and coverage["baselineRequired"] is baseline
+        and coverage["holdoutStart"] == holdout
+        and type(report["research"].get("observationDays")) is int
+        and report["research"].get("observationDays") == observation,
+        "Coverage clock or baseline declaration differs from source and strategy",
+        "RESULT_CLOCK",
+    )
+    diagnostics = [forecast["diagnostics"], report["validation"]]
+    if baseline:
+        diagnostics.append(
+            forecast["diagnostics"]["factorIncrement"]["baselineValidation"]
+        )
+    for declared in diagnostics:
+        check.require(
+            isinstance(declared, dict)
+            and declared.get("holdoutStart") == holdout
+            and declared.get("holdoutEnd") == calendar[-1],
+            "Forecast/report/baseline holdout clock differs from independently derived source clock",
+            "RESULT_CLOCK",
+        )
+        selection = declared.get("selectionAudit")
+        if selection is not None:
+            check.require(
+                isinstance(selection, dict)
+                and selection.get("terminalSelectionCutoff") == holdout,
+                "Declared model-selection cutoff differs from terminal holdout",
+                "RESULT_CLOCK",
+            )
+    capacity = report.get("capacity")
+    if capacity is not None:
+        check.require(
+            isinstance(capacity, dict)
+            and capacity.get("holdoutStart") == holdout
+            and capacity.get("symbols") == symbols
+            and capacity.get("sampleRows") == sample_count
+            and capacity.get("completeGridRows") == len(calendar) * len(symbols)
+            and capacity.get("inputRows") == manifest["rowCount"]
+            and capacity.get("forecastRows") == expected_count
+            and capacity.get("baselineRequired") is baseline,
+            "Declared capacity plan differs from complete asset grid",
+            "RESULT_CLOCK",
+        )
+    check.require(
+        audit.count("targets") == len(symbols),
+        "Targets omit or add frozen symbols",
+        "RESULT_TARGETS",
+    )
+    targets = {}
+    for target in audit.rows("targets"):
+        members = target.get("symbols")
+        check.require(
+            isinstance(members, list)
+            and len(members) == 1
+            and members[0] in symbols
+            and members[0] not in targets,
+            "Target is not a unique frozen single asset",
+            "RESULT_TARGETS",
+        )
+        content = dict(
+            kind="asset_price",
+            symbols=members,
+            quantities=[1],
+            unit="CNY_adjusted_research_price",
+            construction="single_asset",
+            formationStart=None,
+            formationEnd=None,
+            hedgeAudit={},
+        )
+        expected = {"id": "target_" + sha(encode(content))[:24], **content}
+        # Registered bundle canonical numbers equate 1 and 1.0; never bool.
+        quantities = target.get("quantities")
+        check.require(
+            isinstance(quantities, list)
+            and len(quantities) == 1
+            and type(quantities[0]) in (int, float)
+            and quantities[0] == 1
+            and set(target) == set(expected)
+            and all(target[k] == v for k, v in expected.items()),
+            "Target definition or identity differs from unit single asset",
+            "RESULT_TARGETS",
+        )
+        targets[members[0]] = target["id"]
+    collections = ["plannedOrigins", "forecasts"] + (
+        ["baselineRows"] if baseline else []
+    )
+    if not baseline:
+        check.require(
+            audit.count("baselineRows") == 0 and audit.count("baselineModelFits") == 0,
+            "Undeclared factor-free baseline",
+            "RESULT_COVERAGE",
+        )
+    for name in collections:
+        check.require(
+            audit.count(name) == expected_count,
+            "Incomplete full asset grid: " + name,
+            "RESULT_COVERAGE",
+        )
+        rows = iter(audit.rows(name))
+        for t in positions:
+            entry = calendar[t + 1] if t + 1 < len(calendar) else None
+            end = calendar[t + 1 + horizon] if t + 1 + horizon < len(calendar) else None
+            for symbol in symbols:
+                row = next(rows, None)
+                check.require(
+                    row is not None
+                    and tuple(
+                        row.get(k)
+                        for k in ("date", "targetId", "entryDate", "targetDate")
+                    )
+                    == (calendar[t], targets[symbol], entry, end),
+                    "Origin order/member/endpoint differs from complete source grid: "
+                    + name,
+                    "RESULT_COVERAGE",
+                )
+                if name != "plannedOrigins":
+                    check.require(
+                        type(row.get("horizonSessions")) is int
+                        and row["horizonSessions"] == horizon
+                        and row.get("informationCutoff") == calendar[t] + "_AFTER_CLOSE"
+                        and (
+                            entry is not None
+                            and end is not None
+                            or row.get("status") == "invalid"
+                        ),
+                        "Forecast clock or retained invalid tail differs: " + name,
+                        "RESULT_CLOCK",
+                    )
+        check.require(
+            next(rows, None) is None, "Extra asset origins", "RESULT_COVERAGE"
+        )
+    return dict(
+        fullAssetCoverageVerified=True,
+        originClockVerified=True,
+        targetDefinitionsVerified=True,
+        expectedForecastRows=expected_count,
+        expectedOriginDates=len(positions),
+        holdoutStart=holdout,
+        sampleStartIndex=start,
+        factorLookback=warmup,
+        baselineRequired=baseline,
+        invalidTailOriginsRetained=True,
+        coverageBasis=(
+            "frozen source calendar and all symbols; "
+            "independently interpreted declared strategy clock"
+        ),
+        originalRequestedStrategyAuthenticated=False,
+    )
+
+
 def validate_result_binding(audit, manifest, scope, dataset_root, check):
     """Bind content independently; server ownership and admission are not authenticated."""
     report, snapshot, forecast = (
@@ -1344,7 +1685,9 @@ def validate_result_binding(audit, manifest, scope, dataset_root, check):
         manifest["calendar"],
         "Result trading calendar differs",
     )
+    coverage = validate_asset_coverage(audit, manifest, strategy, check)
     return dict(
+        **coverage,
         bundleId=audit.bundle_id,
         sourceContentRootVerified=True,
         universeScopeVerified=True,

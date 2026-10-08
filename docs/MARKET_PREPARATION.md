@@ -129,6 +129,28 @@ The JS row-value digest is checked for internal agreement; complete numerical
 row comparison is the independent cross-language proof, not a claim of identical
 Python/JS floating-point JSON serialization.
 
+
+For `ready_market`, both finalize and the paired auditor independently derive
+whole-asset forecast coverage from the frozen source scope and calendar. Let
+`start = max(61, maxFactorLookback + 1)`. The holdout boundary is computed on
+`calendar[start:]`; observation stride remains anchored at `start`. Every
+selected report origin must contain every sorted source symbol exactly once,
+with next-session entry and `entry + horizon` target dates, including null tail
+endpoints and invalid input/model rows. Main predictions, pre-fit planned
+origins and the required factor-free baseline must all match this domain.
+Target definitions and all report/validation clocks are checked against it.
+Rehashing a reduced set of mutually consistent targets/plans/predictions cannot
+turn a partial pool into a complete result. Legacy bundle/1 research remains
+under its existing verifier; this extra rule is tied to server-approved market
+admission, not a runner-supplied profile.
+
+Finalize adds at most three indexed Cartesian-domain D1 queries and reads each
+target chunk once. Target and snapshot chunks partition the same bounded set of
+at most 256 chunks, so their combined extra reads plus the existing at-most-512
+document reads stay at most 768 R2 reads, with a fixed number of D1 operations.
+Only one target chunk is decoded at a time. This is a paid Worker budget, not a
+claim that the free-tier subrequest budget admits the profile.
+
 ## Reproducible loopback acceptance (zero provider)
 
 The public harness contains explicit synthetic numeric responses and invented
