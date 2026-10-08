@@ -31,6 +31,10 @@ with separate dataset key and AAD domains, 0700 directories, 0600 files, atomic
 rename and fsync. The output child receives only frozen source bytes, the
 original job identity, the local spool key/context, and optional lock path. It
 receives no provider configuration or queue Bearer secret.
+Frozen child inputs are separately encrypted with a bounded index before spawn;
+only a small context crosses the process bootstrap pipe. A child import failure
+therefore cannot block the parent while it sends a large source payload. Input
+bytes, metadata, and the local index share the 64 MiB admission budget.
 
 ## Fixed limits and recovery
 

@@ -6,7 +6,7 @@ import re
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from ..financial_runner.spool import FinancialSpool, PublicationSpool, _sync
+from ..financial_runner.spool import FinancialSpool, PublicationSpool, _sync, TERMINAL
 from ..research_dataset import DatasetReader
 from ..research_dataset.manifest import validate_manifest
 from .protocol import LIMITS, PROFILE, encode, require, sha
@@ -76,17 +76,29 @@ class DatasetSpool(FinancialSpool):
 
     def cleanup(self, state):
         # Parent confirms the same durable UUID is terminal before deleting parts.
+        current = self.read()
+        if current is None:
+            return
+        require(
+            current["requestId"] == state["requestId"]
+            and current["phase"] == "terminal"
+            and current.get("terminalStatus") in TERMINAL,
+            "DATASET_SPOOL_INTEGRITY",
+        )
         job = state.get("job")
         if job:
             path, aad = self._input_path(job)
             require(not path.is_symlink(), "DATASET_SPOOL_INTEGRITY")
             if path.exists():
                 self._read(path, LIMITS["inputMetadataBytes"], aad)
-        super().cleanup(state)
+            from .source_spool import cleanup_sources
+
+            cleanup_sources(self, job)
         if job:
             if path.exists():
                 path.unlink()
                 _sync(self.root)
+        super().cleanup(state)
 
 
 class DatasetPublicationSpool(PublicationSpool):
