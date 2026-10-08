@@ -32,13 +32,23 @@ from retained source and compare the full logical data before fitting.
 Publishing the general workbench does not implicitly publish graph admission.
 An unavailable profile must remain unavailable in the capability response/UI.
 
-Five mechanism cards do not imply five full-pool compute profiles. The accepted
-1,000-security auto profile currently applies to asset-price mean reversion.
-Trend auto at that size, basket/pair sources, event PIT sources and financial
-scope projection require their own profiles and acceptance. New acquisition
+Five mechanism cards do not imply five full-pool compute profiles. Separately
+accepted synthetic 1,000-security auto profiles now cover asset-price mean
+reversion and conditional trend. The trend run retained 21 inputs and all 210
+joint tables; it selected the no-change baseline. Its latest native source-reuse
+and derived-edit UI acceptance remains pending. Basket/pair sources, event PIT
+sources and financial scope projection require their own profiles and acceptance. New acquisition
 must check whether the requested mechanism can consume its result before making
 provider requests; receipt reconciliation and existing source downloads remain
 available even when a new computation is unavailable.
+
+The shared browser entry is bundled with the same strict validation code used
+by the server. A real browser caught an unserved `/edge` import that Node DOM
+tests missed; the production Worker asset graph and returned entry bytes now
+have a startup regression test. Fresh admission also rejects invalid refit
+parameters, hedge factors on asset-price targets, unavailable source fields and
+superseded reads before data preparation. Unknown original requests retain
+their recovery path. Native browser startup and old-report readback passed.
 
 The first 1,000-security F's manifest and 17 received chunks survived its rejection,
 but the old runner discarded its local result spool after acknowledging failure.
