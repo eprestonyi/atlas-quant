@@ -192,5 +192,24 @@
     "production": false,
     "legacyRunnerMayClaim": false,
     "modelFitRequiredForSourceCreation": false
+  },
+  "componentEvidence": {
+    "status": "PASS_COMPONENTS_ONLY",
+    "symbols": 50,
+    "rows": 13100,
+    "states": 16,
+    "calendarDaysInclusive": 366,
+    "preparedGraphBytes": 15919030,
+    "numericColumnTableBytes": 5060771,
+    "completeLogicalJoinedBytes": 24870637,
+    "completeLogicalJoinedSha256": "b48e2df426902027cbbb5b438571d300490e19cc4f61f2718f131ff9312e1a69",
+    "physicalComponentsAndManifestReserveBytes": 28720595,
+    "childPeakRssBytes": 555859968,
+    "childWallSeconds": 10.174308249988826,
+    "providerCalls": 0,
+    "modelsFitted": 0,
+    "sourceRecompositionFromRawPerformed": false,
+    "completeDatasetManifestImplemented": false,
+    "wholeSystemAccepted": false
   }
 }

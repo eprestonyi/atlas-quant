@@ -39,3 +39,35 @@ Legacy readers reject the new format. A future runner needs both new dataset and
 5. Save distinct new result/source archives. An independently implemented stdlib verifier must check graph/table expansion and all original logical roots without importing the engine. Only a complete verified 50-security result closes this capacity gap. HTTP, owner isolation, browser and release are later separate gates.
 
 The measured projected event graph is approximately 15.34 MB versus 44.92 MB expanded; removing the 22.38 MB repeated prepared panels is a second saving. These are exact-data lower-bound measurements, not proof the final format, decoder or complete 50-security research fits the budgets.
+
+## Pure-component acceptance, 2026-10-08
+
+The isolated codecs are implemented under `engine/atlas_quant/research_dataset/graph_v3/`. The graph also stores the exact original package `selection`, which is part of the original prepared-root body. Validation separately checks the caller-pinned original prepared root and caller-pinned full prepared-payload SHA. It does not infer source authority from the graph.
+
+Twenty-five pure component tests cover exact canonical streams, original hand-fixture payload/panel/root reconstruction, numeric type and signed-zero preservation, first-occurrence dictionaries, missing-key/null distinction, nonfinite/underflow/bool rejection, changed/unused/dangling/duplicate references, false roots, future availability, assignment overlaps/gaps, unexpected columns and legacy rejection. Together with the automatic financial profile tests, 27 tests passed. The preserved one-security source becomes a 173,504-byte graph versus its 758,999-byte original prepared payload, with exact reconstructed panel bytes.
+
+A new supervised component acceptance used the **unchanged retained 50-security artificial source** from the failed dataset/2 attempt. No statements, state, securities or dates were removed; no provider or F was run. Two original prepared payloads and their exact prepared roots were reconstructed and all 13,100 daily rows checked. Results:
+
+| Measurement | Bytes / time |
+| --- | ---: |
+| Two complete prepared graphs | 15,919,030 bytes |
+| Exact numeric column table | 5,060,771 bytes |
+| Complete logical joined document, including provenance | 24,870,637 bytes |
+| Remaining below unchanged 24 MiB logical guard | 295,187 bytes |
+| Measured physical components plus full 256 KiB manifest reserve | 28,720,595 bytes |
+| Child peak RSS | 555,859,968 bytes |
+| Child / supervisor wall time | 10.17 / 11.58 seconds |
+
+The logical joined document SHA is `b48e2df426902027cbbb5b438571d300490e19cc4f61f2718f131ff9312e1a69`. Private evidence is at `private/financial-graph-components-50-20261008-01`. The supervisor actively enforced 900 seconds, 3 GiB sampled RSS and 500 MiB disk reserve; it exited 0 with no stop reason. The previous failed source evidence remains intact. `benchmark-financial-graph.py` records both the declaration and measured process evidence.
+
+The acceptance is `PASS_COMPONENTS_ONLY`: the official dataset/3 manifest/reader, fresh raw-statement recomposition gate, thin financial snapshot, same-child F, independent new-format archive verifier and hosted transport are still absent. The measured component-byte sum includes the full manifest reservation but is not a claim that a complete new dataset archive was built.
+
+## Next source-closure implementation boundary
+
+The next separate local layer should provide `GraphDatasetReader` and `build_graph_dataset`, without changing legacy `DatasetReader`. They must reuse the existing original-snapshot scope validator and independently authorized package/calendar registry resolver. Sources stay sorted by pack root with exact nonoverlapping security/state ownership. A new manifest commits to source package bytes, source-origin bytes, graph bytes, column-table bytes and original logical roots; its new physical dataset root never impersonates an old dataset root.
+
+A fresh `restore_graph_dataset` must re-run the financial preparation formulas from each original package under the existing per-input preparation/audit limits, one package at a time. Its computed prepared root and payload SHA must equal both the source descriptors and graph expansion. Only after all packages and the original market projection match may it produce the numerical rows and logical provenance. Reconstructed source data must match the entire column-table rows hash and the complete logical joined-document hash/length under 24 MiB. Raw package scope/calendar and original numerical conversion rules remain authoritative; graph-declared dictionaries are never a substitute for this recomposition.
+
+A source-only restoration result should keep `modelAdmissionRegistered: false` initially. A later explicit new-profile admission can issue the existing process-local financial input capability only after this new validator has completed. It must not invoke the old dataset/2 validator with a higher budget, patch old provenance to skip admission, or deserialize a pre-authorized Python object into a child. The eventual child will restore source and fit F in the same process, with a new job identity and unchanged supervisor protections.
+
+The thin snapshot constructor should accept this completed local source closure and build the proposed column snapshot. Its complete logical input envelope, not merely the row array, must be checked against 24 MiB. Result bundle/2 and dataset/3 must remain distinguishable from their older parsers, saved as separate new archives, and verified by a stdlib implementation that does not import these graph codecs. The 50-security F run is deferred until these source and snapshot gates exist; no component-only result opens production admission.
