@@ -12,6 +12,7 @@ import {
 import { createForms, getPath, setPath } from './forms.js';
 import { createModuleCatalog } from './catalog.js';
 import { createForecastReports } from './reports.js';
+import { createFinancialWorkspace } from './financial/workspace.js';
 
 window.AtlasQuantV4 = {
   describeFactor,
@@ -79,6 +80,7 @@ window.AtlasQuantV4 = {
       experimentDetailRequest: 0,
     };
     const catalog = createModuleCatalog(C, F, applyModule);
+    const financial = createFinancialWorkspace(C, F);
     try {
       const saved = JSON.parse(localStorage.getItem('atlas-quant-statistical-draft-v2') || 'null');
       ui.activeId = saved?.experimentId || null;
@@ -108,10 +110,10 @@ window.AtlasQuantV4 = {
 
     function sidebar() {
       const current = step();
-      return `<aside class="sq-sidebar"><a href="#dashboard" class="sq-brand"><span class="atlas-mark">A</span><span>atlas <b>quant</b><small>OPEN QUANTITATIVE RESEARCH</small></span></a><div class="sq-workspace-label">统计量化交易<span>STATISTICAL QUANT</span></div><nav aria-label="工作区"><a href="#dashboard" class="sq-nav ${s.view === 'dashboard' ? 'active' : ''}">${i('grid')}研究概览</a><a href="#quant/researches" class="sq-nav ${s.quantStep === 'researches' ? 'active' : ''}">${i('save')}我的研究<span>${ui.experimentsLoaded ? ui.experimentTotal || '' : ''}</span></a></nav><div class="sq-nav-caption">研究流程 <span>01 — 08</span></div><nav aria-label="统计量化研究步骤">${STEPS.map((x, n) => `<a class="sq-step ${s.view === 'quant' && s.quantStep === x.id ? 'active' : ''}" href="#${route(x.id)}" ${s.view === 'quant' && s.quantStep === x.id ? 'aria-current="step"' : ''}><b>${String(n + 1).padStart(2, '0')}</b><span>${x.name}</span>${i(x.icon)}</a>`).join('')}</nav><div class="sq-nav-caption">研究工具</div><nav><a href="#quant/studio/code" class="sq-nav ${s.quantStep === 'code' ? 'active' : ''}">${i('code')}代码与 AI 审阅</a><a href="#quant/community" class="sq-nav ${s.quantStep === 'community' ? 'active' : ''}">${i('users')}因子社区</a><a href="#quant/recipes" class="sq-nav">${i('layers')}模块配方目录</a><a href="#quant/compare" class="sq-nav">${i('chart')}研究比较</a><a href="#quant/history" class="sq-nav ${s.quantStep === 'history' ? 'active' : ''}">${i('clock')}历史版本研究</a></nav><div class="sq-sidebar-bottom"><span><i class="dot ${s.session?.runner?.online ? 'online' : ''}"></i>${s.session?.runner?.online ? '计算节点在线' : '计算节点状态待确认'}</span><a href="/cn/terminal">${i('external')} Atlas Terminal</a></div></aside>`;
+      return `<aside class="sq-sidebar"><a href="#dashboard" class="sq-brand"><span class="atlas-mark">A</span><span>atlas <b>quant</b><small>OPEN QUANTITATIVE RESEARCH</small></span></a><div class="sq-workspace-label">统计量化交易<span>STATISTICAL QUANT</span></div><nav aria-label="工作区"><a href="#dashboard" class="sq-nav ${s.view === 'dashboard' ? 'active' : ''}">${i('grid')}研究概览</a><a href="#quant/researches" class="sq-nav ${s.quantStep === 'researches' ? 'active' : ''}">${i('save')}我的研究<span>${ui.experimentsLoaded ? ui.experimentTotal || '' : ''}</span></a></nav><div class="sq-nav-caption">研究流程 <span>01 — 08</span></div><nav aria-label="统计量化研究步骤">${STEPS.map((x, n) => `<a class="sq-step ${s.view === 'quant' && s.quantStep === x.id ? 'active' : ''}" href="#${route(x.id)}" ${s.view === 'quant' && s.quantStep === x.id ? 'aria-current="step"' : ''}><b>${String(n + 1).padStart(2, '0')}</b><span>${x.name}</span>${i(x.icon)}</a>`).join('')}</nav><div class="sq-nav-caption">研究工具</div><nav><a href="#quant/studio/financial" class="sq-nav ${s.quantStep === 'financial' ? 'active' : ''}">${i('database')}财务输入与状态</a><a href="#quant/studio/code" class="sq-nav ${s.quantStep === 'code' ? 'active' : ''}">${i('code')}代码与 AI 审阅</a><a href="#quant/community" class="sq-nav ${s.quantStep === 'community' ? 'active' : ''}">${i('users')}因子社区</a><a href="#quant/recipes" class="sq-nav">${i('layers')}模块配方目录</a><a href="#quant/compare" class="sq-nav">${i('chart')}研究比较</a><a href="#quant/history" class="sq-nav ${s.quantStep === 'history' ? 'active' : ''}">${i('clock')}历史版本研究</a></nav><div class="sq-sidebar-bottom"><span><i class="dot ${s.session?.runner?.online ? 'online' : ''}"></i>${s.session?.runner?.online ? '计算节点在线' : '计算节点状态待确认'}</span><a href="/cn/terminal">${i('external')} Atlas Terminal</a></div></aside>`;
     }
     function topbar() {
-      return `<header class="sq-topbar"><a href="#dashboard" class="sq-mobile-brand">atlas <b>quant</b></a><div class="sq-breadcrumb">STATISTICAL QUANT <span>/</span> <strong>${e(s.view === 'dashboard' ? '研究概览' : STEPS.find((x) => x.id === s.quantStep)?.name || { researches: '我的研究', code: '代码与 AI', history: '历史版本', community: '因子社区', compare: '研究比较' }[s.quantStep] || '报告')}</strong></div><div class="sq-topbar-actions"><span class="sq-version">0.5 / FORECAST FIRST</span><a class="sq-window-link" href="#quant/universe" target="_blank" rel="noopener" title="在独立窗口中打开统计量化工作区" aria-label="独立打开统计量化工作区">${i('external')}</a><a class="sq-mode-switch" href="#${route(step(), !isStudio())}">${i(isStudio() ? 'workflow' : 'code')}${isStudio() ? '引导模式' : 'Quant Studio'}</a></div></header>`;
+      return `<header class="sq-topbar"><a href="#dashboard" class="sq-mobile-brand">atlas <b>quant</b></a><div class="sq-breadcrumb">STATISTICAL QUANT <span>/</span> <strong>${e(s.view === 'dashboard' ? '研究概览' : STEPS.find((x) => x.id === s.quantStep)?.name || { researches: '我的研究', code: '代码与 AI', financial: '财务输入与状态', history: '历史版本', community: '因子社区', compare: '研究比较' }[s.quantStep] || '报告')}</strong></div><div class="sq-topbar-actions"><span class="sq-version">0.5 / FORECAST FIRST</span><a class="sq-window-link" href="#quant/universe" target="_blank" rel="noopener" title="在独立窗口中打开统计量化工作区" aria-label="独立打开统计量化工作区">${i('external')}</a><a class="sq-mode-switch" href="#${route(step(), !isStudio())}">${i(isStudio() ? 'workflow' : 'code')}${isStudio() ? '引导模式' : 'Quant Studio'}</a></div></header>`;
     }
     function heading(kicker, title, description, actions = '') {
       return `<div class="sq-page-heading"><div><span class="sq-kicker">${e(kicker)}</span><h1>${e(title)}</h1><p>${e(description)}</p></div>${actions ? `<div class="sq-actions">${actions}</div>` : ''}</div>`;
@@ -125,7 +127,7 @@ window.AtlasQuantV4 = {
       return `<aside class="sq-summary"><details ${ui.summaryOpen ? 'open' : ''} id="sq-summary"><summary>当前研究协议 <span>${st.universe.symbols.length} 标的 · ${st.factors.length} 因子</span>${i('sliders')}</summary><div><span class="sq-kicker">CONFIGURATION SNAPSHOT</span><h3>${e(st.name)}</h3><dl><dt>研究范围</dt><dd>${st.universe.symbols.length} 个明确成员</dd><dt>目标</dt><dd>${targetLabel()}</dd><dt>预测期限</dt><dd>${e(st.target.horizonSessions)} 个交易日</dd><dt>模型族</dt><dd>${e(FAMILIES[st.model.family]?.name || st.model.family)}</dd><dt>估计器</dt><dd>${e(ESTIMATORS[st.model.estimator] || st.model.estimator)}</dd><dt>观察 / 重拟合</dt><dd>${st.research.observationDays} / ${st.model.refitDays} 日</dd><dt>研究类型</dt><dd>${st.execution.enabled ? '预测 + 独立执行' : '仅预测研究'}</dd><dt>数据</dt><dd>${e(sourceLabel())}</dd></dl><div class="sq-summary-equation">V̂ = F<sub>h</sub>(X<sub>t</sub>)<br><small>e = 当前状态 − 预期未来状态</small></div>${button('save', '保存研究', { icon: 'save', disabled: s.saving })}<p>模型估计与交易结果分别检验。配置版本与数据来源随运行固定。</p></div></details></aside>`;
     }
     function frame(body) {
-      return `<div class="sq-shell">${sidebar()}<main class="sq-main" id="main-content" tabindex="-1">${topbar()}<div class="sq-mobile-step"><label for="sq-step-picker">研究步骤</label><select id="sq-step-picker">${STEPS.map((x, n) => `<option value="${x.id}" ${step() === x.id ? 'selected' : ''}>${n + 1}. ${x.name}</option>`).join('')}</select><a href="#quant/researches">研究列表</a></div><div class="sq-content">${s.error ? note(s.error, 'error') + '<button class="sq-button small" data-action="refresh">重新连接服务</button>' : ''}${ui.errors.length ? note(ui.errors.join('；'), 'warning') + button('workspace-retry', '重新读取工作区', { small: true }) : ''}${body}</div><footer class="sq-footer"><span>ATLAS QUANT · OPEN RESEARCH</span><span>预测有据 · 目标固定 · 执行可核对</span></footer></main></div>`;
+      return `<div class="sq-shell">${sidebar()}<main class="sq-main" id="main-content" tabindex="-1">${topbar()}${s.quantStep === 'financial' ? '<div class="sq-mobile-step"><a href="#quant/studio/financial">财务输入列表</a><a href="#quant/studio/state">返回研究</a></div>' : `<div class="sq-mobile-step"><label for="sq-step-picker">研究步骤</label><select id="sq-step-picker">${STEPS.map((x, n) => `<option value="${x.id}" ${step() === x.id ? 'selected' : ''}>${n + 1}. ${x.name}</option>`).join('')}</select><a href="#quant/researches">研究列表</a></div>`}<div class="sq-content">${s.error ? note(s.error, 'error') + '<button class="sq-button small" data-action="refresh">重新连接服务</button>' : ''}${ui.errors.length ? note(ui.errors.join('；'), 'warning') + button('workspace-retry', '重新读取工作区', { small: true }) : ''}${body}</div><footer class="sq-footer"><span>ATLAS QUANT · OPEN RESEARCH</span><span>预测有据 · 目标固定 · 执行可核对</span></footer></main></div>`;
     }
     function home() {
       return `${heading('AN INDEPENDENT RESEARCH WORKSPACE', '先预测，再检验，再交易。', '用明确的模型估计未来价格或价差。保留每一次预测，再研究它是否值得执行。', button('new', '新建统计研究', { icon: 'plus', primary: true }))}<div class="sq-summary-counts">${[
@@ -324,6 +326,7 @@ window.AtlasQuantV4 = {
       let body;
       if (s.view === 'runs') body = `<div class="sq-report-wrap">${C.runsView()}</div>`;
       else if (s.view === 'dashboard') body = home();
+      else if (s.quantStep === 'financial') body = financial.render();
       else if (s.quantStep === 'researches') body = experimentList();
       else if (s.quantStep === 'experiment') body = experimentDetail();
       else if (s.quantStep === 'compare') body = comparisonPage();
@@ -1044,6 +1047,11 @@ window.AtlasQuantV4 = {
     }
     async function routeChanged() {
       ui.pageErrors = [];
+      if (s.view === 'quant' && s.quantStep === 'financial') {
+        await financial.routeChanged();
+        return;
+      }
+      financial.dispose();
       if (s.view === 'dashboard') {
         const summary = await api('/statistical-quant/summary');
         ui.summary = summary.counts || summary;
@@ -1201,6 +1209,7 @@ window.AtlasQuantV4 = {
       ui,
       catalog,
       reports,
+      financial,
       applyModule,
       validate: () =>
         validateStrategy(s.strategy, {

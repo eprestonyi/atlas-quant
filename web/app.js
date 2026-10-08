@@ -83,7 +83,7 @@ import {createPageState} from './quant-workspace/page-state.js';
   const state={view:'dashboard',session:null,catalog:null,strategies:[],runs:[],factors:[],strategy:initial,strategyId:null,strategyVersion:null,dirty:initialDirty,stage:'factors',dataSource:initialDataSource,dataset:null,loading:true,error:'',factorQuery:'',factorFilter:'all',paletteFilter:'all',runId:null,report:null,reportTransport:null,job:null,reportLoading:false,reportError:'',reportTab:'overview',tradePage:0,predictionPage:0,predictionScope:'latest',predictionDate:'',predictionQuery:'',saving:false,submitting:false,tutorial:false,modal:null,polling:false};
   const app=$('#app');
   const pageState=createPageState(app);
-  const renderedRoute=()=>state.view==='quant'?`quant/${state.quantMode}/${state.quantStep}/${state.quantEntityId||''}`:state.view==='runs'?`runs/${state.runId||''}`:state.view==='research'?`research/${state.researchStep}`:state.view==='studio'?`studio/${state.studioStep}`:state.view;
+  const renderedRoute=()=>state.view==='quant'?`quant/${state.quantMode}/${state.quantStep}/${state.quantEntityId||''}${state.quantStep==='financial'?'/'+(location.hash.split('/')[4]||'source'):''}`:state.view==='runs'?`runs/${state.runId||''}`:state.view==='research'?`research/${state.researchStep}`:state.view==='studio'?`studio/${state.studioStep}`:state.view;
   let studio=null,workspace=null;
   let previousFocus=null;
   let lastSessionRefresh=0;
