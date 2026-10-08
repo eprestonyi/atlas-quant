@@ -1,5 +1,6 @@
 /** API doubles exercise bounded UI reads; this is not a worker or provider acceptance test. */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createForecastReports } from '../quant-workspace/reports.js';
 import { createForms } from '../quant-workspace/forms.js';
@@ -124,6 +125,11 @@ const transport = {
   bundleDownloadUrl: '/quant/api/runs/run-a/report/bundle?bundleId=fixture',
   hasFrozenInputs: true
 };
+const functionFixture = JSON.parse(fs.readFileSync('engine/tests/fixtures/model-function-golden-v1.json', 'utf8')).cases[0].artifact;
+const derivedFunction = { ...structuredClone(functionFixture), artifactId: '7'.repeat(64), lineage: { status: 'UNVALIDATED_USER_EDIT', parentArtifactId: functionFixture.artifactId } };
+const derivedRef = { functionId: '22222222-2222-4222-8222-222222222222', artifactId: derivedFunction.artifactId };
+const functionCalls = [];
+let functionDownload = null;
 const original = JSON.stringify(report);
 function freeze(value) {
   if (value && typeof value === 'object') {
@@ -155,13 +161,22 @@ const C = {
   dateText: (v) => String(v || '—'),
   icon: () => '',
   toast: () => {},
+  download: (name, artifact) => { functionDownload = { name, artifact }; },
   openModal: (title, body) =>
     (document.querySelector('#modal-root').innerHTML = `<h2>${esc(title)}</h2>${body}`),
   closeModal: () => (document.querySelector('#modal-root').innerHTML = ''),
   equityChart: (points) => `<div data-chart-points="${points.length}"></div>`,
   render: () => (document.querySelector('main').innerHTML = reports.render(activeReport)),
-  api: async (path) => {
+  api: async (path, options = {}) => {
     requests.push(path);
+    if (path.startsWith('/model-functions/')) {
+      const body = options.body ? JSON.parse(options.body) : null;
+      functionCalls.push({ path, body });
+      if (path.endsWith('/resolve')) return { ref: body.source, artifact: functionFixture };
+      if (path.endsWith('/evaluate')) return { inferenceOnly: true, newValidationPerformed: false, result: { artifactId: functionFixture.artifactId, levels: [{ expectedEntry: 100, expectedFuture: 101, e: -1, expectedChange: 1 }] } };
+      if (path.endsWith('/derive')) return { item: { ref: derivedRef, name: body.name }, artifact: derivedFunction };
+      return { ref: derivedRef, item: { ref: derivedRef, name: '派生 graph 来源 F' }, artifact: derivedFunction };
+    }
     assert(!/\/export$|\/runs\/[^/]+$/.test(path), 'UI must never fetch a complete report');
     const url = new URL(path, 'http://localhost');
     const collection = url.searchParams.get('collection');
@@ -400,6 +415,63 @@ assert(!document.querySelector('[data-sq="forecast-execute"]'));
 assert(document.querySelector('main').textContent.includes('交易执行与执行重放尚未开放'));
 await click('[data-sq="forecast-tab"][data-id="provenance"]');
 assert(document.querySelector('a[href^="#quant/studio/datasets/dataset/"]'));
+// Graph results use the new exact codec tuple and the same bounded report/editor controls.
+// The source API is doubled here; this does not assert source-registry or numerical acceptance.
+const graphRunId = '33333333-3333-4333-8333-333333333333';
+C.state.runId = graphRunId;
+fit.functionArtifact = functionFixture;
+const graphTransport = {
+  ...transport, format: 'atlas.quant.financial_bundle', version: 2,
+  sourceEvidenceClosure: 'separate_research_dataset_v3', executionEligible: false,
+  sourceEvidence: { datasetRef: { datasetId: '44444444-4444-4444-8444-444444444444', datasetRoot: '8'.repeat(64), format: 'atlas.quant.research_dataset', version: 3 }, admissionProfile: 'financial_fundamental_graph_auto_50_v1' },
+  downloadUrl: `/quant/api/runs/${graphRunId}/report/download?bundleId=${bundleId}`,
+  bundleDownloadUrl: `/quant/api/runs/${graphRunId}/report/bundle?bundleId=${bundleId}`
+};
+C.state.reportTransport = graphTransport;
+C.state.datasetBinding = { datasetRef: { ...graphTransport.sourceEvidence.datasetRef, datasetRoot: '9'.repeat(64) } };
+C.render(); await tick();
+const graphLinks = [...document.querySelectorAll('a[download]')];
+assert(graphLinks.some(x => x.textContent === '下载财务预测结果包' && x.getAttribute('href') === graphTransport.bundleDownloadUrl));
+assert(graphLinks.some(x => x.getAttribute('href') === `/quant/api/dataset-graphs/44444444-4444-4444-8444-444444444444/download?datasetRoot=${'8'.repeat(64)}`));
+assert(!graphLinks.some(x => x.href.includes('datasetRoot=' + '9'.repeat(64))), 'graph report uses its frozen source, never the current draft');
+await click('[data-sq="forecast-tab"][data-id="provenance"]');
+assert(document.querySelector('a[href^="#quant/studio/datasets/graph/dataset/"]'));
+await click('[data-sq="forecast-tab"][data-id="models"]');
+await click('[data-sq="forecast-fit"]');
+await click('[data-sq="mfe-resolve"]');
+const expectedFunctionSource = { runId: graphRunId, bundleId, modelFitId: fit.id };
+assert.deepEqual(functionCalls.at(-1).body.source, expectedFunctionSource);
+assert(document.querySelector('#modal-root').textContent.includes('已从私有来源核验'));
+for (const [key, value] of [['currentState', '100'], ['scale', '100']]) {
+  const field = document.querySelector(`[data-mfe-input="${key}"]`); field.value = value;
+  field.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+}
+await click('[data-sq="mfe-evaluate"]');
+assert.deepEqual(functionCalls.at(-1).body.source, expectedFunctionSource);
+assert(document.querySelector('#modal-root').textContent.includes('101.000000'));
+const param = document.querySelector('[data-mfe-param="/estimator/value/1"]');
+param.value = '0.01'; param.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+await click('[data-sq="mfe-derive"]');
+assert.deepEqual(functionCalls.at(-1).body.source, expectedFunctionSource);
+assert(document.querySelector('#modal-root').textContent.includes('UNVALIDATED_USER_EDIT'));
+await click('[data-sq="mfe-open-saved"]');
+await click('[data-sq="mfe-download"]');
+assert.deepEqual(functionDownload.artifact, derivedFunction);
+assert.equal(fit.functionArtifact, functionFixture, 'editing graph-derived F leaves original report record intact');
+C.closeModal();
+for (const bad of [
+  { ...graphTransport, version: 1 },
+  { ...graphTransport, sourceEvidenceClosure: 'separate_research_dataset_v2' },
+  { ...graphTransport, sourceEvidence: { ...graphTransport.sourceEvidence, admissionProfile: 'financial_fundamental_auto_50_v1' } },
+  { ...graphTransport, sourceEvidence: { ...graphTransport.sourceEvidence, datasetRef: { ...graphTransport.sourceEvidence.datasetRef, version: 2 } } }
+]) {
+  const before = requests.length;
+  C.state.reportTransport = bad; C.render(); await tick();
+  assert(document.querySelector('main').textContent.includes('尚未支持的传输版本'));
+  assert.equal(requests.length, before, 'incompatible source/result tuples do not fetch or reinterpret pages');
+  assert(!document.querySelector('[data-sq="forecast-fit"]'));
+}
+C.state.runId = 'run-a'; delete fit.functionArtifact;
 // Market F remains bundle/1, with a separate immutable source archive reference
 // in the REPORT provenance. An unrelated current draft must never change it.
 const marketRef={datasetId:'22222222-2222-4222-8222-222222222222',datasetRoot:'f'.repeat(64),format:'atlas.quant.market_dataset',version:1};
@@ -426,7 +498,7 @@ console.log(
     boundedCache: true,
     asyncDetails: true,
     directDownload: true,
-    financialTwoArchiveClosure: true,
+    financialTwoArchiveClosure: true, graphTwoArchiveClosure: true, graphEditorExactSource: true, incompatibleTupleRejected: true,
     financialExecutionDisabled: true,
     marketReportProvenancePinned: true,
     marketSeparateSourceArchive: true,

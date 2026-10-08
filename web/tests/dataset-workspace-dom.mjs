@@ -4,10 +4,18 @@ import fs from 'node:fs/promises';
 import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
 import { validateStatisticalQuant } from '../../edge/statistical-quant/validation.mjs';
+const graph = process.argv.includes('--graph');
+const sourceProfile = graph ? 'financial_snapshot_graph_50_v1' : 'financial_snapshot_view_50_v1',
+  autoProfile = graph ? 'financial_fundamental_graph_auto_50_v1' : 'financial_fundamental_auto_50_v1',
+  apiRoot = graph ? '/dataset-graphs' : '/datasets',
+  capPath = graph ? apiRoot + '/capabilities' : '/dataset-capabilities',
+  planPath = graph ? apiRoot + '/plans' : '/dataset-plans',
+  jobPath = graph ? apiRoot + '/jobs' : '/dataset-preparations',
+  routeRoot = '#quant/studio/datasets/' + (graph ? 'graph/' : '');
 const dom = new JSDOM(
     '<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>',
     {
-      url: 'http://dataset.localhost/quant/#quant/studio/datasets/source',
+      url: 'http://dataset.localhost/quant/' + routeRoot + 'source',
       runScripts: 'outside-only',
       pretendToBeVisual: true,
     },
@@ -24,7 +32,7 @@ const root = 'a'.repeat(64),
     datasetId,
     datasetRoot: root,
     format: 'atlas.quant.research_dataset',
-    version: 2,
+    version: graph ? 3 : 2,
   },
   financialRef = {
     inputId: datasetId,
@@ -37,6 +45,7 @@ const root = 'a'.repeat(64),
   detail = {
     datasetRef: ref,
     name: '合成固定来源',
+    ...(graph ? { sourceEvidenceClosure: 'separate_research_dataset_v3' } : {}),
     scope,
     status: 'ready',
     summary: {
@@ -48,7 +57,7 @@ const root = 'a'.repeat(64),
     researchAdmission: { profile: 'financial_snapshot_view_50_v1' },
     researchAdmissions: [
       { profile: 'financial_snapshot_view_50_v1', estimator: 'ridge', configurationEligible: true, runnerAvailable: true },
-      { profile: 'financial_fundamental_auto_50_v1', estimator: 'auto', configurationEligible: true, runnerAvailable: false, limits: { symbols: 50, factors: 16, calendarDays: 366, innerFolds: 2, outerFolds: 2, minRefitDays: 20 } },
+      { profile: autoProfile, estimator: 'auto', configurationEligible: true, runnerAvailable: false, limits: { symbols: 50, factors: 16, calendarDays: 366, innerFolds: 2, outerFolds: 2, minRefitDays: 20 } },
     ],
     preferredResearchAdmission: null,
     researchBindingEnabled: true,
@@ -59,8 +68,10 @@ const calls = [];
 let planFailures = 1,
   startFailures = 1,
   compositionOnline = false,
+  compositionEnabled = true,
+  coverageRoot = root, planGate = null,
   lastPlan = null,
-  detailGate = null, savedExperiment = null,
+  detailGate = null, savedExperiment = null, saveGate = null,
   releaseInitial;
 const initialGate = new Promise((r) => (releaseInitial = r));
 w.fetch = async (url, opts = {}) => {
@@ -68,17 +79,17 @@ w.fetch = async (url, opts = {}) => {
     data = opts.body ? JSON.parse(opts.body) : null;
   calls.push({ path, data });
   let value = { items: [], total: 0 };
-  if (path === '/dataset-capabilities') {
+  if (path === capPath) {
     await initialGate;
     value = {
-      enabled: true,
-      profile: 'financial_snapshot_view_50_v1',
+      enabled: compositionEnabled,
+      profile: sourceProfile,
       composition: { online: compositionOnline },
       researchBindingEnabled: true,
     };
   } else if (path === '/financial/definitions')
     value = { items: [{ id: stateId, name: '现金资产占比' }] };
-  else if (path.startsWith('/datasets/sources/markets'))
+  else if (path.startsWith(apiRoot + '/sources/markets'))
     value = {
       items: [
         {
@@ -98,7 +109,7 @@ w.fetch = async (url, opts = {}) => {
       ],
       total: 1,
     };
-  else if (path.startsWith('/datasets/sources/financial'))
+  else if (path.startsWith(apiRoot + '/sources/financial'))
     value = {
       items: [
         {
@@ -111,19 +122,20 @@ w.fetch = async (url, opts = {}) => {
       ],
       total: 1,
     };
-  else if (path === '/dataset-plans') {
+  else if (path === planPath) {
     lastPlan = data;
+    if (planGate) await planGate;
     if (planFailures-- > 0) throw Error('明确网络失败，选择保留');
-    value = { plan: { id: datasetId, planRoot: root, knownSourceBytes: 2048 } };
+    value = { plan: { id: datasetId, planRoot: root, profile: sourceProfile, knownSourceBytes: 2048 } };
   } else if (path.includes('/start')) {
     if (startFailures-- > 0) throw Error('启动响应未知，保留原请求标识');
     value = { preparation: { id: datasetId, status: 'queued' } };
-  } else if (path.startsWith('/dataset-preparations/'))
+  } else if (path.startsWith(jobPath + '/'))
     value = {
       preparation: { id: datasetId, status: 'completed' },
       datasetRef: ref,
     };
-  else if (path.startsWith('/datasets/' + datasetId + '/coverage'))
+  else if (path.startsWith(apiRoot + '/' + datasetId + '/coverage'))
     value = {
       items: [
         {
@@ -136,10 +148,11 @@ w.fetch = async (url, opts = {}) => {
           latestPeriodEnd: '20231231',
         },
       ],
-      total: 1,
+      total: 1, datasetRoot: coverageRoot,
     };
-  else if (path.startsWith('/datasets/' + datasetId + '?')) { if (detailGate) await detailGate; value = detail; }
-  else if (path === '/statistical-quant/experiments' && opts.method === 'POST')
+  else if (path.startsWith(apiRoot + '/' + datasetId + '?')) { if (detailGate) await detailGate; value = detail; }
+  else if (path.startsWith('/statistical-quant/experiments') && ['POST', 'PUT'].includes(opts.method)) {
+    if (saveGate) await saveGate;
     value = {
       experiment: savedExperiment = {
         id: datasetId,
@@ -152,7 +165,7 @@ w.fetch = async (url, opts = {}) => {
         },
       },
     };
-  else if (path === '/statistical-quant/experiments/' + datasetId) value = { experiment: savedExperiment };
+  } else if (path === '/statistical-quant/experiments/' + datasetId) value = { experiment: savedExperiment };
   else if (path.endsWith('/run'))
     value = { job: { id: datasetId, status: 'queued' } };
   return { ok: true, status: 200, text: async () => JSON.stringify(value) };
@@ -248,7 +261,7 @@ async function refreshNode(online) {
   await tick();
   assert.deepEqual(
     calls.slice(before).map((x) => x.path),
-    ['/dataset-capabilities'],
+    [capPath],
   );
   assert.equal(JSON.stringify(q.workspace.datasets.state.plan), frozenPlan);
   assert.equal(
@@ -288,10 +301,11 @@ await tick();
 await tick();
 assert(w.document.querySelector('main').textContent.includes('2024-04-01'));
 assert(
-  w.document.querySelector('a[download]').href.includes('archive?datasetRoot='),
+  w.document.querySelector('a[download]').href.includes((graph ? 'download' : 'archive') + '?datasetRoot='),
 );
 assert(w.document.querySelector('[data-ds="bind"]').disabled,'a Ridge-capable runner does not silently substitute for auto');
-assert(!w.document.querySelector('[data-ds="bind-ridge"]').disabled,'Studio Ridge is an explicit separate action');
+if (graph) assert(!w.document.querySelector('[data-ds="bind-ridge"]'), 'graph has no declared Ridge entry');
+else assert(!w.document.querySelector('[data-ds="bind-ridge"]').disabled,'Studio Ridge is an explicit separate action');
 assert(w.document.querySelector('main').textContent.includes('计算节点尚未就绪'));
 detail.researchAdmissions[1].runnerAvailable = true;
 detail.preferredResearchAdmission = detail.researchAdmissions[1];
@@ -354,11 +368,12 @@ assert(savedVersion, 'real server validator must accept the UI save payload');
 assert.equal(q.state.dirty, false);
 const saved = calls.find((x) => x.path === '/statistical-quant/experiments');
 assert.deepEqual(saved.data.datasetRef, ref);
-assert.equal(saved.data.admissionProfile, 'financial_fundamental_auto_50_v1');
-assert.equal(lastPlan.profile, 'financial_snapshot_view_50_v1', 'composition protocol remains independent');
+assert.equal(saved.data.admissionProfile, autoProfile);
+assert.equal(lastPlan.profile, sourceProfile, 'composition protocol remains independent');
 assert.doesNotThrow(() => validateStatisticalQuant(saved.data.strategy));
 assert.equal(Object.hasOwn(saved.data.strategy.factors[0], 'name'), false);
 assert.equal(q.state.datasetBinding.stateDefinitions[0].name, '现金资产占比');
+if (!graph) {
 // Old persisted Ridge versions remain Ridge and keep their original source/admission.
 savedExperiment.strategy.model.estimator = 'ridge';
 savedExperiment.datasetBinding.admissionProfile = 'financial_snapshot_view_50_v1';
@@ -374,18 +389,99 @@ click('bind');await tick();const keptStrategy=JSON.stringify(q.state.strategy);
 q.state.session.workspace.id='financial_owner_b';releaseDetail();await tick();detailGate=null;
 assert.equal(JSON.stringify(q.state.strategy),keptStrategy);
 assert.equal(q.state.strategy.model.estimator,'ridge');
-assert(w.document.querySelector('main').textContent.includes('工作区已变化'));
-q.state.session.workspace.id='financial_owner_a';
+q.render();
+assert.equal(q.workspace.datasets.state.detail, null, 'another owner cannot see the completed private source');
+q.state.session.workspace.id='financial_owner_a';q.render();
 // Explicit Studio selection can create a new Ridge draft; default automatic entry remains distinct.
 click('bind-ridge');await tick();
 assert.equal(q.state.strategy.model.estimator,'ridge');assert(w.location.hash.includes('/studio/state'));
 assert.equal(q.state.datasetBinding.admissionProfile,'financial_snapshot_view_50_v1');
+} else {
+  // A saved graph binding reopens with its exact source and estimator; no v2 fallback.
+  const reopen = w.document.createElement('button');
+  reopen.dataset.sq = 'experiment-load'; reopen.dataset.id = datasetId;
+  w.document.body.append(reopen); reopen.click(); await tick();
+  assert.equal(q.state.datasetBinding.datasetRef.version, 3);
+  assert.equal(q.state.datasetBinding.admissionProfile, autoProfile);
+  assert.equal(q.state.strategy.model.estimator, 'auto');
+  assert.equal(q.state.datasetBinding.workspaceId, 'financial_owner_a');
+  assert(w.document.querySelector(`a[href="${routeRoot}dataset/${datasetId}?root=${root}"]`));
+  const beforeInvalidSave = calls.length;
+  q.state.datasetBinding.admissionProfile = 'financial_fundamental_auto_50_v1';
+  assert.equal(await q.workspace.save(), null, 'a legacy auto profile cannot save a graph source');
+  assert.equal(calls.length, beforeInvalidSave);
+  q.state.datasetBinding.admissionProfile = null; q.state.strategy.model.estimator = 'ridge';
+  assert.equal(await q.workspace.save(), null, 'an undeclared graph Ridge/null tuple is also rejected');
+  assert.equal(calls.length, beforeInvalidSave);
+  q.state.datasetBinding.admissionProfile = autoProfile; q.state.strategy.model.estimator = 'auto';
+  // A successful old save never replaces a binding or edited draft changed in flight.
+  const retainedBinding = structuredClone(q.state.datasetBinding), retainedName = q.state.strategy.name;
+  let releaseSave; saveGate = new Promise(resolve => { releaseSave = resolve; });
+  const pendingSave = q.workspace.save(); await tick();
+  q.state.datasetBinding.datasetRef = { ...q.state.datasetBinding.datasetRef, datasetRoot: '6'.repeat(64) };
+  q.state.strategy.name = 'subsequent graph draft'; q.state.dirty = true;
+  releaseSave(); await pendingSave; saveGate = null;
+  assert.equal(q.state.datasetBinding.datasetRef.datasetRoot, '6'.repeat(64));
+  assert.equal(q.state.strategy.name, 'subsequent graph draft');
+  assert.equal(q.state.dirty, true);
+  q.state.datasetBinding = retainedBinding; q.state.strategy.name = retainedName;
+  const graphDetail = routeRoot + 'dataset/' + datasetId + '?root=' + root;
+  // New composition and F research gates are independent: frozen sources remain readable.
+  compositionEnabled = false;
+  await route(routeRoot + 'review'); click('refresh-capabilities'); await tick();
+  assert.equal(q.workspace.datasets.state.cap.enabled, false);
+  await route(graphDetail);
+  await q.workspace.datasets.routeChanged(true); await tick();
+  assert(w.document.querySelector('[data-ds="bind"]') && !w.document.querySelector('[data-ds="bind"]').disabled);
+  assert.equal(w.document.querySelector('a[download]').getAttribute('href'), `/quant/api/dataset-graphs/${datasetId}/download?datasetRoot=${root}`);
+  // The source namespace must not reinterpret a valid legacy reference as graph.
+  ref.version = 2;
+  await q.workspace.datasets.routeChanged(true); await tick();
+  assert(w.document.querySelector('main').textContent.includes('来源版本不一致'));
+  assert(!w.document.querySelector('[data-ds="bind"]'));
+  ref.version = 3; coverageRoot = 'f'.repeat(64);
+  await q.workspace.datasets.routeChanged(true); await tick();
+  assert(w.document.querySelector('main').textContent.includes('覆盖根'));
+  assert(!w.document.querySelector('[data-ds="bind"]'));
+  coverageRoot = root;
+  await q.workspace.datasets.routeChanged(true); await tick();
+  // An unrelated auto profile cannot enable a graph source, even if both booleans are true.
+  detail.researchAdmissions[1].profile = 'financial_fundamental_auto_50_v1';
+  await q.workspace.datasets.routeChanged(true); await tick();
+  assert(w.document.querySelector('[data-ds="bind"]').disabled);
+  detail.researchAdmissions[1].profile = autoProfile;
+  await q.workspace.datasets.routeChanged(true); await tick();
+  // Discard a late private binding response after identity changes, preserving the existing draft.
+  let releaseDetail; detailGate = new Promise(resolve => { releaseDetail = resolve; });
+  const beforeOwner = JSON.stringify(q.state.strategy);
+  click('bind'); await tick();
+  q.state.session.workspace.id = 'financial_owner_b'; q.render();
+  releaseDetail(); await tick(); detailGate = null;
+  assert.equal(JSON.stringify(q.state.strategy), beforeOwner);
+  assert.equal(q.workspace.datasets.state.detail, null);
+  assert(!w.document.querySelector('[data-ds="bind"]'));
+  q.state.session.workspace.id = 'financial_owner_a';
+  compositionEnabled = true;
+  await route(routeRoot + 'review'); click('refresh-capabilities'); await tick();
+  input('#ds-name', 'graph plan whose response arrives after namespace switch');
+  let releasePlan; planGate = new Promise(resolve => { releasePlan = resolve; });
+  click('plan'); await tick();
+  const graphState = q.workspace.datasets.state;
+  await route('#quant/studio/datasets/source');
+  releasePlan(); await tick(); planGate = null;
+  assert.equal(graphState.plan, null, 'late graph plan response cannot apply after switching protocol');
+  assert.equal(q.workspace.datasets.state.market, null, 'legacy form does not inherit graph source');
+  assert.equal(q.workspace.datasets.state.plan, null);
+  assert.equal(w.location.hash, '#quant/studio/datasets/source');
+  assert(calls.filter(x => x.path === planPath).every(x => Object.keys(x.data.financialInputs[0]).sort().join(',') === Object.keys(financialRef).sort().join(',')));
+  assert(!calls.some(x => /tushare|acquisition/.test(x.path)), 'composition never calls a provider');
+}
 q.workspace.datasets.dispose();
 q.workspace.financial.dispose();
 dom.window.close();
 console.log(
   JSON.stringify({
-    realDOM: true,
+    realDOM: true, graphNamespace: graph,
     httpDoubles: true,
     loadingNotEmpty: true,
     independentSteps: 4,
@@ -393,7 +489,7 @@ console.log(
     inputRetention: true,
     heartbeatRefreshRetainsPlanAndBothRequestIds: true,
     coverageObservedDates: true,
-    explicitForecastOnlyBinding: true, automaticFinancialAdmission: true, noRidgeFallback: true, compositionSeparate: true, legacyRidgePreserved: true, freshBindingOwnerFence: true,
+    explicitForecastOnlyBinding: true, automaticFinancialAdmission: true, noRidgeFallback: true, compositionSeparate: true, legacyRidgePreserved: !graph, freshBindingOwnerFence: true, graphSavedBindingReopened: graph, graphSaveResponsePreservesChangedDraft: graph, versionAndCoverageRejected: graph, namespaceFence: graph,
     realServerValidationOnBindAndSave: true,
     browserVisualAcceptance: false,
   }),

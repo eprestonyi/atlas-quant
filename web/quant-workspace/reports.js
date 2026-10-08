@@ -1,5 +1,6 @@
 import { reportFeatureLabeler, createFeatureLabeler } from './feature-labels.js';
 import { marketDatasetDownload } from './source-downloads.js';
+import { financialTransportSource, datasetLocation } from './datasets/protocol.js';
 import { createModelFunctionEditor } from './model-function-editor.js';
 import { createFactorDiagnostics } from './factor-diagnostics.js';
 // Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
@@ -31,13 +32,7 @@ export function createForecastReports(C, F) {
   const marketReport = r => !!r.provenance?.marketSource;
   const factorOnlyReport = r => financialReport() || marketReport(r) || r.execution?.enabled === false;
   function financialSourceRef() {
-    const ref = remote.transport?.sourceEvidence?.datasetRef;
-    return ref?.format === 'atlas.quant.research_dataset' &&
-      ref.version === 2 &&
-      /^[a-f0-9-]{36}$/.test(ref.datasetId) &&
-      /^[a-f0-9]{64}$/.test(ref.datasetRoot)
-      ? ref
-      : null;
+    return financialTransportSource(remote.transport);
   }
   const reasonLabel = (value) => {
     if (!value) return '按预测入场';
@@ -198,7 +193,7 @@ export function createForecastReports(C, F) {
     const bundleUrl = remote.enabled() ? remote.transport.bundleDownloadUrl : null;
     const sourceRef = financialSourceRef();
     const datasetArchiveUrl = sourceRef
-      ? `/quant/api/datasets/${sourceRef.datasetId}/archive?datasetRoot=${sourceRef.datasetRoot}`
+      ? datasetLocation(sourceRef).archive
       : marketDatasetDownload(r.provenance?.marketSource?.marketDatasetRef);
     const packLabel = financialReport()
       ? '下载财务预测结果包'
@@ -720,7 +715,7 @@ export function createForecastReports(C, F) {
     const source = ref
       ? F.panel(
           '冻结数据集来源',
-          `<p>原始行情快照、明确子范围、财务输入与准备、日历授权均由独立数据集闭包保存。用户声明单位仍未核验，供应商原始发布版本和修订时点未认证。</p><a class="sq-button" href="#quant/studio/datasets/dataset/${e(ref.datasetId)}?root=${e(ref.datasetRoot)}">查看来源与实际覆盖</a>${F.advanced('数据集身份', `<code>${e(ref.datasetRoot)}</code>`)}`
+          `<p>原始行情快照、明确子范围、财务输入与准备、日历授权均由独立数据集闭包保存。用户声明单位仍未核验，供应商原始发布版本和修订时点未认证。</p><a class="sq-button" href="${e(datasetLocation(ref).page)}">查看来源与实际覆盖</a>${F.advanced('数据集身份', `<code>${e(ref.datasetRoot)}</code>`)}`
         )
       : marketSource ? F.panel('冻结行情来源',
           '<p>本报告固定引用独立保存的行情输入与来源证据。完整核验需同时保留市场预测结果包和行情来源包。</p>' +

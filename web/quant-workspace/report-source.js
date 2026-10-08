@@ -1,3 +1,4 @@
+import { financialTransportSource } from './datasets/protocol.js';
 /** Bounded report pages. This cache never reconstructs an immutable artifact. */
 export function createReportSource({ api, render }) {
   const cache = new Map();
@@ -14,14 +15,13 @@ export function createReportSource({ api, render }) {
         .filter(([, value]) => value !== '' && value != null)
         .sort(([a], [b]) => a.localeCompare(b))
     );
-  const identity = () => `${runId}:${transport?.bundleId}`;
-  const enabled = () =>
-    ['atlas.quant.bundle', 'atlas.quant.financial_bundle'].includes(transport?.format) &&
-    transport.version === 1;
+  const identity = () => `${runId}:${transport?.format}:${transport?.version}:${transport?.bundleId}`;
+  const enabled = () => transport?.format === 'atlas.quant.bundle' && transport.version === 1
+    || !!financialTransportSource(transport);
   const base = () => `/runs/${encodeURIComponent(runId)}/report`;
 
   function bind(next, nextRunId) {
-    const nextIdentity = `${nextRunId}:${next?.bundleId}`;
+    const nextIdentity = `${nextRunId}:${next?.format}:${next?.version}:${next?.bundleId}`;
     if (identity() !== nextIdentity) {
       generation++;
       cache.clear();

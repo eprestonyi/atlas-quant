@@ -1,4 +1,5 @@
-import { financialAdmission, financialBindingErrors, FINANCIAL_AUTO } from './financial/research-binding.js';
+import { financialProfile, datasetLocation } from './datasets/protocol.js';
+import { financialAdmission, financialBindingErrors } from './financial/research-binding.js';
 import { SOURCE_LABELS, scopeKey, activeBinding, bindingFields, restoreBindings, marketBindingErrors } from './research-data-binding.js';
 import { createMarketPreparation } from './market/preparation.js';
 import { createModuleHub } from './module-hub.js';
@@ -182,14 +183,18 @@ window.AtlasQuantV4 = {
     }
     const boundDataset = () =>
       s.dataSource === 'ready_dataset' && s.datasetBinding;
+    const boundAdmissionIs = estimator => {
+      const profile = financialProfile(s.datasetBinding?.datasetRef, estimator);
+      return !!profile && profile === s.datasetBinding?.admissionProfile;
+    };
     function boundNote() {
       return (
         note(
-          s.datasetBinding.admissionProfile === FINANCIAL_AUTO
+          boundAdmissionIs('auto')
             ? '本研究使用已冻结财务数据和完整范围，以基本面条件自动拟合未来状态；只生成预测，不执行交易。'
-            : '这是已声明的基本面 / Ridge / 单资产价格协议。冻结范围和原模型选择保持不变，交易执行关闭。',
+            : boundAdmissionIs('ridge') ? '这是已声明的基本面 / Ridge / 单资产价格协议。冻结范围和原模型选择保持不变，交易执行关闭。' : '当前财务来源与计算协议尚未识别，不能保存或运行；请重新读取原版本。',
         ) +
-        `<a class="sq-button" href="#quant/studio/datasets/dataset/${e(s.datasetBinding.datasetRef.datasetId)}?root=${e(s.datasetBinding.datasetRef.datasetRoot)}">查看数据覆盖与完整来源</a>`
+        `<a class="sq-button" href="${e(datasetLocation(s.datasetBinding.datasetRef)?.page || '#quant/studio/datasets/source')}">查看数据覆盖与完整来源</a>`
       );
     }
     function bindMarket(binding) {
@@ -310,7 +315,7 @@ window.AtlasQuantV4 = {
         return panel(
           '基本面条件预测 · 当前可用协议',
           boundNote() +
-            `${isStudio() ? `<div class="sq-form-grid">${input('训练窗口', 'model.trainWindow', { min: 120, max: 1260, unit: '交易日' })}${input('重新拟合间隔', 'model.refitDays', { min: 1, max: 126, unit: '交易日' })}</div>` : note(s.datasetBinding.admissionProfile === FINANCIAL_AUTO ? '系统在预先声明的八组候选中进行内层时间选择，外层及最终报告区间不参与挑选；不保证消除偏差或过拟合。' : '当前已保存版本使用 Ridge。继续读取保留原协议；新自动研究须从数据集入口明确创建。')}`,
+            `${isStudio() ? `<div class="sq-form-grid">${input('训练窗口', 'model.trainWindow', { min: 120, max: 1260, unit: '交易日' })}${input('重新拟合间隔', 'model.refitDays', { min: 1, max: 126, unit: '交易日' })}</div>` : note(boundAdmissionIs('auto') ? '系统在预先声明的八组候选中进行内层时间选择，外层及最终报告区间不参与挑选；不保证消除偏差或过拟合。' : boundAdmissionIs('ridge') ? '当前已保存版本使用 Ridge。继续读取保留原协议；新自动研究须从数据集入口明确创建。' : '当前保存的计算协议尚未识别，不能改称 Ridge 或自动运行。')}`,
         );
       return `${panel(
         '先声明模型机制',
