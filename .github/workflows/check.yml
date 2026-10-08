@@ -30,6 +30,7 @@ jobs:
       - run: node web/tests/research-dom.mjs
       - run: node web/tests/statistical-dom.mjs
       - run: node web/tests/factor-workbench-dom.mjs
+      - run: node web/tests/market-preparation-dom.mjs
       - run: node web/tests/factor-diagnostics-dom.mjs
       - run: node web/tests/model-function-editor-dom.mjs
       - run: node web/tests/financial-workspace-dom.mjs

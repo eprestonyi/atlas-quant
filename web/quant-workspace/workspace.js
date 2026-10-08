@@ -1,3 +1,5 @@
+import { SOURCE_LABELS, scopeKey, activeBinding, bindingFields, restoreBindings, marketBindingErrors } from './research-data-binding.js';
+import { createMarketPreparation } from './market/preparation.js';
 import { createModuleHub } from './module-hub.js';
 import { createDatasetWorkspace } from './datasets/workspace.js';
 // Statistical research routes and private-workspace orchestration; numerical work stays in the engine.
@@ -52,6 +54,7 @@ window.AtlasQuantV4 = {
       loading: false,
       activeId: null,
       activeVersion: null,
+      boundSource: null,
       universeScope: null,
       runError: '',
       summaryOpen: summaryMedia?.matches || false,
@@ -97,6 +100,7 @@ window.AtlasQuantV4 = {
     const catalog = createModuleCatalog(C, F, applyModule);
     const financial = createFinancialWorkspace(C, F);
     const datasets = createDatasetWorkspace(C, F, { onBind: bindDataset });
+    const market = createMarketPreparation(C, F, { freezeScope, onBind: bindMarket });
     try {
       const saved = JSON.parse(
         localStorage.getItem('atlas-quant-statistical-draft-v2') || 'null',
@@ -104,6 +108,7 @@ window.AtlasQuantV4 = {
       ui.activeId = saved?.experimentId || null;
       ui.activeVersion = saved?.experimentVersion || null;
       ui.universeScope = saved?.universeScope || null;
+      ui.boundSource = saved?.boundSource || null;
     } catch {}
     const reports = createForecastReports(C, F);
     const isStudio = () => s.quantMode === 'studio';
@@ -124,13 +129,7 @@ window.AtlasQuantV4 = {
         ? '冻结数量篮子'
         : '单资产价格';
     const legacy = () => !isStatistical(s.strategy);
-    const sourceLabel = () =>
-      ({
-        tushare: 'Tushare 实际数据',
-        upload: '当前导入数据',
-        demo: '合成教学数据',
-        ready_dataset: '已冻结行情与财务数据集',
-      })[s.dataSource] || '待选择';
+    const sourceLabel = () => SOURCE_LABELS[s.dataSource] || '待选择';
 
     function sidebar() {
       const current = step();
@@ -190,6 +189,14 @@ window.AtlasQuantV4 = {
         `<a class="sq-button" href="#quant/studio/datasets/dataset/${e(s.datasetBinding.datasetRef.datasetId)}?root=${e(s.datasetBinding.datasetRef.datasetRoot)}">查看数据覆盖与完整来源</a>`
       );
     }
+    function bindMarket(binding) {
+      s.dataSource = 'ready_market';
+      s.marketDatasetBinding = clone(binding);
+      s.datasetBinding = null;
+      s.dataset = null;
+      ui.universeScope = { ref: clone(binding.universeScopeRef), key: scopeKey(s.strategy.universe) };
+      persistDraft();
+    }
     async function bindDataset(detail, stateIds, stateDefinitions = []) {
       if (!detail.researchBindingEnabled || !stateIds?.length)
         throw Error('该数据集目前不能创建模型研究。');
@@ -208,6 +215,7 @@ window.AtlasQuantV4 = {
       }));
       s.strategy = normalizeStrategy(strategy);
       s.dataSource = 'ready_dataset';
+      s.marketDatasetBinding = null;
       s.dataset = null;
       s.datasetBinding = {
         datasetRef: clone(detail.datasetRef),
@@ -252,7 +260,7 @@ window.AtlasQuantV4 = {
       const dates = boundDataset()
         ? `<dl class="fin-summary"><dt>冻结研究窗口</dt><dd>${e(C.dateText(st.universe.start))} — ${e(C.dateText(st.universe.end))}</dd></dl>`
         : `<div class="sq-form-grid">${input('研究窗口起始', 'universe.start', { type: 'date', value: C.dateText(st.universe.start) })}${input('研究窗口结束', 'universe.end', { type: 'date', value: C.dateText(st.universe.end) })}</div>`;
-      return panel('研究数据与窗口', `${boundDataset() ? boundNote() : `<div class="sq-legacy">${C.legacy.flow.sourceControls()}</div>`}${dates}<p class="sq-subtle">这个窗口用于训练和样本外检验，与股票筛选条件分开保存。</p>`) + targetPage() +
+      return panel('研究数据与窗口', `${boundDataset() ? boundNote() : `<div class="sq-legacy">${C.legacy.flow.sourceControls()}</div>`}${dates}<p class="sq-subtle">这个窗口用于训练和样本外检验，与股票筛选条件分开保存。</p>`) + (!boundDataset() && ['tushare', 'ready_market'].includes(s.dataSource) ? market.view() : '') + targetPage() +
         (isStudio() ? advanced('跨数据库时点映射', C.legacy.mappingEditor(), false) : '');
     }
     function targetPage() {
@@ -667,16 +675,8 @@ window.AtlasQuantV4 = {
         const item = response.experiment || response.item || response;
         if (edit && location.hash === routeAtStart) {
           s.strategy = normalizeStrategy(item.strategy || item.spec);
-          s.datasetBinding = item.datasetBinding
-            ? {
-                ...clone(item.datasetBinding),
-                selectedStateIds: item.datasetBinding.selectedStateIds?.length
-                  ? [...item.datasetBinding.selectedStateIds]
-                  : s.strategy.factors.map((f) => f.id),
-              }
-            : null;
-          if (s.datasetBinding) s.dataSource = 'ready_dataset';
-          else if (s.dataSource === 'ready_dataset') s.dataSource = 'tushare';
+          restoreBindings(s, item);
+          ui.boundSource = item.marketDatasetBinding ? 'ready_market' : item.datasetBinding ? 'ready_dataset' : null;
           ui.activeId = item.id;
           ui.activeVersion = item.version;
           ui.universeScope = item.universeScopeRef ? { ref: clone(item.universeScopeRef), key: scopeKey(s.strategy.universe) } : null;
@@ -699,7 +699,6 @@ window.AtlasQuantV4 = {
         }
       }
     }
-    const scopeKey = universe => JSON.stringify({ selection: universe.selection, resolutionHash: universe.resolutionHash, snapshotHash: universe.snapshotHash, symbols: universe.symbols, start: universe.start, end: universe.end });
     async function freezeScope(universe, dataSource) {
       if (!universe.selection || dataSource === 'ready_dataset') return null;
       const key = scopeKey(universe);
@@ -720,7 +719,7 @@ window.AtlasQuantV4 = {
         return null;
       }
       prepareFactorProtocol();
-      const errors = validateStrategy(s.strategy);
+      const errors = [...validateStrategy(s.strategy), ...marketBindingErrors(s)];
       if (errors.length) {
         ui.pageErrors = errors;
         render();
@@ -732,8 +731,9 @@ window.AtlasQuantV4 = {
       const draft = s.strategy,
         submitted = clone(draft),
         submittedSource = s.dataSource,
-        submittedDatasetBinding = s.datasetBinding ? clone(s.datasetBinding) : null,
-        id = ui.activeId,
+        submittedBinding = activeBinding(s) ? clone(activeBinding(s)) : null,
+        previousId = ui.activeId,
+        id = ui.boundSource && ui.boundSource !== submittedSource ? null : ui.activeId,
         version = ui.activeVersion;
       s.saving = true;
       render();
@@ -748,21 +748,17 @@ window.AtlasQuantV4 = {
             body: JSON.stringify({
               strategy: submitted,
               ...(universeScopeRef ? { universeScopeRef } : {}),
-              ...(submittedSource === 'ready_dataset' && submittedDatasetBinding
-                ? {
-                    datasetRef: submittedDatasetBinding.datasetRef,
-                    admissionProfile: submittedDatasetBinding.admissionProfile,
-                  }
-                : {}),
+              ...bindingFields(submittedSource, submittedBinding),
               ...(id ? { version } : {}),
             }),
           },
         );
         const item = response.experiment || response.item || response;
-        const sameDraft = s.strategy === draft && ui.activeId === id && s.dataSource === submittedSource && JSON.stringify(s.datasetBinding || null) === JSON.stringify(submittedDatasetBinding);
+        const sameDraft = s.strategy === draft && ui.activeId === previousId && s.dataSource === submittedSource && JSON.stringify(activeBinding(s) || null) === JSON.stringify(submittedBinding);
         if (sameDraft) {
           ui.activeId = item.id;
           ui.activeVersion = item.version;
+          ui.boundSource = ['ready_market', 'ready_dataset'].includes(submittedSource) ? submittedSource : null;
           const unchanged =
             JSON.stringify(s.strategy) === JSON.stringify(submitted);
           if (unchanged) {
@@ -793,6 +789,8 @@ window.AtlasQuantV4 = {
     async function run() {
       if (s.submitting) return;
       prepareFactorProtocol();
+      const bindingErrors = marketBindingErrors(s, { run: true });
+      if (bindingErrors.length) { ui.runError = bindingErrors.join('；'); goto('report'); render(); toast(ui.runError, true); return; }
       if (s.dataSource === 'ready_dataset' && !s.datasetBinding) {
         toast('请重新选择已冻结数据集。', true);
         return;
@@ -811,7 +809,7 @@ window.AtlasQuantV4 = {
       const submitted = clone(s.strategy),
         dataSource = s.dataSource,
         dataset = s.dataset,
-        datasetBinding = s.datasetBinding ? clone(s.datasetBinding) : null;
+        submittedBinding = activeBinding(s) ? clone(activeBinding(s)) : null;
       ui.runError = '';
       s.submitting = true;
       render();
@@ -835,12 +833,7 @@ window.AtlasQuantV4 = {
               version: item.version,
               dataSource,
               ...(dataSource === 'upload' ? { dataset } : {}),
-              ...(dataSource === 'ready_dataset'
-                ? {
-                    datasetRef: datasetBinding?.datasetRef,
-                    admissionProfile: datasetBinding?.admissionProfile,
-                  }
-                : {}),
+              ...bindingFields(dataSource, submittedBinding),
             }),
           },
         );
@@ -948,6 +941,7 @@ window.AtlasQuantV4 = {
       return errors;
     }
     async function handle(element) {
+      if (element.dataset.sq?.startsWith('market-')) return market.handle(element);
       if (await reports.handle(element)) return;
       if (await catalog.handle(element)) return;
       const action = element.dataset.sq,
@@ -960,8 +954,11 @@ window.AtlasQuantV4 = {
         ui.activeId = null;
         ui.activeVersion = null;
         ui.universeScope = null;
+        ui.boundSource = null;
         ui.runError = '';
         s.dataSource = 'tushare';
+        s.marketDatasetBinding = null;
+        s.datasetBinding = null;
         persistDraft();
         location.hash = route('universe');
         render();
@@ -1136,6 +1133,7 @@ window.AtlasQuantV4 = {
       }
     }
     function onChange(element) {
+      if (market.onChange(element)) return;
       if (element.id === 'sq-compare-kind') {
         ui.compareKind = element.value;
         ui.compareLoaded = false;
@@ -1186,6 +1184,7 @@ window.AtlasQuantV4 = {
         setTimeout(render, 0);
     }
     async function routeChanged() {
+      market.routeChanged();
       ui.pageErrors = [];
       if (s.view === 'quant' && STEPS.some(x => x.id === s.quantStep) && isStatistical(s.strategy)) {
         const before = JSON.stringify([s.strategy.execution.enabled, s.strategy.model.estimator]);
@@ -1404,6 +1403,7 @@ window.AtlasQuantV4 = {
       reports,
       financial,
       datasets,
+      market,
       applyModule,
       validate: () =>
         validateStrategy(s.strategy, {
