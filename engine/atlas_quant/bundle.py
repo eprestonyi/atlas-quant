@@ -28,6 +28,8 @@ COLLECTIONS = {
     "forecasts": ("forecast", "/rows"),
     "targets": ("forecast", "/targetDefinitions"),
     "modelFits": ("forecast", "/modelFits"),
+    "factorFeatures": ("forecast", "/factorResearch/diagnostics/features"),
+    "factorJointDistributions": ("forecast", "/factorResearch/diagnostics/dependence/jointDistributions"),
     "hedgeFits": ("forecast", "/hedgeFits"),
     "perTarget": ("forecast", "/diagnostics/perTarget"),
     "outerFolds": ("forecast", "/diagnostics/outerFolds"),

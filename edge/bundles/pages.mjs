@@ -8,6 +8,8 @@ const PUBLIC_COLLECTIONS = new Set([
   'forecasts',
   'targets',
   'modelFits',
+  'factorFeatures',
+  'factorJointDistributions',
   'hedgeFits',
   'perTarget',
   'outerFolds',
