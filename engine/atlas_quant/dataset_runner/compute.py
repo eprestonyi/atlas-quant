@@ -30,6 +30,7 @@ def _child(connection, context, computer, slot_path, deadline, spool_type=Datase
         def check():
             require(time.monotonic() < deadline, "DATASET_DEADLINE")
 
+        publication.before_commit = check
         # The parent continues heartbeats and kills this child on cancellation.
         # Waiting for the host slot consumes this job's original fixed budget.
         with compute_slot(slot_path, deadline=deadline, check=check):

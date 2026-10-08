@@ -107,6 +107,7 @@ def run_once(
     failure_settler=settle_failure,
     delivery=deliver,
     monitor_class=LeaseMonitor,
+    rejection_handler=None,
 ):
     state = spool.current_or_create()
     if state["phase"] == "terminal":
@@ -190,6 +191,8 @@ def run_once(
         require(current is not None, "DATASET_SPOOL_INTEGRITY")
         rejected = safe_error(error)
         if error.code == "DATASET_HTTP" and current["phase"] == "publishing":
+            if rejection_handler is not None:
+                rejection_handler(spool, current, error)
             rejected = safe_error(
                 RunnerError("DATASET_RESULT_REJECTED", "发布被明确拒绝。")
             )

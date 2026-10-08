@@ -18,7 +18,8 @@ def run_once(config,spool,client,heartbeat_client,*,stop_requested=None,bounded_
         terminal_reader=partial(delivery.terminal_status,dataset_version=3),
         failure_settler=partial(delivery.settle_failure,dataset_version=3),
         delivery=partial(delivery.deliver,dataset_version=3),
-        monitor_class=partial(LeaseMonitor,capability=CAPABILITY))
+        monitor_class=partial(LeaseMonitor,capability=CAPABILITY),
+        rejection_handler=lambda store,state,error:store.preserve_rejection(state,error))
 
 
 def serve(config,*,once=False,stop_requested=None,client_factory=GraphDatasetClient):

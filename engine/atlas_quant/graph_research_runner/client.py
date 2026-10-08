@@ -10,7 +10,9 @@ class GraphResearchClient(ResearchDatasetClient):
     def source_contract(job):
         reference = dataset_reference(job.get("datasetRef"))
         require(job.get("admissionProfile") == RESEARCH_PROFILE, "DATASET_INPUT_IDENTITY")
-        require(job.get("resultTransport") == {"format": "atlas.quant.financial_bundle", "version": 2},
+        transport = job.get("resultTransport")
+        require(isinstance(transport, dict) and type(transport.get("version")) is int
+                and transport == {"format": "atlas.quant.financial_bundle", "version": 2},
                 "DATASET_INPUT_IDENTITY")
         require(not any(k in job for k in ("providerAccess", "pcdAccess", "replay", "replayBundle")),
                 "DATASET_INPUT_IDENTITY")
