@@ -1,0 +1,33 @@
+{
+  "format": "atlas.quant.universe_scope",
+  "version": 1,
+  "membershipPolicy": "complete_filtered_set",
+  "symbols": [
+    "000001.SZ",
+    "600000.SH"
+  ],
+  "symbolCount": 2,
+  "start": "20240101",
+  "end": "20240110",
+  "snapshotHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "resolutionHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "selection": {
+    "version": 1,
+    "includeGroups": [],
+    "excludeGroups": [],
+    "includeSymbols": [
+      "000001.SZ",
+      "600000.SH"
+    ],
+    "excludeSymbols": []
+  },
+  "catalogSnapshot": {
+    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "asOf": "SYNTHETIC_FIXTURE",
+    "historicalMembershipVerified": false
+  },
+  "sourceUniverses": [],
+  "steps": [],
+  "algorithmVersion": "SYNTHETIC_FIXTURE",
+  "historicalMembershipVerified": false
+}

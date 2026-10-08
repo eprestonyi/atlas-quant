@@ -1,0 +1,194 @@
+{
+  "format": "atlas.quant.market_acquisition_plan",
+  "version": 1,
+  "profile": "pooled_asset_1000_v1",
+  "universeScopeRef": {
+    "scopeId": "11111111-1111-1111-1111-111111111111",
+    "scopeRoot": "10ace27a1d546bc54e4c626e13a225a2b53ab48800fd0034df0a049c7dbb773d",
+    "format": "atlas.quant.universe_scope",
+    "version": 1
+  },
+  "membershipPolicy": "complete_filtered_set",
+  "scope": {
+    "symbols": [
+      "000001.SZ",
+      "600000.SH"
+    ],
+    "start": "20240101",
+    "end": "20240110",
+    "symbolCount": 2,
+    "scopeRoot": "10ace27a1d546bc54e4c626e13a225a2b53ab48800fd0034df0a049c7dbb773d"
+  },
+  "catalog": {
+    "snapshotHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "resolutionHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "historicalMembershipVerified": false
+  },
+  "fields": [
+    "adj_factor",
+    "amount",
+    "close",
+    "high",
+    "low",
+    "open",
+    "pb",
+    "raw_close",
+    "vol"
+  ],
+  "authorizationScope": "SYNTHETIC_MARKET_TEST",
+  "requests": [
+    {
+      "ordinal": 0,
+      "requestKey": "175d68c8d3464fba4ffe03870b2ed824f2f2924f0d1e1576e59e7525550fc449",
+      "provider": "TUSHARE_PRO",
+      "authorizationScope": "SYNTHETIC_MARKET_TEST",
+      "apiName": "trade_cal",
+      "params": {
+        "exchange": "SSE",
+        "start_date": "20240101",
+        "end_date": "20240110"
+      },
+      "fields": "exchange,cal_date,is_open,pretrade_date",
+      "responseBytes": 65536,
+      "maxAttempts": 1
+    },
+    {
+      "ordinal": 1,
+      "requestKey": "f5bbe8bc7d133b2d6672de10892c2275c9b12ee6ff9597557901960a19f972b4",
+      "provider": "TUSHARE_PRO",
+      "authorizationScope": "SYNTHETIC_MARKET_TEST",
+      "apiName": "trade_cal",
+      "params": {
+        "exchange": "SZSE",
+        "start_date": "20240101",
+        "end_date": "20240110"
+      },
+      "fields": "exchange,cal_date,is_open,pretrade_date",
+      "responseBytes": 65536,
+      "maxAttempts": 1
+    },
+    {
+      "ordinal": 2,
+      "requestKey": "67978c417685119437c0bdc42ccff4e031fcbfc6a78ed46a8cd6a9d81d35a3a6",
+      "provider": "TUSHARE_PRO",
+      "authorizationScope": "SYNTHETIC_MARKET_TEST",
+      "apiName": "daily",
+      "params": {
+        "ts_code": "000001.SZ",
+        "start_date": "20240101",
+        "end_date": "20240110"
+      },
+      "fields": "ts_code,trade_date,open,high,low,close,vol,amount",
+      "responseBytes": 131072,
+      "maxAttempts": 1
+    },
+    {
+      "ordinal": 3,
+      "requestKey": "0d6fcb8e2dd5742ccb099c488d6a8035c86b7756b3442b24a78fbae7787ed45a",
+      "provider": "TUSHARE_PRO",
+      "authorizationScope": "SYNTHETIC_MARKET_TEST",
+      "apiName": "adj_factor",
+      "params": {
+        "ts_code": "000001.SZ",
+        "start_date": "20240101",
+        "end_date": "20240110"
+      },
+      "fields": "ts_code,trade_date,adj_factor",
+      "responseBytes": 65536,
+      "maxAttempts": 1
+    },
+    {
+      "ordinal": 4,
+      "requestKey": "c5ab2baeeb07bfc72023d15f8b2e48512fb8c45d4889362ae179d3cf63852aeb",
+      "provider": "TUSHARE_PRO",
+      "authorizationScope": "SYNTHETIC_MARKET_TEST",
+      "apiName": "daily_basic",
+      "params": {
+        "ts_code": "000001.SZ",
+        "start_date": "20240101",
+        "end_date": "20240110"
+      },
+      "fields": "ts_code,trade_date,pb",
+      "responseBytes": 262144,
+      "maxAttempts": 1
+    },
+    {
+      "ordinal": 5,
+      "requestKey": "2383120265dc6196673f723d20a21c83573c4d769c8d45cef27f93c88e7f77db",
+      "provider": "TUSHARE_PRO",
+      "authorizationScope": "SYNTHETIC_MARKET_TEST",
+      "apiName": "daily",
+      "params": {
+        "ts_code": "600000.SH",
+        "start_date": "20240101",
+        "end_date": "20240110"
+      },
+      "fields": "ts_code,trade_date,open,high,low,close,vol,amount",
+      "responseBytes": 131072,
+      "maxAttempts": 1
+    },
+    {
+      "ordinal": 6,
+      "requestKey": "19a49adb952a0299924b1dc20e842331c42bb6bf948f845fdfc24960bbe58201",
+      "provider": "TUSHARE_PRO",
+      "authorizationScope": "SYNTHETIC_MARKET_TEST",
+      "apiName": "adj_factor",
+      "params": {
+        "ts_code": "600000.SH",
+        "start_date": "20240101",
+        "end_date": "20240110"
+      },
+      "fields": "ts_code,trade_date,adj_factor",
+      "responseBytes": 65536,
+      "maxAttempts": 1
+    },
+    {
+      "ordinal": 7,
+      "requestKey": "752474d1b9e80ea4ef52bb6ee380ebf1ec29925e618b3fc83045ea3e2852b657",
+      "provider": "TUSHARE_PRO",
+      "authorizationScope": "SYNTHETIC_MARKET_TEST",
+      "apiName": "daily_basic",
+      "params": {
+        "ts_code": "600000.SH",
+        "start_date": "20240101",
+        "end_date": "20240110"
+      },
+      "fields": "ts_code,trade_date,pb",
+      "responseBytes": 262144,
+      "maxAttempts": 1
+    }
+  ],
+  "blockedReasons": [],
+  "budget": {
+    "maxSymbols": 1000,
+    "maxCalendarDays": 366,
+    "maxRows": 300000,
+    "maxRequests": 3002,
+    "maxRawBytes": 536870912,
+    "maxNormalizedBytes": 134217728,
+    "maxRequestSeconds": 30,
+    "maxWallSeconds": 7200,
+    "leaseSeconds": 120,
+    "heartbeatSeconds": 20,
+    "requestsPerMinute": 60,
+    "maxActualAttemptsPerRequest": 1,
+    "calendarDays": 10,
+    "declaredRequests": 8,
+    "materializedRequests": 8,
+    "rawResponseCeilingBytes": 1048576
+  },
+  "completeness": {
+    "zeroRowsForAnySymbol": "reject_entire_scope",
+    "missingSessions": "preserve_missing_mask",
+    "crossExchangeCalendars": "require_exact_session_equality",
+    "unknownRequest": "sticky_manual_review_no_retry"
+  },
+  "sourcePolicy": {
+    "responseBytes": "exact_delivered_endpoint_bytes",
+    "originalProviderWireAvailable": false,
+    "adjustment": "adj_factor_divided_by_first_observed_factor_per_symbol",
+    "volumeUnit": "hands",
+    "amountUnit": "CNY_thousands"
+  },
+  "planRoot": "12c6f77cd6c7a2611d3389210ede318f20d932caefa7cb203c2249a3c6ae2c98"
+}

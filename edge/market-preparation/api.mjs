@@ -1,3 +1,5 @@
+import { marketResearchAdmissions } from "./admissions.mjs";
+import { start, cancel, ownedJob, jobView, enabled } from "./queue.mjs";
 import { NOW, random, json, body, rate } from "../runtime.mjs";
 import {
   LIMITS,
@@ -17,6 +19,25 @@ import {
 } from "./planner.mjs";
 
 export async function marketPreparationApi(req, env, path, owner) {
+  const started = /^\/market-preparation-plans\/([a-f0-9-]{36})\/start$/.exec(
+    path,
+  );
+  if (started && req.method === "POST")
+    return json(
+      await start(env, owner, started[1], await body(req, 4096)),
+      202,
+    );
+  const job = /^\/market-preparation-jobs\/([a-f0-9-]{36})(\/cancel)?$/.exec(
+    path,
+  );
+  if (job && req.method === "GET" && !job[2])
+    return json({
+      job: jobView(await ownedJob(env, owner, job[1])),
+      ...(await marketResearchAdmissions(env)),
+    });
+  if (job && req.method === "POST" && job[2])
+    return json(await cancel(env, owner, job[1]));
+
   if (path === "/universe-scopes" && req.method === "POST") {
     await rate(env, "universe-scope:" + owner, 30, 60);
     const result = await freezeScope(env, owner, await body(req, 200000));
@@ -83,7 +104,13 @@ export async function marketPreparationApi(req, env, path, owner) {
       .bind(owner, plan.planRoot)
       .first();
     if (!row) fail("MARKET_PLAN_LIMIT", "市场准备计划已达上限", 429);
-    return json(planView(row, plan), row.id === planId ? 201 : 200);
+    return json(
+      {
+        ...planView(row, plan, enabled(env)),
+        ...(await marketResearchAdmissions(env)),
+      },
+      row.id === planId ? 201 : 200,
+    );
   }
   const planMatch =
     /^\/market-preparation-plans\/([a-f0-9-]{36})(\/requests)?$/.exec(path);
@@ -107,7 +134,11 @@ export async function marketPreparationApi(req, env, path, owner) {
       (await digest(content)) !== planRoot
     )
       fail("MARKET_PLAN_INTEGRITY", "冻结计划根不匹配", 409);
-    if (!planMatch[2]) return json(planView(row, plan));
+    if (!planMatch[2])
+      return json({
+        ...planView(row, plan, enabled(env)),
+        ...(await marketResearchAdmissions(env)),
+      });
     const query = new URL(req.url).searchParams,
       page = Number(query.get("page") ?? 1),
       pageSize = Number(query.get("pageSize") ?? 50);
