@@ -113,6 +113,10 @@ class LeaseMonitor:
         self.client = client_factory(config)
         self.job, self.deadline = job, deadline
         self.phase = "checking_plan"
+        self.lease_deadline = min(
+            deadline,
+            time.monotonic() + max(0, timestamp(job["leaseUntil"]) - time.time()),
+        )
         self.error = None
         self.stop = threading.Event()
         self.thread = None
@@ -122,6 +126,11 @@ class LeaseMonitor:
             time.monotonic() < self.deadline,
             "ACQUISITION_DEADLINE",
             "Acquisition deadline elapsed",
+        )
+        require(
+            time.monotonic() < self.lease_deadline,
+            "ACQUISITION_LEASE",
+            "Last confirmed lease expired",
         )
         if self.error:
             raise self.error
@@ -137,7 +146,7 @@ class LeaseMonitor:
                 "leaseToken": self.job["leaseToken"],
                 "phase": self.phase,
             },
-            deadline=self.deadline,
+            deadline=min(self.deadline, self.lease_deadline),
         )
         require(
             result.get("leaseValid") is True,
@@ -150,13 +159,36 @@ class LeaseMonitor:
             "Acquisition was cancelled",
         )
 
+        # Only an explicit successful receipt can extend this monotonic limit.
+        until = timestamp(result.get("leaseUntil"))
+        remaining = until - time.time()
+        require(
+            0 < remaining <= 125, "ACQUISITION_LEASE", "Invalid renewed lease duration"
+        )
+        self.lease_deadline = min(self.deadline, time.monotonic() + remaining)
+
+    def attempt(self):
+        try:
+            self.check()
+            self.beat()
+            return True
+        except RunnerError as error:
+            transient = error.code == "ACQUISITION_NETWORK" or (
+                error.code == "ACQUISITION_HTTP"
+                and error.http_status in {408, 425, 429, 500, 502, 503, 504}
+            )
+            if transient and time.monotonic() < min(self.deadline, self.lease_deadline):
+                return False
+            raise
+
     def __enter__(self):
-        self.beat()
+        healthy = self.attempt()
 
         def loop():
-            while not self.stop.wait(20):
+            interval = 20 if healthy else 3
+            while not self.stop.wait(interval):
                 try:
-                    self.beat()
+                    interval = 20 if self.attempt() else 3
                 except Exception as error:
                     self.error = error
                     return
@@ -180,6 +212,7 @@ class AcquisitionConsumer:
         provider_factory=RawTushareAdapter,
         executor=execute_one,
         monitor_factory=LeaseMonitor,
+        stop_requested=None,
     ):
         require(
             config.get("acquisition_enabled") is True,
@@ -187,6 +220,7 @@ class AcquisitionConsumer:
             "Separate provider process requires explicit enablement",
         )
         self.config = config
+        self.stop_requested = stop_requested or (lambda: False)
         self.client = client or AcquisitionClient(config)
         self.spool = AcquisitionSpool(config)
         self.provider_factory, self.executor, self.monitor_factory = (
@@ -194,6 +228,14 @@ class AcquisitionConsumer:
             executor,
             monitor_factory,
         )
+
+    def check(self, monitor):
+        require(
+            not self.stop_requested(),
+            "ACQUISITION_STOPPED",
+            "Acquisition process was stopped",
+        )
+        monitor.check()
 
     def claim(self, state):
         answer = self.client.post(
@@ -321,7 +363,7 @@ class AcquisitionConsumer:
                 entry = {"attemptId": str(uuid.uuid4()), "phase": "begin_pending"}
                 state["requests"][key] = entry
                 self.spool.save(state)
-            monitor.check()
+            self.check(monitor)
             ack = self.client.post(
                 f"jobs/{job['id']}/requests/{key}/begin",
                 {"leaseToken": job["leaseToken"], "attemptId": entry["attemptId"]},
@@ -357,7 +399,7 @@ class AcquisitionConsumer:
                     {k: v for k, v in request.items() if k != "cache"},
                     min(remaining, PROFILE["maxResponseBytes"]),
                     deadline,
-                    monitor.check,
+                    lambda: self.check(monitor),
                     self.provider_factory,
                 )
             except Exception:
@@ -408,7 +450,7 @@ class AcquisitionConsumer:
                 "Invalid missing-part receipt",
             )
             for ordinal in missing:
-                monitor.check()
+                self.check(monitor)
                 raw = self.spool.chunk(job, name, manifest[name]["chunks"][ordinal])
                 ack = self.client.put_chunk(
                     job, expected, name, ordinal, raw, deadline=deadline
@@ -418,7 +460,7 @@ class AcquisitionConsumer:
                     "ACQUISITION_PUBLICATION",
                     "Part write was not acknowledged",
                 )
-        monitor.check()
+        self.check(monitor)
         result = self.client.post(
             f"jobs/{job['id']}/complete",
             {"leaseToken": job["leaseToken"], "manifestSha256": expected},
@@ -474,7 +516,7 @@ class AcquisitionConsumer:
                     monitor.phase = "fetching_sources"
                     receipts, remaining = {}, PROFILE["maxTotalBytes"]
                     for request in plan["requests"]:
-                        monitor.check()
+                        self.check(monitor)
                         require(
                             remaining > 0,
                             "ACQUISITION_RESPONSE_BUDGET",
@@ -497,7 +539,7 @@ class AcquisitionConsumer:
                         else:
                             normalize_statement(request, receipt)
                     monitor.phase = "normalizing"
-                    monitor.check()
+                    self.check(monitor)
                     manifest, chunks = build_publication(job, plan, receipts)
                     self.spool.save_publication(job, manifest, chunks)
                     state["phase"] = "publishing"
@@ -524,12 +566,15 @@ class AcquisitionConsumer:
         return True
 
 
-def serve(config, *, once=False):
-    consumer = AcquisitionConsumer(config)
+def serve(config, *, once=False, stop_requested=None, client_factory=AcquisitionClient):
+    stop_requested = stop_requested or (lambda: False)
+    consumer = AcquisitionConsumer(
+        config, client_factory(config), stop_requested=stop_requested
+    )
     with consumer.spool.locked():
-        while True:
+        while not stop_requested():
             try:
-                consumer.client.post(
+                ready = consumer.client.post(
                     "heartbeat",
                     {
                         "capability": CAPABILITY,
@@ -537,7 +582,16 @@ def serve(config, *, once=False):
                         "state": "idle",
                     },
                 )
-                consumer.once()
+                pending = consumer.spool.state() is not None
+                require(
+                    isinstance(ready, dict)
+                    and ready.get("ok") is True
+                    and type(ready.get("canClaim")) is bool,
+                    "ACQUISITION_PROTOCOL",
+                    "Idle heartbeat must include an explicit queue gate",
+                )
+                if not stop_requested() and (pending or ready["canClaim"]):
+                    consumer.once()
             except RunnerError as error:
                 # No exception repr, request bodies, URLs or credentials in logs.
                 print(encode(safe_error(error)).decode(), flush=True)
@@ -545,4 +599,6 @@ def serve(config, *, once=False):
                     raise
             if once:
                 return
-            time.sleep(config.get("poll_seconds", 10))
+            until = time.monotonic() + config.get("poll_seconds", 10)
+            while not stop_requested() and time.monotonic() < until:
+                time.sleep(0.1)

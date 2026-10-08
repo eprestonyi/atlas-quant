@@ -813,3 +813,144 @@ def test_raw_spool_tampering_fails_before_normalization(tmp_path):
     with pytest.raises(RunnerError) as e:
         spool.receipt(job, r["requestKey"])
     assert e.value.code == "ACQUISITION_SPOOL_INTEGRITY"
+
+
+def test_explicit_stop_during_provider_child_marks_unknown_and_settles(tmp_path):
+    c, client, cfg = consumer(tmp_path)
+    c.provider_factory = SlowFixtureProvider
+    c.stop_requested = lambda: call_count(cfg) > 0
+    with c.spool.locked():
+        c.once()
+    assert client.status == "failed" and call_count(cfg) == 1
+    assert client.error["code"] == "PROVIDER_OUTCOME_UNKNOWN"
+    assert list(c.spool.root.glob("*-review.enc"))
+    import multiprocessing
+
+    assert not multiprocessing.active_children()
+
+
+def test_stop_before_request_never_creates_provider_intent(tmp_path):
+    c, client, cfg = consumer(tmp_path)
+    c.stop_requested = lambda: True
+    with c.spool.locked():
+        c.once()
+    assert client.status == "failed" and call_count(cfg) == 0 and not client.intents
+
+
+def test_idle_gate_never_creates_empty_claim_or_spool_intent(tmp_path):
+    from atlas_quant.financial_acquisition.service import serve
+
+    class Idle:
+        def __init__(self, cfg):
+            self.calls = []
+
+        def post(self, route, payload, **kwargs):
+            assert route == "heartbeat"
+            return {"ok": True, "canClaim": False}
+
+    serve(config(tmp_path), once=True, client_factory=Idle)
+    assert AcquisitionSpool(config(tmp_path)).state() is None
+
+
+def test_pending_claim_recovers_despite_false_queue_gate(tmp_path):
+    from atlas_quant.financial_acquisition.service import serve
+
+    cfg = config(tmp_path)
+    spool = AcquisitionSpool(cfg)
+    state = spool.current_or_create()
+
+    class Idle:
+        def __init__(self, cfg):
+            pass
+
+        def post(self, route, payload, **kwargs):
+            if route == "heartbeat":
+                return {"ok": True, "canClaim": False}
+            assert route == "claim" and payload["requestId"] == state["requestId"]
+            return {
+                "claim": {
+                    "requestId": state["requestId"],
+                    "status": "empty",
+                    "jobId": None,
+                },
+                "job": None,
+            }
+
+    serve(cfg, once=True, client_factory=Idle)
+    assert spool.state() is None
+
+
+def test_transient_heartbeat_does_not_cancel_still_valid_confirmed_lease(tmp_path):
+    from atlas_quant.financial_acquisition.service import LeaseMonitor
+
+    job, _ = planned()
+
+    class Responses:
+        def __init__(self, cfg):
+            self.index = 0
+
+        def post(self, *args, **kwargs):
+            self.index += 1
+            if self.index == 1:
+                raise RunnerError("ACQUISITION_NETWORK", "fixture")
+            if self.index == 2:
+                raise RunnerError("ACQUISITION_HTTP", "fixture", http_status=503)
+            return {
+                "leaseValid": True,
+                "cancelRequested": False,
+                "leaseUntil": (
+                    datetime.now(timezone.utc) + timedelta(seconds=120)
+                ).isoformat(),
+            }
+
+    m = LeaseMonitor(config(tmp_path), job, time.monotonic() + 600, Responses)
+    original = m.lease_deadline
+    assert m.attempt() is False and m.lease_deadline == original
+    m.check()
+    assert m.attempt() is False and m.lease_deadline == original
+    assert m.attempt() is True and m.lease_deadline <= m.deadline
+
+
+@pytest.mark.parametrize("outcome", [401, 409, "cancel", "invalid", "malformed"])
+def test_authorization_cancellation_and_protocol_heartbeats_stop_immediately(
+    tmp_path, outcome
+):
+    from atlas_quant.financial_acquisition.service import LeaseMonitor
+
+    job, _ = planned()
+
+    class Responses:
+        def __init__(self, cfg):
+            pass
+
+        def post(self, *args, **kwargs):
+            if isinstance(outcome, int):
+                raise RunnerError("ACQUISITION_HTTP", "fixture", http_status=outcome)
+            return {
+                "leaseValid": outcome != "invalid",
+                "cancelRequested": outcome == "cancel",
+                "leaseUntil": None,
+            }
+
+    m = LeaseMonitor(config(tmp_path), job, time.monotonic() + 600, Responses)
+    with pytest.raises(RunnerError):
+        m.attempt()
+
+
+def test_network_error_cannot_extend_last_confirmed_lease(tmp_path):
+    from atlas_quant.financial_acquisition.service import LeaseMonitor
+
+    job, _ = planned()
+
+    class Responses:
+        def __init__(self, cfg):
+            pass
+
+        def post(self, *args, **kwargs):
+            raise RunnerError("ACQUISITION_NETWORK", "fixture")
+
+    m = LeaseMonitor(config(tmp_path), job, time.monotonic() + 600, Responses)
+    m.lease_deadline = time.monotonic() - 1
+    with pytest.raises(RunnerError) as error:
+        m.attempt()
+    assert error.value.code == "ACQUISITION_LEASE"

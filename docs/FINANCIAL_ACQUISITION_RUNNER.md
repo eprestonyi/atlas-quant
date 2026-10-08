@@ -81,8 +81,14 @@ explicit migration: old ciphertext must not be silently discarded.
 Control-plane requests may be retried from durable state. They use the same
 claim, attempt, raw receipt, publication hash and bytes. Lease identity mismatch
 or unavailable control readback retains the state. The service does not guess
-success. A fixed 600-second job deadline and 120-second renewable lease come from
-the edge; the monitor checks every 20 seconds. Each provider child has a hard
+success. An idle heartbeat with `canClaim:false` creates no new claim; an existing durable
+claim still resumes regardless of that queue gate. A fixed 600-second job deadline
+and 120-second renewable lease come from the edge. The monitor checks every 20
+seconds; transient network/5xx responses allow a bounded retry within the last
+explicitly confirmed lease only. Unknown heartbeats cannot extend that lease or
+the fixed deadline. Cancellation, invalid leases, authorization and protocol
+failures stop immediately. SIGTERM/SIGINT stop new claims and interrupt an active
+child through the same durable unknown-result boundary. Each provider child has a hard
 30-second wall-clock budget and is terminated on cancellation or deadline.
 
 ## Resource and evidence limits
