@@ -274,7 +274,7 @@ window.AtlasQuantV4 = {
         return panel(
           '单资产价格目标',
           boundNote() +
-            `<div class="sq-form-grid">${input('预测期限', 'target.horizonSessions', { min: 1, max: 60, unit: '交易日' })}${input('观察间隔', 'research.observationDays', { min: 1, max: 60, unit: '交易日', help: '当前数据最小可用粒度是 1 个交易日，默认使用该粒度。' })}</div>`,
+            `<div class="sq-form-grid">${input('预测期限 h', 'target.horizonSessions', { min: 1, max: 60, unit: '交易日', help: '观察收盘后，下一官方交易日开盘为入场时点；未来目标为其后 h 个交易日开盘。h=1 不是下一日收盘。' })}${input('观察间隔', 'research.observationDays', { min: 1, max: 60, unit: '交易日', help: '当前数据最小粒度为 1 个交易日，默认每天观察一次；这不等于预测期限 h=1。' })}</div>`,
         );
       const t = s.strategy.target;
       return `${panel(

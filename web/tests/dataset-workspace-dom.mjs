@@ -302,6 +302,15 @@ assert.equal(q.state.dataSource, 'ready_dataset');
 assert(w.location.hash.endsWith('/state'));
 assert(w.document.querySelector('main').textContent.includes('现金资产占比'));
 const initialStrategy = JSON.parse(JSON.stringify(q.state.strategy));
+await route('#quant/easy/settings');
+const settingsText = w.document.querySelector('main').textContent;
+assert(settingsText.includes('观察收盘后，下一官方交易日开盘为入场时点；未来目标为其后 h 个交易日开盘'));
+assert(settingsText.includes('h=1 不是下一日收盘'));
+assert(settingsText.includes('默认每天观察一次；这不等于预测期限 h=1'));
+assert.equal(w.document.querySelector('[data-sq-config="target.horizonSessions"]').value,'5');
+assert.equal(w.document.querySelector('[data-sq-config="research.observationDays"]').value,'1');
+assert.deepEqual(JSON.parse(JSON.stringify(q.state.strategy)),initialStrategy,'timing guidance does not migrate the frozen protocol');
+await route('#quant/easy/state');
 assert.doesNotThrow(() => validateStatisticalQuant(initialStrategy));
 assert.equal(Object.hasOwn(initialStrategy.factors[0], 'name'), false);
 assert.throws(

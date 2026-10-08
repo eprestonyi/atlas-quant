@@ -48,6 +48,10 @@ assert(!document.querySelector('img'));
 assert.equal(document.querySelector('[data-mfe-input="currentState"]').value,'');
 assert(document.querySelector('[data-mfe-input="rows"]').value.includes('null'));
 assert(host.textContent.includes('待填示例'));
+assert(host.textContent.includes('观察收盘后，入场为下一官方交易日开盘，未来为其后 h 个交易日开盘'));
+assert(host.textContent.includes('h=1 对应第二个后续交易日开盘，不是下一日收盘'));
+assert(host.textContent.includes('观察间隔默认 1 表示每天观察一次，与预测期限 h 分开'));
+assert(host.textContent.includes('具体观察、入场和目标日期见原报告逐条预测'));
 await click('mfe-evaluate');assert.equal(apiCalls.length,0);assert(host.textContent.includes('请填写当前状态'));
 field('rows',JSON.stringify([{factor_x:1,'<img onerror=alert(1)>':null}]));field('currentState','100');field('scale','100');
 param('/estimator/coefficients/1/0','.35');
@@ -121,5 +125,5 @@ assert(!host.textContent.includes('null 会使用训练时冻结的缺失处理'
 assert(!host.textContent.includes('T 使用本次训练冻结'));
 param('/estimator/value/1','.01');await click('mfe-download');assert.deepEqual(lastDownload.value,constant,'JSON contains the saved version only');
 assert(editor.render({id:'old-fit'},source).includes('不能从旧报告'));
-console.log(JSON.stringify({separateInferenceAndSaveRevisions:true,treeNavigationPreservesInference:true,constantInputDescription:true,currentVersionDownload:true,numericParameterEditing:true,explicitInputOnly:true,priceGapOutput:true,idempotentUnknownSave:true,newPayloadNewId:true,lateResponseIsolation:true,closedLibraryStaysClosed:true,leafOnlyTreeEditing:true,originalImmutable:true,escapedValues:true,apiDoubles:true}));
+console.log(JSON.stringify({legacyHorizonAnchorExplained:true,observationSeparateFromHorizon:true,separateInferenceAndSaveRevisions:true,treeNavigationPreservesInference:true,constantInputDescription:true,currentVersionDownload:true,numericParameterEditing:true,explicitInputOnly:true,priceGapOutput:true,idempotentUnknownSave:true,newPayloadNewId:true,lateResponseIsolation:true,closedLibraryStaysClosed:true,leafOnlyTreeEditing:true,originalImmutable:true,escapedValues:true,apiDoubles:true}));
 dom.window.close();
