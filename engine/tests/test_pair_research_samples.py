@@ -42,7 +42,7 @@ def no_fit_or_network(monkeypatch):
     monkeypatch.setattr(requests.Session, "request", forbidden)
 
 
-def archive(*, edit=None, missing=frozenset(), with_basic=False):
+def archive(*, edit=None, missing=frozenset(), with_basic=False, start=START, end=END):
     """Deterministic tiny raw endpoint fixtures, with explicit test-only pins.
 
     These synthetic pins are NOT independent source authorization. Production
@@ -51,7 +51,9 @@ def archive(*, edit=None, missing=frozenset(), with_basic=False):
     """
     base = json.loads((ROOT / "contracts/fixtures/market-plan-v1.json").read_text())
     scope = json.loads((ROOT / "contracts/fixtures/market-scope-v1.json").read_text())
-    scope.update(symbols=SYMBOLS, symbolCount=5, start=START.strftime("%Y%m%d"), end=END.strftime("%Y%m%d"))
+    days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+    dates = [d.strftime("%Y%m%d") for d in days if d.weekday() < 5]
+    scope.update(symbols=SYMBOLS, symbolCount=5, start=start.strftime("%Y%m%d"), end=end.strftime("%Y%m%d"))
     scope["selection"]["includeSymbols"] = SYMBOLS
     ref = {**base["universeScopeRef"], "scopeRoot": sha(encode(scope))}
     plan = {**base, "universeScopeRef": ref,
@@ -71,14 +73,14 @@ def archive(*, edit=None, missing=frozenset(), with_basic=False):
                       "apiName": api, "params": {**params, "start_date": scope["start"], "end_date": scope["end"]},
                       "fields": fields, "responseBytes": budget, "maxAttempts": 1}
         plan["requests"].append({"ordinal": i, **definition, "requestKey": sha(encode(definition))})
-    plan["budget"] = {**LIMITS, "calendarDays": len(DAYS), "declaredRequests": len(requests),
+    plan["budget"] = {**LIMITS, "calendarDays": len(days), "declaredRequests": len(requests),
                       "materializedRequests": len(requests),
                       "rawResponseCeilingBytes": sum(r["responseBytes"] for r in plan["requests"])}
     plan["planRoot"] = sha(encode({k: v for k, v in plan.items() if k != "planRoot"}))
     receipts, parts = {}, {}
     for request in plan["requests"]:
         records = []
-        for day in DAYS:
+        for day in days:
             day_text = day.strftime("%Y%m%d")
             if request["apiName"] == "trade_cal":
                 row = {"exchange": "SZSE", "cal_date": day_text,
@@ -86,7 +88,7 @@ def archive(*, edit=None, missing=frozenset(), with_basic=False):
             elif day.weekday() >= 5:
                 continue
             else:
-                t, symbol = DATES.index(day_text), request["params"]["ts_code"]
+                t, symbol = dates.index(day_text), request["params"]["ts_code"]
                 if request["apiName"] == "daily" and (t, symbol) in missing:
                     continue
                 close = {A: 100 + t, B: 40 + .5 * t, C: 60 + .25 * t, D: 80., E: 120.}[symbol]
@@ -117,7 +119,7 @@ def archive(*, edit=None, missing=frozenset(), with_basic=False):
         "marketDatasetRef": {"datasetId": "00000000-0000-4000-8000-000000000011",
                              "datasetRoot": sha(encode(manifest)), "format": "atlas.quant.market_dataset", "version": 1},
         "universeScopeRef": ref, "symbols": SYMBOLS, "start": scope["start"], "end": scope["end"],
-        "calendar": DATES, "membershipPolicy": "complete_filtered_set", "currency": "CNY",
+        "calendar": dates, "membershipPolicy": "complete_filtered_set", "currency": "CNY",
         "priceUnit": "CNY_per_adjusted_share", "quantityUnit": "adjusted_share", "adjustment": ADJUSTMENT,
     }
     return reader, expected, calls, parts

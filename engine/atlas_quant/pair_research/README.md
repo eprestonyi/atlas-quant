@@ -161,8 +161,9 @@ observed source rows<=18,300, raw archive<=32 MiB, normalized collections<=8 MiB
 and T x origins<=110,000, in addition to Stage 1's pair/quantity bounds. These
 are parser/allocation limits, not measured pair capacity. Oversized full pools
 (including 1000 members) reject whole before reading parts; no implicit subset.
-Stage 2B shared F/baseline scheduling, portable function metadata, independent
-paired-source auditing, capacity, service admission and UI remain unimplemented.
+The separate Stage 2B section below adds local shared fitting. Portable function
+metadata, independent paired-source auditing, capacity, service admission and UI
+remain unimplemented.
 
 Run the isolated no-fit tests alongside the unchanged Stage 1 suite:
 
@@ -170,3 +171,103 @@ Run the isolated no-fit tests alongside the unchanged Stage 1 suite:
 PYTHONPATH=engine .venv/bin/python -m pytest -q \
   engine/tests/test_pair_research.py engine/tests/test_pair_research_samples.py
 ```
+
+## Stage 2B: local temporal fitting, without portable F or public admission
+
+`fit_contract.py::declare_fit_contract` adds a separate closed local fit contract
+over the exact Stage 2A roots. It requires explicit model, preprocessing,
+chronological validation and resource controls. Family is `pair_reversion` and
+estimator is the unchanged eight-candidate `auto` grid; no new candidates,
+quantity estimation or pair selection exist. It does not use the old strategy
+validator to pretend a multi-pair target is a legacy basket.
+
+`research.py::run_pair_research` rebuilds the exact Samples and verifies the
+contract/plan before fitting. All nested folds are planned with the existing
+`folds` and `mature_mask` routines; insufficient mature history, empty T, stale
+roots, unsupported fields or whole-experiment budget refusal happen before the
+first fit. The full U/T ledger, targets and pre-fit sample statuses remain in
+the local result. Those sample statuses are explicitly marked
+`before_model_fitting`; actual prediction/fit availability lives in each branch.
+
+The common block in `statistical_quant/core.py` is now `forecast_branches`.
+It reuses the existing `models` and `validation` code for selection, transforms,
+regularization, uncertainty, diagnostics and independent state-only baseline
+fitting. The baseline changes only X's factor columns, retaining the same
+labels, quantities, input mask and chronological domain. With no predictors it
+is explicitly absent/not applicable, not a fabricated incremental comparison.
+Existing callers keep their original wrapper, default v1 function exports and
+artifact/execution behavior. The pair path passes `export_functions=False` for
+both branches and always reports
+`portableFunctionStatus=NOT_IMPLEMENTED_FOR_THIS_TARGET_PROTOCOL`.
+
+Train-only winsorization, median imputation, scaling and decorrelation are fitted
+inside each existing training fold. Both label endpoints precede its cutoff.
+Terminal refits can consume already-matured past terminal labels under the
+predeclared schedule; the entire terminal span is not an untouched training
+holdout. Scoring averages losses by date, keeping shared-leg dependence and
+overlapping-label limitations. The predeclared one-standard-error selection
+heuristic is not a confidence interval, proof of an optimal model, causality or
+profitability. Existing descriptive diagnostic OLS remains post-selection and
+is neither q formation nor a model candidate.
+
+The local output preserves S, positive G, entry/exit predictions, gap and
+prediction-error identities. Common legacy row fields `expectedGrossPnl` and
+`expectedGrossBps` are renamed here to `expectedRemainingChange` and
+`expectedRemainingChangeOverGrossBps`; they describe basket-state changes, not
+an executable trade. Current S can be zero or negative. No execution is called.
+
+The immutable pre-fit plan includes all candidate configurations, roots,
+origins/masks, folds, byte reservation and the complete fit-attempt upper bound:
+`branches * ((outer+1)*inner*candidates + outer + terminal_origin_dates)`.
+Actual delegated attempts, including failures, are counted by existing
+`capacity.core.FitRuntime` with branch identities. Resource controls are closed:
+at most 512 fit attempts, 25,000 terminal rows per branch, 300 seconds, 1 GiB
+process peak RSS and 24 MiB local result, in addition to Stage 2A's limits.
+These are conservative local refusal bounds, not measured pair capacity.
+Time/RSS checks occur at phase/fit boundaries; hard in-flight limits still need
+an isolated supervisor. Final byte checks include runtime evidence. If even an
+incomplete result exceeds its byte bound, a `CAPACITY_PAIR_RESULT` exception
+retains the full in-memory `partial_result`; callers must retain it rather than
+repeat fitting or silently truncate.
+
+The legacy selector keeps its error code/message if every candidate fails, and
+attaches the complete invalid trial diagnostics to the exception. Interrupted
+selection also retains completed candidates and the current candidate's
+completed folds/scores; the unfinished candidate is `interrupted`, has no
+selection score, and is never a valid winner. Shared validation attaches
+`forecast_partial` on failure, preserving completed outer folds, current
+selection/fit audits, final trials, terminal rows/fits and the precise phase.
+This includes rows produced before a later row fails and completed fit audits
+rejected by a subsequent time/RSS check. Such rejected models remain evidence,
+not admitted fitted models. No fitting, prediction or scoring is repeated to
+recover evidence. This is in-process exception evidence, not crash-safe storage
+or a promise to recover after process termination/hard out-of-memory failure.
+
+Optional process-local branch callbacks retain completed branches; the local
+wrapper also retains the interrupted main or baseline branch. Such output is
+explicitly `failed_main` or
+`failed_baseline`, `complete=False`, `publishable=False`, has no computable factor
+increment, and cannot inherit successful research validation. It never retries
+the whole experiment or changes the fixed candidate/target domain. The old
+path has no callback by default. Terminal fit failures follow the existing
+per-origin retry schedule with the fixed selected estimator and preserve every
+origin, including missing states and the final calendar tail.
+
+Tiny synthetic unit fits in `test_pair_research_fit.py` use only five U members,
+262 dates, two shared-leg targets and one predictor (or an explicit no-predictor
+control). Each two-branch case has a predeclared cap of 182 calls, and the
+one-branch case 91. Optional `ATLAS_PAIR_UNIT_RECEIPT_DIR` records exclusive
+per-case fit receipts; no provider or real/1000-source acceptance is replayed.
+The extraction's full before/after result was frozen and compared byte-for-byte
+on one host with no fields excluded. That machine-specific floating-point
+golden remains private; public tests assert chronology, protocol boundaries,
+mathematical identities and actual branch behavior across runtimes.
+Interruption regressions use constant estimator stubs (zero actual fits) for
+selection, outer scoring, terminal refits, per-row output, uncertainty and
+post-fit resource checks; a successful stub result also remained byte-identical
+before/after the failure-evidence repair.
+
+This stage is still private/local and `publishable=False`, including a complete
+local forecast. It does not implement portable function/v2, a source/result
+independent auditor, hosted registration, a strategy, capacity admission, UI or
+Easy automatic formation. No further stage is started by this implementation.

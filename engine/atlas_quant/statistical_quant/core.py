@@ -53,12 +53,8 @@ def run_statistical_quant(strategy, data, provenance=None, *, plan_sink=None):
         return _research_from_samples(s, panel, dates, audit, p, samples, plan_sink=plan_sink)
 
 
-def _research_from_samples(s, panel, dates, audit, p, samples, *, plan_sink=None, max_forecasts=None, runtime=None):
-    """Shared pooled validation; alternate storage never substitutes local models."""
-    from ..engine import _finite_json
-    limits = {} if max_forecasts is None else {"max_forecasts": max_forecasts}
-    if runtime is not None:
-        limits["runtime"] = runtime
+def declared_fit_budget(s, samples, *, max_forecasts=None):
+    """The existing complete branch/candidate/origin upper bound, before fitting."""
     # Declare the complete selection budget before any model is fitted. Failed
     # rolling fits may retry at the next origin, so cap them by all origin dates.
     from .validation import forecast_origins
@@ -70,11 +66,26 @@ def _research_from_samples(s, panel, dates, audit, p, samples, *, plan_sink=None
     candidate_count = len(candidates(s["model"]["estimator"]))
     outer_count, inner_count = s["validation"]["outerFolds"], s["validation"]["innerFolds"]
     selection_fit_cap = branches*((outer_count+1)*inner_count*candidate_count+outer_count)
-    declared_budget = {"branches": branches, "includesFactorFreeBaseline": bool(factor_columns),
+    return {"branches": branches, "includesFactorFreeBaseline": bool(factor_columns),
         "nestedSelectionAndOuterFitCap": selection_fit_cap,
         "sequentialFitAttemptCap": int(branches*terminal_dates),
         "maximumFitAttempts": int(selection_fit_cap+branches*terminal_dates),
         "declaredBeforeFitting": True, "actualFitsMayBeLower": True}
+
+
+def forecast_branches(s, samples, *, plan_sink=None, max_forecasts=None, runtime=None,
+                      export_functions=True, branch_sink=None):
+    """Common Samples-only research, without an artifact or execution envelope.
+
+    Default export/callback behavior preserves every existing route. Callbacks
+    are process-local diagnostics, never a callable read from a user contract.
+    """
+    limits = {} if max_forecasts is None else {"max_forecasts": max_forecasts}
+    if runtime is not None:
+        limits["runtime"] = runtime
+    factor_columns = [name for name in samples.X if name.startswith("factor:")]
+    declared_budget = declared_fit_budget(s, samples, max_forecasts=max_forecasts)
+    baseline_rows, baseline_fits, baseline_diagnostics = None, None, None
     with threadpool_limits(limits=1):
         if plan_sink is not None:
             from .validation import forecast_origins
@@ -90,22 +101,34 @@ def _research_from_samples(s, panel, dates, audit, p, samples, *, plan_sink=None
             valid_dates = samples.meta.loc[samples.meta.inputValid, "date"].nunique()
             if valid_dates < s["validation"]["minTrainDates"]+40:
                 fail("MISSING_MODEL_DATA", "条件模型缺少足够实际可观测输入日期用于嵌套验证")
-        rows, fits, diagnostics = forecast(samples, s, **limits)
+        if branch_sink is not None:
+            branch_sink("main_started", None)
+        main_limits = limits if export_functions else {**limits, "export_functions": False}
+        rows, fits, diagnostics = forecast(samples, s, **main_limits)
         diagnostics["inputCoverage"] = {"totalOrigins": len(samples.meta),
             "validInputOrigins": int(samples.meta.inputValid.sum()),
             "invalidReasons": {str(k): int(v) for k, v in samples.meta.invalidReason.dropna().value_counts().items()},
             "features": [{"name": name, "finiteOrigins": int(np.isfinite(samples.X[name]).sum())} for name in samples.X]}
+        if branch_sink is not None:
+            branch_sink("main_completed", copy.deepcopy({"rows": rows, "fits": fits, "diagnostics": diagnostics}))
         if factor_columns:
             # Hold q, labels, coverage mask, maturity and candidate budget fixed.
             # Re-select/re-fit the state-only baseline in its own train folds.
             baseline_samples = replace(samples, X=samples.X.drop(columns=factor_columns))
+            if branch_sink is not None:
+                branch_sink("baseline_started", None)
             baseline_rows, baseline_fits, baseline_diagnostics = forecast(baseline_samples, s, export_functions=False, **limits)
+            if branch_sink is not None:
+                branch_sink("baseline_completed", copy.deepcopy({"rows": baseline_rows, "fits": baseline_fits,
+                                                                 "diagnostics": baseline_diagnostics}))
             from .comparison import compare_factor_increment
             diagnostics["factorIncrement"] = compare_factor_increment(
                 rows, baseline_rows, factor_columns, baseline_fits, baseline_diagnostics)
         else:
             diagnostics["factorIncrement"] = {"status": "not_applicable", "reason": "no_predictor_or_event_factor_columns",
                 "hedgeFactorsAblated": False}
+    if branch_sink is not None:
+        branch_sink("diagnostics_started", None)
     from .factor_diagnostics import factor_diagnostics
     factor_research = {"schemaVersion": 1, "modelFunctions": [
         {"modelFitId": f["id"], "artifactId": f["functionArtifact"]["artifactId"],
@@ -115,6 +138,18 @@ def _research_from_samples(s, panel, dates, audit, p, samples, *, plan_sink=None
         "editSemantics": "derived_function_requires_new_validation_original_report_is_immutable"}
     diagnostics["selectionAudit"]["researchFitBudget"] = {
         **declared_budget, "sequentialFitAttempts": len(fits)+(len(baseline_fits) if factor_columns else 0)}
+    return {"rows": rows, "fits": fits, "diagnostics": diagnostics, "factorResearch": factor_research,
+            "baseline": {"rows": baseline_rows, "fits": baseline_fits, "diagnostics": baseline_diagnostics}
+                        if factor_columns else None,
+            "declaredBudget": declared_budget}
+
+
+def _research_from_samples(s, panel, dates, audit, p, samples, *, plan_sink=None, max_forecasts=None, runtime=None):
+    """Legacy artifact/execute envelope around the unchanged common research."""
+    from ..engine import _finite_json
+    result = forecast_branches(s, samples, plan_sink=plan_sink, max_forecasts=max_forecasts, runtime=runtime)
+    rows, fits, diagnostics = result["rows"], result["fits"], result["diagnostics"]
+    factor_research = result["factorResearch"]
     artifact = _finite_json({"schemaVersion": 1, "predictionConfigHash": digest(prediction_config(s)),
                             "dataFingerprint": audit["dataSha256"], "sourceStrategy": copy.deepcopy(s),
                             "rows": rows, "totalRows": len(rows), "truncated": False,

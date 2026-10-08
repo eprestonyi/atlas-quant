@@ -33,11 +33,22 @@ def _train(samples, spec, train_dates, cutoff, strategy, runtime=None):
         fail("INSUFFICIENT_FORECAST_DATA", "当前拟合截止前的已成熟训练观察日不足")
     if runtime is not None:
         runtime.before_fit(spec, cutoff, int(mask.sum()))
+    model = None
     try:
-        model = models.fit(spec, samples.X.loc[mask], samples.y.loc[mask], strategy["preprocess"])
-    finally:
-        if runtime is not None:
-            runtime.after_fit()
+        try:
+            model = models.fit(spec, samples.X.loc[mask], samples.y.loc[mask], strategy["preprocess"])
+        finally:
+            if runtime is not None:
+                runtime.after_fit()
+    except Exception as exc:
+        if model is not None:
+            # after_fit can reject a completed fit on time/RSS limits. Keep its
+            # audit, without admitting the model or invoking fitting again.
+            exc.interrupted_fit_audit = {
+                "trainStart": actual_dates[0], "trainEnd": actual_dates[-1],
+                "informationCutoff": cutoff, "labelEndMax": samples.meta.loc[mask, "targetDate"].max(),
+                "trainDates": len(actual_dates), **model.audit}
+        raise
     audit = {"trainStart": actual_dates[0], "trainEnd": actual_dates[-1],
              "informationCutoff": cutoff, "labelEndMax": samples.meta.loc[mask, "targetDate"].max(),
              "trainDates": len(actual_dates), **model.audit}
@@ -64,8 +75,11 @@ def select(samples, specs, dates, strategy, runtime=None):
         audits = []
         reason = None
         for training, testing in schedule:
+            audit = None
+            phase = "fit"
             try:
                 model, audit = _train(samples, spec, training, testing[0], strategy, **runtime_args)
+                phase = "score"
                 valid = samples.meta.date.isin(testing) & samples.meta.inputValid & samples.y.notna().all(axis=1)
                 if not valid.any():
                     fail("INSUFFICIENT_FORECAST_DATA", "验证折没有可评分标签")
@@ -78,8 +92,21 @@ def select(samples, specs, dates, strategy, runtime=None):
                 score = float(pd.Series(errors, index=samples.meta.loc[valid, "date"]).groupby(level=0).mean().mean())
                 scores.append(score)
                 audits.append({"testStart": testing[0], "testEnd": testing[-1], "score": score, **audit})
-            except (ValueError, FloatingPointError) as exc:
-                if str(getattr(exc, "code", "")).startswith("CAPACITY_"):
+            except Exception as exc:
+                if (str(getattr(exc, "code", "")).startswith("CAPACITY_")
+                        or not isinstance(exc, (ValueError, FloatingPointError))):
+                    # Only completed folds are in `folds`; neither their mean
+                    # nor this unfinished candidate is a valid selection score.
+                    interrupted = {**spec, "status": "interrupted", "score": None,
+                                   "invalidReason": getattr(exc, "code", type(exc).__name__),
+                                   "folds": audits, "completedFoldScores": scores,
+                                   "interruptedFold": {"index": len(audits), "phase": phase,
+                                       "testStart": testing[0], "testEnd": testing[-1],
+                                       "fit": audit if audit is not None else getattr(exc, "interrupted_fit_audit", None)},
+                                   "foldScoreStd": None, "foldScoreHeuristicSE": None,
+                                   "complexityPreference": None,
+                                   "heuristicIsConfidenceInterval": False}
+                    exc.selection_trials = [*trials, interrupted]
                     raise
                 reason = getattr(exc, "code", "MODEL_FIT_FAILED")
                 break
@@ -90,7 +117,14 @@ def select(samples, specs, dates, strategy, runtime=None):
                        "complexityPreference": list(_complexity(spec)), "heuristicIsConfidenceInterval": False})
     valid = [x for x in trials if x["status"] == "valid" and np.isfinite(x["score"])]
     if not valid:
-        fail("INSUFFICIENT_FORECAST_DATA", "没有候选完成全部时间验证折")
+        try:
+            fail("INSUFFICIENT_FORECAST_DATA", "没有候选完成全部时间验证折")
+        except ValueError as exc:
+            # Diagnostics only: preserve the original code/message and algorithm.
+            # A local caller may retain this evidence without treating it as a
+            # successful selection or retrying a different candidate universe.
+            exc.selection_trials = trials
+            raise
     best = min(valid, key=lambda x: (x["score"], _complexity(x)))
     tolerance = best["foldScoreHeuristicSE"] or 0.0
     admissible = [x for x in valid if x["score"] <= best["score"]+tolerance]
@@ -104,6 +138,14 @@ def select(samples, specs, dates, strategy, runtime=None):
 
 def _records(samples, idx, prediction, fit_id, strategy):
     records = []
+    try:
+        return _build_records(samples, idx, prediction, fit_id, strategy, records)
+    except Exception as exc:
+        exc.forecast_rows = records
+        raise
+
+
+def _build_records(samples, idx, prediction, fit_id, strategy, records):
     for row_i, values in zip(idx, prediction):
         row = samples.meta.loc[row_i]
         valid = bool(row.inputValid and np.isfinite(values).all() and row.entryDate and row.targetDate)
@@ -155,31 +197,76 @@ def forecast_origins(samples, strategy, *, max_forecasts=None):
 
 
 def forecast(samples, strategy, *, max_forecasts=None, runtime=None, export_functions=True):
+    # References to already produced evidence, populated by the original
+    # scheduler. Successful return values and exception code/message stay
+    # unchanged. No refitting, re-prediction or new scoring during recovery.
+    evidence = {"rows": [], "fits": [], "diagnostics": {
+        "phase": "planning", "outerFolds": [], "finalTrials": [],
+        "selectedModel": None, "currentOuter": None, "currentTerminal": None}}
+    try:
+        return _forecast(samples, strategy, max_forecasts=max_forecasts, runtime=runtime,
+                         export_functions=export_functions, evidence=evidence)
+    except Exception as exc:
+        diagnostics = evidence["diagnostics"]
+        trials = getattr(exc, "selection_trials", None)
+        if trials is not None:
+            if diagnostics["phase"] == "outer_selection":
+                diagnostics["currentOuter"]["trials"] = trials
+            elif diagnostics["phase"] == "final_selection":
+                diagnostics["finalTrials"] = trials
+        audit = getattr(exc, "interrupted_fit_audit", None)
+        if audit is not None:
+            current = diagnostics["currentTerminal"] or diagnostics["currentOuter"]
+            if current is not None:
+                current["interruptedFitAudit"] = audit
+        evidence["rows"].extend(getattr(exc, "forecast_rows", []))
+        diagnostics.update(status="interrupted", complete=False, publishable=False,
+                           failureCode=getattr(exc, "code", type(exc).__name__),
+                           factorIncrement={"status": "unavailable", "reason": "incomplete_research"})
+        evidence.update(status="interrupted", complete=False)
+        exc.forecast_partial = evidence
+        raise
+
+
+def _forecast(samples, strategy, *, max_forecasts, runtime, export_functions, evidence):
     from ..engine import ResearchError
     runtime_args = {} if runtime is None else {"runtime": runtime}
     dates = samples.dates
     holdout, indices = forecast_origins(samples, strategy, max_forecasts=max_forecasts)
+    partial = evidence["diagnostics"]
+    partial.update(holdoutStart=holdout, holdoutEnd=dates[-1], expectedForecastRows=len(indices))
     development = sorted(samples.meta.loc[mature_mask(samples, holdout), "date"].unique())
     specs = models.candidates(strategy["model"]["estimator"])
     gap = strategy["target"]["horizonSessions"]+1
     outer_schedule = folds(development, strategy["validation"]["outerFolds"],
                            strategy["validation"]["minTrainDates"]+2*(gap+10), gap)
-    outer = []
+    outer = partial["outerFolds"]
     for train_dates, test_dates in outer_schedule:
+        partial.update(phase="outer_selection", currentOuter={
+            "index": len(outer), "testStart": test_dates[0], "testEnd": test_dates[-1]})
         # Inner selection receives only labels already mature at this outer cutoff.
         inner_dates = sorted(samples.meta.loc[mature_mask(samples, test_dates[0], train_dates), "date"].unique())
         winner, trials = select(samples, specs, inner_dates, strategy, **runtime_args)
+        partial["currentOuter"].update(selection=winner, trials=trials)
+        partial["phase"] = "outer_fit"
         fitted, audit = _train(samples, winner, inner_dates, test_dates[0], strategy, **runtime_args)
+        partial["currentOuter"]["fit"] = audit
+        partial["phase"] = "outer_score"
         test = samples.meta.date.isin(test_dates) & samples.meta.inputValid & samples.y.notna().all(axis=1)
         scores = models.metrics(fitted.predict(samples.X.loc[test]), samples.y.loc[test].to_numpy(), samples.meta.loc[test, "date"].to_numpy())
         outer.append({"testStart": test_dates[0], "testEnd": test_dates[-1], "selection": winner,
                       "trials": trials, "fit": audit, "metrics": scores})
+        partial["currentOuter"] = None
+    partial["phase"] = "final_selection"
     winner, trials = select(samples, specs, development, strategy, **runtime_args)
-    records, fitted_models = [], []
+    partial.update(finalTrials=trials, selectedModel=winner)
+    records, fitted_models = evidence["rows"], evidence["fits"]
     current_model, fit_id, last_fit = None, None, -100000
     for date, group in samples.meta.loc[indices].groupby("date", sort=True):
+        partial.update(phase="terminal_predict", currentTerminal={"date": date, "previousModelFitId": fit_id})
         t = dates.index(date)
         if current_model is None or t-last_fit >= strategy["model"]["refitDays"]:
+            partial["phase"] = "terminal_fit"
             try:
                 current_model, audit = _train(samples, winner, None, date, strategy, **runtime_args)
                 audit["status"] = "valid"
@@ -192,18 +279,25 @@ def forecast(samples, strategy, *, max_forecasts=None, runtime=None, export_func
                 audit = {"status": "invalid", "invalidReason": exc.code, "informationCutoff": date,
                          "labelEndMax": None, "trainStart": None, "trainEnd": None,
                          "estimator": winner["estimator"], "params": winner["params"], "featureNames": []}
+            partial["currentTerminal"]["fitAudit"] = audit
             fit_id = "fit_"+digest({"date": date, "winner": winner, "audit": audit})[:24]
             fit_record = {"id": fit_id, "fitDate": date, "sequentialMaturedLabelsOnly": True, **audit}
+            partial["currentTerminal"].update(modelFitId=fit_id, fit=fit_record)
             if current_model is not None and export_functions:
+                partial["phase"] = "terminal_export"
                 from .model_function import export_function
                 fit_record["functionArtifact"] = export_function(current_model, audit, strategy)
             fitted_models.append(fit_record)
             last_fit = t
+        partial["phase"] = "terminal_predict"
         pred = np.full((len(group), 2), np.nan)
         valid_idx = np.flatnonzero(group.inputValid.to_numpy())
         if len(valid_idx) and current_model is not None:
             pred[valid_idx] = current_model.predict(samples.X.loc[group.index[valid_idx]])
+        partial["phase"] = "terminal_records"
         records.extend(_records(samples, group.index, pred, fit_id, strategy))
+        partial["currentTerminal"] = None
+    partial["phase"] = "terminal_metrics"
     truth, pred, score_dates = [], [], []
     target_groups = {}
     for row in records:
@@ -238,6 +332,8 @@ def forecast(samples, strategy, *, max_forecasts=None, runtime=None, export_func
                        "penalty": "predeclared_estimator_regularization_and_simpler_within_tolerance",
                        "reinforcementLearningIncluded": False}}
     from .inference import evaluate_forecast_uncertainty
+    partial.update(diagnostics)
+    partial["phase"] = "terminal_uncertainty"
     diagnostics["aggregateUncertainty"] = evaluate_forecast_uncertainty(
         records, strategy["target"]["horizonSessions"], strategy["research"]["observationDays"])
     return records, fitted_models, diagnostics
