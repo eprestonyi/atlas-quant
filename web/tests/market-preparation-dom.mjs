@@ -68,7 +68,36 @@ const stored = JSON.parse(w.localStorage.getItem('atlas-quant-market-preparation
 await click('market-start'); assert.deepEqual(calls.filter(x=>x.path.endsWith('/start')).at(-1).data,initialStart,'unknown control response retries same request, not a new provider intent');
 assert(!w.document.querySelector('[data-sq="market-bind"]'));
 assert(!w.document.querySelector('a[download]'),'queued preparation is not a downloadable complete source');
+assert(!w.document.querySelector('[data-market-source-progress]'),'missing progress never invents counts');
+const progress = { declaredRequests: 2001, receiptsSaved: 12, rawBytesSaved: 1048576, outcomeUnknown: 2 };
+job = { ...job, status: 'running', phase: 'fetching_sources', sourceProgress: progress };
+const startsBeforeProgress = calls.filter(x => x.path.endsWith('/start')).length;
+await click('market-refresh');
+const sourceProgressText = () => w.document.querySelector('[data-market-source-progress]')?.textContent || '';
+assert(sourceProgressText().includes('已保存来源回执12 / 2001'));
+assert(sourceProgressText().includes('1.00 MiB'));
+assert(sourceProgressText().includes('仅表示来源阶段'));
+assert(sourceProgressText().includes('包含已复用的缓存回执，不是新增供应商调用次数'));
+assert(sourceProgressText().includes('2 项结果待核对，不会自动重复请求'));
+assert(!sourceProgressText().includes('%'),'receipt counts are not research-wide percentage');
+assert(w.document.querySelector('[data-sq="market-start"]').disabled,'unknown outcomes cannot start another preparation');
+assert.equal(calls.filter(x => x.path.endsWith('/start')).length,startsBeforeProgress,'refreshing unknown outcomes never repeats provider intent');
+const invalidProgress = [null, {}, [], { ...progress, declaredRequests: 0 }, { ...progress, declaredRequests: 2000 }, { ...progress, receiptsSaved: -1 }, { ...progress, receiptsSaved: 2002 }, { ...progress, receiptsSaved: '12' }, { ...progress, rawBytesSaved: -1 }, { ...progress, rawBytesSaved: 1.5 }, { ...progress, rawBytesSaved: Number.MAX_SAFE_INTEGER + 1 }, { ...progress, outcomeUnknown: true }, { ...progress, outcomeUnknown: -1 }, { ...progress, outcomeUnknown: 2002 }];
+for (const sourceProgress of invalidProgress) {
+  job = { ...job, sourceProgress }; await click('market-refresh');
+  assert(!w.document.querySelector('[data-market-source-progress]'),'invalid progress stays absent: ' + JSON.stringify(sourceProgress));
+}
+job = { ...job, sourceProgress: { ...progress, receiptsSaved: 2001, outcomeUnknown: 0 } };
+await click('market-refresh');
+assert(sourceProgressText().includes('2001 / 2001'));
+assert(!w.document.querySelector('[data-sq="market-bind"]'),'all saved receipts alone do not complete normalization or make research runnable');
+assert(w.document.querySelector('.fin-progress').textContent.includes('正在准备完整行情'));
+q.workspace.market.state.verified = false; q.render();
+assert(!w.document.querySelector('[data-market-source-progress]'),'unverified cached progress is not presented as a fresh count');
 completed=true; admissions[0].available=false; admissions[0].reason='RUNNER_OFFLINE'; await click('market-refresh');
+assert(w.document.querySelector('.fin-progress').textContent.includes('完整行情已冻结'),'completed keeps the frozen-data status');
+assert(sourceProgressText().includes('2001 / 2001'));
+assert(sourceProgressText().includes('不代表模型拟合或研究完成'));
 assert(w.document.querySelector('[data-sq="market-bind"]').disabled,'ready data alone does not grant compute availability');
 assert(w.document.querySelector('main').textContent.includes('计算节点当前离线'));
 assert(w.document.querySelector(`a[download][href="${sourceDownload}"]`),'completed source can be downloaded independently of compute availability');
@@ -140,5 +169,5 @@ assert.equal(await q.workspace.save(),null,'unverified global draft binding cann
 s.session.workspace.id='owner_a';q.render();assert(q.workspace.market.state.plan,'returning owner can recover its own evidence');
 s.session=null;q.render();assert(w.document.querySelector('main').textContent.includes('正在确认私有工作区身份'));
 assert.equal(w.localStorage.getItem('atlas-quant-market-preparation-v1'),legacyRecord);
-console.log(JSON.stringify({fixtureWarningBeforeBindingAndAfterReopen:true,exactSourceKindRead:true,mismatchedSourceUnknown:true,exactSavedSourceDownload:true,downloadIndependentOfCompute:true,invalidRefNoDownload:true,workspaceStoragePartition:true,ownerResponseFence:true,legacyEvidencePreserved:true,realDOM:true,httpDoubles:true,completePool:1000,explicitProviderStart:true,idempotentUnknownStart:true,separateSourceAndComputeProfiles:true,readyOnly:true,immutableReopen:true,scopeChangesInvalidate:true,noEstimatorDowngrade:true,lateBindingAndSaveIsolated:true,providerCalls:0}));
+console.log(JSON.stringify({sourceStageReceiptProgress:true,invalidOrUnverifiedProgressAbsent:true,unknownOutcomesNeverRetry:true,allReceiptsDoNotFinishResearch:true,fixtureWarningBeforeBindingAndAfterReopen:true,exactSourceKindRead:true,mismatchedSourceUnknown:true,exactSavedSourceDownload:true,downloadIndependentOfCompute:true,invalidRefNoDownload:true,workspaceStoragePartition:true,ownerResponseFence:true,legacyEvidencePreserved:true,realDOM:true,httpDoubles:true,completePool:1000,explicitProviderStart:true,idempotentUnknownStart:true,separateSourceAndComputeProfiles:true,readyOnly:true,immutableReopen:true,scopeChangesInvalidate:true,noEstimatorDowngrade:true,lateBindingAndSaveIsolated:true,providerCalls:0}));
 dom.window.close();
