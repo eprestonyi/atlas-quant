@@ -80,18 +80,43 @@ def test_graph_flag_selects_separate_prepare_and_persists_source_format(tmp_path
 
 
 @pytest.mark.parametrize('attack,code',[('memory','CAPACITY_MEMORY'),('disk','CAPACITY_DISK'),('fit','CAPACITY_FIT_TIMEOUT'),
-    ('ps','CAPACITY_MONITOR'),('nan','CAPACITY_MONITOR')])
+    ('ps','CAPACITY_MONITOR'),('nan','CAPACITY_MONITOR'),('negative','CAPACITY_MONITOR'),('future','CAPACITY_MONITOR')])
 def test_parent_graph_budget_is_enforced_during_a_stuck_child(tmp_path,monkeypatch,attack,code):
     import atlas_quant.graph_research_runner.limits as limits
+    # Host monotonic uptime can be <301s on fresh CI machines. Such a clock
+    # minus 301 is an invalid start, not a valid fit that exceeded its budget.
+    now=1000.0
+    monkeypatch.setattr(limits,'time',SimpleNamespace(monotonic=lambda:now))
     completion=runner.CompletionSpool(config(tmp_path));context=FinancialGraphBundleSpool.context_for(completion,{'id':JOB,'leaseToken':LEASE})
     store=GraphResearchSpool(context)
-    if attack in ('fit','nan'):
-        event={'phase':'fit_started','startedMonotonic':time.monotonic()-301 if attack=='fit' else 'NaN'}
+    starts={'fit':now-301,'nan':'NaN','negative':-1.0,'future':now+1}
+    if attack in starts:
+        event={'phase':'fit_started','startedMonotonic':starts[attack]}
         store.write('progress',encode(event))
     monkeypatch.setattr(limits.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=1 if attack=='ps' else 0,stdout=str(4*1024**2 if attack=='memory' else 1024)))
     monkeypatch.setattr(limits.shutil,'disk_usage',lambda *a:SimpleNamespace(free=499*1024**2 if attack=='disk' else 10*1024**3))
     with pytest.raises(runner.RunnerError) as caught:GraphProcessBudget(context).check(123)
     assert caught.value.code==code
+
+
+@pytest.mark.parametrize('now,started,code',[
+    (100.0,0.0,None),
+    (100.0,-201.0,'CAPACITY_MONITOR'),
+    (1000.0,700.0,None),
+    (1000.0,699.999,'CAPACITY_FIT_TIMEOUT'),
+])
+def test_graph_fit_clock_boundary_does_not_depend_on_host_uptime(tmp_path,monkeypatch,now,started,code):
+    import atlas_quant.graph_research_runner.limits as limits
+    context=FinancialGraphBundleSpool.context_for(runner.CompletionSpool(config(tmp_path)),{'id':JOB,'leaseToken':LEASE})
+    GraphResearchSpool(context).write('progress',encode({'phase':'fit_started','startedMonotonic':started}))
+    monkeypatch.setattr(limits,'time',SimpleNamespace(monotonic=lambda:now))
+    monkeypatch.setattr(limits.subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout='1024'))
+    monkeypatch.setattr(limits.shutil,'disk_usage',lambda *a:SimpleNamespace(free=10*1024**3))
+    if code:
+        with pytest.raises(runner.RunnerError) as caught:GraphProcessBudget(context).check(123)
+        assert caught.value.code==code
+    else:
+        GraphProcessBudget(context).check(123)
 
 
 def test_queue_graph_route_rejects_legacy_columns_get_and_unknown_namespace(tmp_path):
