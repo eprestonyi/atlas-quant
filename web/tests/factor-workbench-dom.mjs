@@ -63,10 +63,21 @@ assert(!q.validateStrategy().some(x => /50|成员/.test(x)));
 await route('easy/model');
 assert.equal(w.document.querySelectorAll('[data-sq="family"]').length, 5);
 assert(!w.document.querySelector('[data-sq-config="model.estimator"]'));
-s.strategy.model.estimator = 'hist_gradient_boosting';
-w.document.querySelector('[data-sq="family"][data-id="trend"]').click();
-await tick();
+for (const family of ['trend', 'pair_reversion', 'event', 'fundamental']) {
+  const card = w.document.querySelector(`[data-sq="family"][data-id="${family}"]`);
+  assert(card.disabled, family + ' does not imply a thousand-member auto pipeline');
+  assert.equal(card.querySelector('[data-mechanism-status]').dataset.mechanismStatus, 'blocked');
+}
+assert(!w.document.querySelector('[data-sq="family"][data-id="mean_reversion"]').disabled);
+const fullUniverse = structuredClone(s.strategy.universe);
+s.strategy.universe.symbols = symbols.slice(0, 50); s.strategy.model.estimator = 'hist_gradient_boosting'; q.render();
+assert.equal(w.document.querySelectorAll('[data-sq="family"]').length, 5);
+for (const family of ['trend', 'pair_reversion', 'event', 'fundamental']) assert(!w.document.querySelector(`[data-sq="family"][data-id="${family}"]`).disabled, family + ' has a conditional generic entry');
+assert(w.document.querySelector('[data-sq="family"][data-id="pair_reversion"]').textContent.includes('明确两条篮子腿'));
+assert(w.document.querySelector('[data-sq="family"][data-id="event"]').textContent.includes('普通日线行情不是事件源'));
+w.document.querySelector('[data-sq="family"][data-id="trend"]').click(); await tick();
 assert.equal(s.strategy.model.estimator, 'auto');
+s.strategy.universe = fullUniverse; s.strategy.model.family = 'mean_reversion'; q.render();
 await route('easy/settings');
 assert(w.document.querySelector('.rq-source-row'));
 assert(w.document.querySelector('[data-sq-config="universe.start"]'));

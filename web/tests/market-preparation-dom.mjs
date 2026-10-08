@@ -11,8 +11,8 @@ const marketRef = { datasetId: id(4), datasetRoot: 'd'.repeat(64), format: 'atla
 const sourceDownload=marketDatasetDownload(marketRef);
 assert.equal(sourceDownload,`/quant/api/market-datasets/${id(4)}/download?datasetRoot=${'d'.repeat(64)}`);
 for(const ref of [null,{}, {...marketRef,version:2},{...marketRef,format:'atlas.quant.research_dataset'},{...marketRef,datasetRoot:'x'.repeat(64)},{...marketRef,datasetId:'../foreign'}])assert.equal(marketDatasetDownload(ref),null);
-const admissions = [{ admissionProfile: 'pooled_asset_1000_auto_candidate_v1', available: true, families: ['mean_reversion'], estimator: 'auto', targetKind: 'asset_price', executionEnabled: false, maxFactors: 16, innerFolds: 2, outerFolds: 2, minRefitDays: 20 }];
-const calls = []; let plan, job, saved, startFail = true, saveGate, jobGate, completed = false, sourceKind = 'fixture', wrongSource = false;
+const admissions = [{ admissionProfile: 'pooled_asset_1000_auto_candidate_v1', available: true, families: ['mean_reversion'], estimator: 'auto', targetKind: 'asset_price', executionEnabled: false, maxSymbols: 1000, maxCalendarDays: 366, maxFactors: 16, innerFolds: 2, outerFolds: 2, minRefitDays: 20 }];
+const calls = []; let plan, job, saved, startFail = true, saveGate, jobGate, planReadGate, completed = false, sourceKind = 'fixture', wrongSource = false;
 const dom = new JSDOM('<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>', { url: 'http://localhost/quant/#quant/easy/settings', runScripts: 'outside-only', pretendToBeVisual: true });
 const w = dom.window; w.structuredClone = structuredClone; w.scrollTo = () => {}; w.matchMedia = () => ({ matches: false, addEventListener() {} });
 w.fetch = async (url, options = {}) => {
@@ -27,7 +27,7 @@ w.fetch = async (url, options = {}) => {
   else if (path.endsWith('/start')) {
     if (startFail) { startFail = false; throw Error('启动响应未知'); }
     job = { id: id(3), planId: id(2), status: 'queued', phase: null, result: null }; result = { job };
-  } else if (path.startsWith('/market-preparation-plans/')) result = plan;
+  } else if (path.startsWith('/market-preparation-plans/')) { if (planReadGate) await planReadGate; result = plan; }
   else if (path.startsWith('/market-preparation-jobs/')) {
     if (jobGate) await jobGate;
     if (completed) job = { ...job, status: 'completed', phase: 'ready', result: { marketDatasetRef: marketRef, universeScopeRef: scopeRef, profile: 'pooled_asset_1000_v1', symbolCount: 1000, rowCount: 262000 } };
@@ -62,10 +62,48 @@ assert.equal(plan.scope.symbols.length,1000); assert(w.document.querySelector('m
 assert(!calls.some(x=>x.path.endsWith('/start')),'planning never starts provider work');
 assert.deepEqual(calls.find(x=>x.path==='/market-preparation-plans').data,{scopeRef,profile:'pooled_asset_1000_v1',requiredFields:[]});
 await click('market-requests'); assert(w.document.querySelector('main').textContent.includes('trade_cal'));
+// Unsupported mechanisms cannot spend a new provider intent, even through a stale button.
+const intact = JSON.stringify(s.strategy.universe), target = structuredClone(s.strategy.target);
+for (const family of ['trend', 'pair_reversion', 'event', 'fundamental']) {
+  s.strategy.model.family = family;
+  s.strategy.target = family === 'pair_reversion' ? { ...target, kind: 'frozen_basket', basket: { method: 'pair_ols', symbols: [] } } : structuredClone(target);
+  q.render();
+  assert(w.document.querySelector('[data-sq="market-start"]').disabled, family);
+  assert.equal(w.document.querySelector('[data-mechanism-admission]').dataset.mechanismAdmission, 'blocked');
+  const button = w.document.querySelector('[data-sq="market-start"]'); button.disabled = false; button.click(); await tick();
+  assert(!calls.some(x => x.path.endsWith('/start')), family + ' has no provider intent');
+  assert.equal(q.workspace.market.state.startRequestId, null);
+  assert.equal(JSON.stringify(s.strategy.universe), intact, 'full scope stays intact');
+  assert.equal(s.strategy.model.estimator, 'auto', 'no implicit model fallback');
+}
+s.strategy.model.family = 'mean_reversion'; s.strategy.target = target; q.render();
+assert.equal(w.document.querySelector('[data-mechanism-admission]').dataset.mechanismAdmission, 'ready');
+// The render-time declaration is not sufficient: start re-reads current server admission.
+admissions[0].available = false; admissions[0].reason = 'RUNNER_OFFLINE';
+await click('market-start');
+assert(!calls.some(x => x.path.endsWith('/start')));
+assert(w.document.querySelector('main').textContent.includes('计算节点当前离线'));
+admissions[0].available = true; admissions[0].reason = null; await click('market-refresh');
+const validAdmission = structuredClone(admissions[0]);
+for (const patch of [{ available: 'true' }, { maxSymbols: 999 }, { maxCalendarDays: 100 }, { maxFactors: undefined }]) {
+  Object.assign(admissions[0], validAdmission, patch);
+  const button = w.document.querySelector('[data-sq="market-start"]'); button.disabled = false; button.click(); await tick();
+  assert(!calls.some(x => x.path.endsWith('/start')), 'fresh invalid/insufficient budget prevents provider intent');
+  assert.equal(q.workspace.market.state.startRequestId, null);
+}
+Object.assign(admissions[0], validAdmission); await click('market-refresh');
+let releasePlan; planReadGate = new Promise(resolve => { releasePlan = resolve; });
+w.document.querySelector('[data-sq="market-start"]').click(); await tick();
+const originalStart = s.strategy.universe.start; s.strategy.universe.start = '20250201'; releasePlan(); await tick(); planReadGate = null;
+assert(!calls.some(x => x.path.endsWith('/start')), 'scope change during admission refresh cannot start old preparation');
+s.strategy.universe.start = originalStart; q.render();
 await click('market-start'); assert(w.document.querySelector('main').textContent.includes('启动响应未知'));
 const initialStart = calls.filter(x=>x.path.endsWith('/start')).at(-1).data;
 const stored = JSON.parse(w.localStorage.getItem('atlas-quant-market-preparation-v1:owner_a')); assert.equal(stored.startRequestId,initialStart.requestId); assert.equal(stored.startUnknown,true);
+// A changed mechanism or unavailable compute must not strand a submitted unknown intent.
+s.strategy.model.family = 'trend'; admissions[0].available = false; q.render();
 await click('market-start'); assert.deepEqual(calls.filter(x=>x.path.endsWith('/start')).at(-1).data,initialStart,'unknown control response retries same request, not a new provider intent');
+s.strategy.model.family = 'mean_reversion'; admissions[0].available = true; q.render();
 assert(!w.document.querySelector('[data-sq="market-bind"]'));
 assert(!w.document.querySelector('a[download]'),'queued preparation is not a downloadable complete source');
 assert(!w.document.querySelector('[data-market-source-progress]'),'missing progress never invents counts');
@@ -169,5 +207,5 @@ assert.equal(await q.workspace.save(),null,'unverified global draft binding cann
 s.session.workspace.id='owner_a';q.render();assert(q.workspace.market.state.plan,'returning owner can recover its own evidence');
 s.session=null;q.render();assert(w.document.querySelector('main').textContent.includes('正在确认私有工作区身份'));
 assert.equal(w.localStorage.getItem('atlas-quant-market-preparation-v1'),legacyRecord);
-console.log(JSON.stringify({sourceStageReceiptProgress:true,invalidOrUnverifiedProgressAbsent:true,unknownOutcomesNeverRetry:true,allReceiptsDoNotFinishResearch:true,fixtureWarningBeforeBindingAndAfterReopen:true,exactSourceKindRead:true,mismatchedSourceUnknown:true,exactSavedSourceDownload:true,downloadIndependentOfCompute:true,invalidRefNoDownload:true,workspaceStoragePartition:true,ownerResponseFence:true,legacyEvidencePreserved:true,realDOM:true,httpDoubles:true,completePool:1000,explicitProviderStart:true,idempotentUnknownStart:true,separateSourceAndComputeProfiles:true,readyOnly:true,immutableReopen:true,scopeChangesInvalidate:true,noEstimatorDowngrade:true,lateBindingAndSaveIsolated:true,providerCalls:0}));
+console.log(JSON.stringify({earlyMechanismAdmission:true,newStartRequiresFreshProfile:true,unsupportedMechanismsSpendNoRequests:true,unknownRecoveryBypassesNewIntentGate:true,sourceStageReceiptProgress:true,invalidOrUnverifiedProgressAbsent:true,unknownOutcomesNeverRetry:true,allReceiptsDoNotFinishResearch:true,fixtureWarningBeforeBindingAndAfterReopen:true,exactSourceKindRead:true,mismatchedSourceUnknown:true,exactSavedSourceDownload:true,downloadIndependentOfCompute:true,invalidRefNoDownload:true,workspaceStoragePartition:true,ownerResponseFence:true,legacyEvidencePreserved:true,realDOM:true,httpDoubles:true,completePool:1000,explicitProviderStart:true,idempotentUnknownStart:true,separateSourceAndComputeProfiles:true,readyOnly:true,immutableReopen:true,scopeChangesInvalidate:true,noEstimatorDowngrade:true,lateBindingAndSaveIsolated:true,providerCalls:0}));
 dom.window.close();

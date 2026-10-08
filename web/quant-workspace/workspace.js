@@ -2,6 +2,7 @@ import { financialProfile, datasetLocation } from './datasets/protocol.js';
 import { financialAdmission, financialBindingErrors } from './financial/research-binding.js';
 import { SOURCE_LABELS, scopeKey, activeBinding, bindingFields, restoreBindings, marketBindingErrors } from './research-data-binding.js';
 import { createMarketPreparation } from './market/preparation.js';
+import { mechanismAdmission, admissionLabel } from './mechanism-admission.js';
 import { createModuleHub } from './module-hub.js';
 import { createDatasetWorkspace } from './datasets/workspace.js';
 // Statistical research routes and private-workspace orchestration; numerical work stays in the engine.
@@ -266,12 +267,17 @@ window.AtlasQuantV4 = {
       const factors = s.strategy.factors;
       return `${panel('把信息定义为可审计的状态', `<div class="sq-equation-strip"><span>点时数据</span>${i('arrow')}<span>因果变换</span>${i('arrow')}<span>X<sub>t</sub> 状态与因子</span>${i('arrow')}<span>F<sub>h</sub> 的输入</span></div><p>预测因子是 F 模型的数值输入；正负方向仅改变特征编码，不决定交易方向或仓位。对冲暴露用于构造 PCA 篮子；事件因子必须具有实际可用时间。</p>`, { kicker: 'INFORMATION SET' })}<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>当前状态输入 <span>${factors.length} / 32</span></h2><a class="sq-button small" href="#quant/studio/state">展开 Studio</a></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(C.findFactor(f.id)?.name || f.id)}</strong><code>${e(f.expression)}</code></div><label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option><option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>PCA 对冲暴露</option><option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入 · 需 PIT</option></select></label>${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('') || empty('尚未添加额外因子', '模型仍可使用其明确声明的内置状态。拖入模块或点击目录中的“加入”。')}<div class="sq-drop-caption">${i('plus')}拖入状态模块，或用键盘选择“加入”</div></div><div class="sq-tabs" role="group" aria-label="状态输入编辑方式">${[['catalog', '因子目录'], ['modules', '状态模块'], ['builder', '构建因子'], ...(isStudio() ? [['fields', '数据库字段']] : [])].map(([id, label]) => button('feature-tab', label, { id, primary: ui.featureTab === id, pressed: ui.featureTab === id, small: true })).join('')}</div>${ui.featureTab === 'modules' ? catalog.view('state') : `<div class="sq-legacy">${ui.featureTab === 'builder' ? C.legacy.builder() : ui.featureTab === 'fields' ? C.legacy.fieldBrowser() : C.legacy.catalogBrowser()}</div>`}${advanced('预处理与输入冗余', `<div class="sq-form-grid">${toggle('训练期截尾', 'preprocess.winsorize', '阈值只由拟合数据确定。')}${toggle('训练期标准化', 'preprocess.standardize', '验证与预测复用训练参数。')}${select('冗余处理', 'preprocess.decorrelation', { none: '保留全部输入', drop_correlated: '剔除高度相关输入' })}${input('绝对相关阈值', 'preprocess.correlationThreshold', { min: 0.5, max: 1, step: 0.01 })}</div>`, isStudio())}`;
     }
+    const mechanismStatus = family => mechanismAdmission(s, family, market.researchAdmission, isStudio());
+    function admissionView() {
+      const status = mechanismStatus(s.strategy.model.family);
+      return panel('当前研究准入', `<div data-mechanism-admission="${e(status.status)}"><strong>${e(FAMILIES[s.strategy.model.family]?.name)} · ${e(admissionLabel(status.status))}</strong><p>${e(status.message)}</p><p class="sq-subtle">完整筛选范围：${s.strategy.universe.symbols.length} 个成员。配置准入、数据准备和模型有效性分别检验。</p></div>`);
+    }
     function settingsPage() {
       const st = s.strategy;
       const dates = boundDataset()
         ? `<dl class="fin-summary"><dt>冻结研究窗口</dt><dd>${e(C.dateText(st.universe.start))} — ${e(C.dateText(st.universe.end))}</dd></dl>`
         : `<div class="sq-form-grid">${input('研究窗口起始', 'universe.start', { type: 'date', value: C.dateText(st.universe.start) })}${input('研究窗口结束', 'universe.end', { type: 'date', value: C.dateText(st.universe.end) })}</div>`;
-      return panel('研究数据与窗口', `${boundDataset() ? boundNote() : `<div class="sq-legacy">${C.legacy.flow.sourceControls()}</div>`}${dates}<p class="sq-subtle">这个窗口用于训练和样本外检验，与股票筛选条件分开保存。</p>`) + (!boundDataset() && ['tushare', 'ready_market'].includes(s.dataSource) ? market.view() : '') + targetPage() +
+      return admissionView() + panel('研究数据与窗口', `${boundDataset() ? boundNote() : `<div class="sq-legacy">${C.legacy.flow.sourceControls()}</div>`}${dates}<p class="sq-subtle">这个窗口用于训练和样本外检验，与股票筛选条件分开保存。</p>`) + (!boundDataset() && ['tushare', 'ready_market'].includes(s.dataSource) ? market.view() : '') + targetPage() +
         (isStudio() ? advanced('跨数据库时点映射', C.legacy.mappingEditor(), false) : '');
     }
     function targetPage() {
@@ -321,8 +327,10 @@ window.AtlasQuantV4 = {
         '先声明模型机制',
         `<div class="sq-family-grid">${Object.entries(FAMILIES)
           .map(
-            ([id, x]) =>
-              `<button class="sq-family ${s.strategy.model.family === id ? 'selected' : ''}" data-sq="family" data-id="${id}"><span>${i(id === 'pair_reversion' ? 'link' : id === 'event' ? 'spark' : 'model')}</span><strong>${e(x.name)}</strong><p>${e(x.description)}</p></button>`,
+            ([id, x]) => {
+              const status = mechanismStatus(id);
+              return `<button class="sq-family ${s.strategy.model.family === id ? 'selected' : ''}" data-sq="family" data-id="${id}" ${!status.selectable ? 'disabled' : ''}><span>${i(id === 'pair_reversion' ? 'link' : id === 'event' ? 'spark' : 'model')}</span><strong>${e(x.name)}</strong><p>${e(x.description)}</p><small data-mechanism-status="${e(status.status)}">${e(admissionLabel(status.status))} · ${e(status.message)}</small></button>`;
+            },
           )
           .join(
             '',
@@ -1061,6 +1069,8 @@ window.AtlasQuantV4 = {
         render();
       }
       if (action === 'family') {
+        const admission = mechanismStatus(id);
+        if (!admission.selectable) { toast(admission.message, true); return; }
         s.strategy.model.family = id;
         if (!isStudio()) s.strategy.model.estimator = 'auto';
         if (id === 'pair_reversion') {

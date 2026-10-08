@@ -951,6 +951,20 @@
   font-size: 10px;
   line-height: 1.85;
 }
+.sq-shell .sq-family:disabled {
+  opacity: 1;
+  border-style: dashed;
+}
+.sq-family [data-mechanism-status] {
+  display: block;
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.sq-family [data-mechanism-status="blocked"] {
+  color: #d7b895;
+}
 .sq-family.selected {
   border-color: #97b5a4;
   background: #18281f;
