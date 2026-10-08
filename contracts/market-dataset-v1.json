@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "status": "implementation_in_progress_flags_default_off",
+  "acquisitionCapability": "market-acquire/1",
+  "planStart": {
+    "path": "/quant/api/market-preparation-plans/:planId/start",
+    "body": ["requestId", "planRoot"]
+  },
+  "preparationJob": "/quant/api/market-preparation-jobs/:jobId",
+  "preparationCancel": "/quant/api/market-preparation-jobs/:jobId/cancel",
+  "marketDatasetRef": {
+    "datasetId": "UUID",
+    "datasetRoot": "SHA256 of canonical complete dataset manifest",
+    "format": "atlas.quant.market_dataset",
+    "version": 1
+  },
+  "experimentBinding": {
+    "topLevelKeys": [
+      "universeScopeRef",
+      "marketDatasetRef",
+      "admissionProfile"
+    ],
+    "sourceDiscriminator": "ready_market",
+    "mutuallyExclusiveWith": ["datasetRef", "inline dataset", "providerAccess"],
+    "strategyUniverse": "Full ordered symbols/start/end equal both frozen scope and ready market manifest",
+    "versionPolicy": "Persist exact reference with immutable experiment revision; omission inherits, never removes it",
+    "runtimePolicy": "Only matching explicit marketResearchProfiles runner capability; no provider during F",
+    "readback": {
+      "marketDatasetBinding": {
+        "marketDatasetRef": "exact saved ref",
+        "admissionProfile": "registered computation profile",
+        "universeScopeRef": "exact saved ref",
+        "scope": "full symbols/start/end/symbolCount/scopeRoot"
+      }
+    }
+  },
+  "readableInitialProfile": "pooled_asset_1000_v1",
+  "firstProfile": {
+    "families": ["mean_reversion", "trend"],
+    "estimator": "ridge",
+    "target": "asset_price",
+    "executionEnabled": false
+  },
+  "marketBudget": {
+    "symbols": 1000,
+    "calendarDays": 366,
+    "rows": 300000,
+    "rawBytes": 536870912,
+    "normalizedBytes": 134217728,
+    "chunkBytes": 524288,
+    "chunks": 320,
+    "manifestBytes": 262144
+  },
+  "network": {
+    "actualAttemptsPerRequest": 1,
+    "unknownOutcome": "sticky_manual_review_never_retry",
+    "requestsPerMinute": 60,
+    "requestSeconds": 30,
+    "jobSeconds": 7200,
+    "leaseSeconds": 120,
+    "heartbeatSeconds": 20
+  },
+  "oldFormats": "No legacy dataset or bundle bytes are rewritten; old 50-stock numerical admission remains unchanged outside the explicit market profile",
+  "researchAdmissions": {
+    "responseLocations": [
+      "GET /market-preparation-plans/:id",
+      "GET /market-preparation-jobs/:id"
+    ],
+    "fields": ["researchAdmissions", "preferredResearchAdmission"],
+    "availableRequires": [
+      "MARKET_RESEARCH_ENABLED=true",
+      "runner heartbeat under 120 seconds",
+      "explicit marketResearchProfiles and atlas.quant.bundle/1 transport capability"
+    ],
+    "entries": [
+      {
+        "admissionProfile": "pooled_asset_1000_v1",
+        "families": ["mean_reversion", "trend"],
+        "estimator": "ridge"
+      },
+      {
+        "admissionProfile": "pooled_asset_1000_auto_candidate_v1",
+        "families": ["mean_reversion"],
+        "estimator": "auto"
+      }
+    ],
+    "common": {
+      "targetKind": "asset_price",
+      "executionEnabled": false,
+      "maxFactors": 16,
+      "innerFolds": 2,
+      "outerFolds": 2,
+      "minRefitDays": 20
+    },
+    "sourcePolicy": "A ready source supports either registered computation profile without fetching again; every run still validates exact fields/scope/configuration."
+  }
+}

@@ -212,14 +212,14 @@ export async function createMarketPlan(
     sourcePolicy: {
       responseBytes: "exact_delivered_endpoint_bytes",
       originalProviderWireAvailable: false,
-      adjustment: "adj_factor_divided_by_last_observed_factor_per_symbol",
+      adjustment: "adj_factor_divided_by_first_observed_factor_per_symbol",
       volumeUnit: "hands",
       amountUnit: "CNY_thousands",
     },
   };
   return { ...plan, planRoot: await digest(plan) };
 }
-export function planView(row, plan) {
+export function planView(row, plan, serviceEnabled = false) {
   return {
     planRef: {
       planId: row.id,
@@ -233,9 +233,11 @@ export function planView(row, plan) {
     fields: plan.fields,
     budget: plan.budget,
     blockedReasons: plan.blockedReasons,
-    canStart: false,
+    canStart: serviceEnabled && !plan.blockedReasons.length,
     status: plan.blockedReasons.length ? "blocked" : "planned",
-    startUnavailableReason: "ISOLATED_MARKET_ACQUISITION_NOT_INSTALLED",
+    startUnavailableReason: serviceEnabled
+      ? null
+      : "ISOLATED_MARKET_ACQUISITION_DISABLED",
     requestsUrl: `/quant/api/market-preparation-plans/${row.id}/requests`,
     providerCalls: 0,
   };
