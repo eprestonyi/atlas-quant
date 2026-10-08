@@ -1,3 +1,4 @@
+import { createFactorDiagnostics } from './factor-diagnostics.js';
 // Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
 import { ESTIMATORS } from './defaults.js';
 import { createReportSource } from './report-source.js';
@@ -70,8 +71,9 @@ export function createForecastReports(C, F, { onExecution }) {
   const tags = {
     forecasts: '预测台账 · P / V / e',
     validation: '预测检验',
+    factorDiagnostics: '因子与联合分布',
     targets: '目标与对冲定义',
-    models: '模型拟合',
+    models: 'F 函数与拟合',
     execution: '独立执行',
     provenance: '来源与复现'
   };
@@ -137,6 +139,7 @@ export function createForecastReports(C, F, { onExecution }) {
   }
   const pages = (page, total, action) =>
     `<div class="sq-catalog-pagination"><span>匹配 ${total.toLocaleString()} 条 · 第 ${page} / ${Math.max(1, Math.ceil(total / 25))} 页 · 每页 25 条</span><div>${F.button(action, '上一页', { page: page - 1, small: true, disabled: page <= 1 })}${F.button(action, '下一页', { page: page + 1, small: true, disabled: page * 25 >= total })}</div></div>`;
+  const factorDiagnostics = createFactorDiagnostics(C, F, { remote, remoteState, table });
   function renderReport(r) {
     remote.bind(C.state.reportTransport, C.state.runId);
     const f = r.forecasts;
@@ -159,7 +162,7 @@ export function createForecastReports(C, F, { onExecution }) {
       Object.assign(ui, {
         artifactId: f.artifactId,
         runIdentity,
-        tab: 'forecasts',
+        tab: r.forecasts.factorResearch ? 'models' : 'forecasts',
         page: 1,
         query: '',
         target: '',
@@ -217,7 +220,7 @@ export function createForecastReports(C, F, { onExecution }) {
       )
       .join(
         ''
-      )}</div>${({ forecasts: forecastRows, validation, targets, models, execution, provenance }[ui.tab] || forecastRows)(r)}${r.warnings?.length ? F.advanced('本次计算返回的边界与限制', `<ul class="sq-report-warning-list">${r.warnings.map((x) => `<li>${e(typeof x === 'string' ? x : x.message || JSON.stringify(x))}</li>`).join('')}</ul>`) : ''}`;
+      )}</div>${({ forecasts: forecastRows, validation, factorDiagnostics: factorDiagnostics.render, targets, models, execution, provenance }[ui.tab] || forecastRows)(r)}${r.warnings?.length ? F.advanced('本次计算返回的边界与限制', `<ul class="sq-report-warning-list">${r.warnings.map((x) => `<li>${e(typeof x === 'string' ? x : x.message || JSON.stringify(x))}</li>`).join('')}</ul>`) : ''}`;
   }
   function selectedRows(r) {
     let rows = [...(r.forecasts.rows || [])];

@@ -322,7 +322,7 @@ assert(
 );
 await route('#quant/model');
 assert(
-  w.document.querySelector('main').textContent.includes('基本面 / Ridge 预测'),
+  w.document.querySelector('main').textContent.includes('基本面条件预测 · 当前可用协议'),
 );
 assert(!w.document.querySelector('[data-sq-config="model.family"]'));
 const savedVersion = await q.workspace.save();
