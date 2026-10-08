@@ -162,7 +162,7 @@ export function experimentScopeStatement(
   return env.DB.prepare(
     `INSERT INTO quant_experiment_scopes(experiment_id,version,owner,scope_id,scope_root,created_at)
     SELECT v.experiment_id,v.version,?,?,?,? FROM quant_experiment_versions v JOIN quant_experiments e ON e.id=v.experiment_id
-    WHERE v.experiment_id=? AND v.version=? AND e.owner=? AND v.spec=?
+    WHERE changes()=1 AND v.experiment_id=? AND v.version=? AND e.owner=? AND v.spec=?
     AND NOT EXISTS(SELECT 1 FROM quant_experiment_scopes s WHERE s.experiment_id=v.experiment_id AND s.version=v.version)`,
   ).bind(
     owner,

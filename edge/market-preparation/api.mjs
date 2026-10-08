@@ -1,3 +1,7 @@
+import { readyDataset, validateMarketRef } from "./research.mjs";
+import { DATASET_FORMAT, datasetRef } from "./publication.mjs";
+import { pageQuery } from "../financial/common.mjs";
+import { parse } from "../runtime.mjs";
 import { marketResearchAdmissions } from "./admissions.mjs";
 import { start, cancel, ownedJob, jobView, enabled } from "./queue.mjs";
 import { NOW, random, json, body, rate } from "../runtime.mjs";
@@ -19,6 +23,55 @@ import {
 } from "./planner.mjs";
 
 export async function marketPreparationApi(req, env, path, owner) {
+  if (path === "/market-datasets" && req.method === "GET") {
+    const { page, pageSize, offset } = pageQuery(new URL(req.url));
+    const rows = await env.DB.batch([
+      env.DB.prepare(
+        "SELECT id,dataset_root,created_at,json_extract(manifest,'$.universeScopeRef') scope_ref,json_extract(manifest,'$.scope') scope,json_extract(manifest,'$.fields') fields,json_extract(manifest,'$.rowCount') row_count,json_extract(manifest,'$.sourceKind') source_kind FROM quant_market_datasets WHERE owner=? AND status='ready' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
+      ).bind(owner, pageSize, offset),
+      env.DB.prepare(
+        "SELECT count(*) n FROM quant_market_datasets WHERE owner=? AND status='ready'",
+      ).bind(owner),
+    ]);
+    return json({
+      items: rows[0].results.map((r) => ({
+        marketDatasetRef: datasetRef(r),
+        universeScopeRef: parse(r.scope_ref),
+        scope: parse(r.scope),
+        fields: parse(r.fields),
+        rowCount: r.row_count,
+        sourceKind: r.source_kind,
+        createdAt: r.created_at,
+      })),
+      total: rows[1].results[0].n,
+      page,
+      pageSize,
+      ...(await marketResearchAdmissions(env)),
+    });
+  }
+  const datasetMatch = /^\/market-datasets\/([a-f0-9-]{36})$/.exec(path);
+  if (datasetMatch && req.method === "GET") {
+    const query = new URL(req.url).searchParams;
+    if ([...query.keys()].some((k) => k !== "datasetRoot"))
+      fail("UNKNOWN_PROPERTY", "来源读取参数无效");
+    const ref = {
+      datasetId: datasetMatch[1],
+      datasetRoot: query.get("datasetRoot"),
+      format: DATASET_FORMAT,
+      version: 1,
+    };
+    const a = await readyDataset(env, owner, ref);
+    return json({
+      marketDatasetRef: ref,
+      universeScopeRef: a.manifest.universeScopeRef,
+      scope: a.manifest.scope,
+      fields: a.manifest.fields,
+      rowCount: a.manifest.rowCount,
+      sourceKind: a.manifest.sourceKind,
+      createdAt: a.dataset.created_at,
+      ...(await marketResearchAdmissions(env)),
+    });
+  }
   const started = /^\/market-preparation-plans\/([a-f0-9-]{36})\/start$/.exec(
     path,
   );

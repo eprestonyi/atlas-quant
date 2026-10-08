@@ -1,3 +1,9 @@
+import {
+  assertRunMarket,
+  MARKET_RESEARCH_PROFILES,
+  supportsMarket,
+  researchEnabled as marketEnabled,
+} from "./market-preparation/research.mjs";
 import { readScope, bindWholeScope } from "./market-preparation/scope.mjs";
 import { scopeRef } from "./market-preparation/common.mjs";
 import {
@@ -28,6 +34,8 @@ function acceptsForecasts(engineVersion) {
 }
 
 async function jobPayload(env, row, supportsBundle) {
+  const market =
+    row.data_source === "ready_market" ? await assertRunMarket(env, row) : null;
   const financial =
     row.data_source === "ready_dataset"
       ? await assertRunDataset(env, row)
@@ -56,6 +64,14 @@ async function jobPayload(env, row, supportsBundle) {
       : {}),
     leaseToken: row.lease_token,
     ...(await claimMetadata(env, row)),
+    ...(market
+      ? {
+          marketDatasetRef: market.marketDatasetRef,
+          admissionProfile: market.admissionProfile,
+          sourceEvidence: market.sourceEvidence,
+          marketInputUrl: `/quant/api/runner/research-markets/${row.id}/input`,
+        }
+      : {}),
     ...(financial
       ? {
           datasetRef: financial.datasetRef,
@@ -73,7 +89,10 @@ async function jobPayload(env, row, supportsBundle) {
       : {}),
     strategy:
       strategy?.schemaVersion === 2
-        ? validateStoredStatisticalQuant(strategy)
+        ? validateStoredStatisticalQuant(
+            strategy,
+            market ? { scopeSymbolLimit: 1000 } : {},
+          )
         : strategy,
     dataSource: row.data_source,
     dataset: dataset ? await dataset.json() : null,
@@ -93,6 +112,10 @@ export async function claimRunnerJob(env, input, now) {
     researchEnabled(env) &&
       supportsFinancialResearchProfile(input, FINANCIAL_AUTO_PROFILE),
   );
+  const acceptedMarket = MARKET_RESEARCH_PROFILES.filter(
+    (p) => marketEnabled(env) && supportsMarket(input, p),
+  );
+  const marketGuard = `((data_source<>'ready_market' AND NOT EXISTS(SELECT 1 FROM quant_run_market_datasets rm WHERE rm.job_id=jobs.id)) OR (data_source='ready_market' AND EXISTS(SELECT 1 FROM quant_run_market_datasets rm WHERE rm.job_id=jobs.id AND rm.owner=jobs.owner AND rm.profile IN(SELECT value FROM json_each(?)))))`;
   const autoGuard = `(?=1 OR NOT EXISTS(SELECT 1 FROM quant_run_datasets rd WHERE rd.job_id=jobs.id AND rd.profile='financial_fundamental_auto_50_v1'))`;
   const datasetGuard = `(?=1 OR (data_source<>'ready_dataset' AND NOT EXISTS(SELECT 1 FROM quant_run_datasets rd WHERE rd.job_id=jobs.id)))`;
   const bundleGuard = `(?=1 OR NOT EXISTS(SELECT 1 FROM quant_runs qr JOIN quant_bundle_forecasts bf ON bf.owner=qr.owner AND bf.forecast_id=qr.source_forecast_id WHERE qr.job_id=jobs.id AND qr.kind='execution'))`;
@@ -114,7 +137,7 @@ export async function claimRunnerJob(env, input, now) {
   if (requestId === undefined) {
     // Compatibility for pre-0.4 runtimes; no durable request identity was sent.
     const row = await env.DB.prepare(
-      `UPDATE jobs SET status='running',lease_token=?,lease_until=?,updated_at=? WHERE id=(SELECT id FROM jobs WHERE status='queued' AND NOT EXISTS(SELECT 1 FROM meta WHERE key='runner_maintenance' AND value='paused') AND (?=1 OR COALESCE(json_extract(spec,'$.schemaVersion'),1)<2) AND ${bundleGuard} AND ${datasetGuard} AND ${autoGuard} ORDER BY created_at,id LIMIT 1) AND status='queued' RETURNING *`,
+      `UPDATE jobs SET status='running',lease_token=?,lease_until=?,updated_at=? WHERE id=(SELECT id FROM jobs WHERE status='queued' AND NOT EXISTS(SELECT 1 FROM meta WHERE key='runner_maintenance' AND value='paused') AND (?=1 OR COALESCE(json_extract(spec,'$.schemaVersion'),1)<2) AND ${bundleGuard} AND ${datasetGuard} AND ${autoGuard} AND ${marketGuard} ORDER BY created_at,id LIMIT 1) AND status='queued' RETURNING *`,
     )
       .bind(
         lease,
@@ -124,6 +147,7 @@ export async function claimRunnerJob(env, input, now) {
         supportsBundle,
         supportsDataset,
         supportAuto,
+        JSON.stringify(acceptedMarket),
       )
       .first();
     return { job: row ? await jobPayload(env, row, supportsBundle) : null };
@@ -140,7 +164,7 @@ export async function claimRunnerJob(env, input, now) {
         AND NOT EXISTS(SELECT 1 FROM runner_claims WHERE request_id=?)
         AND NOT EXISTS(SELECT 1 FROM meta WHERE key='runner_maintenance' AND value='paused')
         AND (?=1 OR COALESCE(json_extract(spec,'$.schemaVersion'),1)<2)
-        AND ${bundleGuard} AND ${datasetGuard} AND ${autoGuard}
+        AND ${bundleGuard} AND ${datasetGuard} AND ${autoGuard} AND ${marketGuard}
       ORDER BY created_at,id LIMIT 1`,
     ).bind(
       requestId,
@@ -150,6 +174,7 @@ export async function claimRunnerJob(env, input, now) {
       supportsBundle,
       supportsDataset,
       supportAuto,
+      JSON.stringify(acceptedMarket),
     ),
     env.DB.prepare(
       `UPDATE jobs SET status='running',lease_token=?,lease_until=?,updated_at=?
@@ -170,6 +195,19 @@ export async function claimRunnerJob(env, input, now) {
       "领取记录状态不一致，停止领取并检查记录",
       409,
     );
+  }
+  if (row.data_source === "ready_market") {
+    const r = await env.DB.prepare(
+      "SELECT profile FROM quant_run_market_datasets WHERE job_id=? AND owner=?",
+    )
+      .bind(row.id, row.owner)
+      .first();
+    if (!r || !acceptedMarket.includes(r.profile))
+      throw new ApiError(
+        "RUNNER_UPGRADE_REQUIRED",
+        "完整市场池需要显式来源与模型能力",
+        409,
+      );
   }
   if (row.data_source === "ready_dataset" && !supportsDataset)
     throw new ApiError(

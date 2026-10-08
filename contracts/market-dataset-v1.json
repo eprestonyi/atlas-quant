@@ -4,7 +4,10 @@
   "acquisitionCapability": "market-acquire/1",
   "planStart": {
     "path": "/quant/api/market-preparation-plans/:planId/start",
-    "body": ["requestId", "planRoot"]
+    "body": [
+      "requestId",
+      "planRoot"
+    ]
   },
   "preparationJob": "/quant/api/market-preparation-jobs/:jobId",
   "preparationCancel": "/quant/api/market-preparation-jobs/:jobId/cancel",
@@ -21,7 +24,11 @@
       "admissionProfile"
     ],
     "sourceDiscriminator": "ready_market",
-    "mutuallyExclusiveWith": ["datasetRef", "inline dataset", "providerAccess"],
+    "mutuallyExclusiveWith": [
+      "datasetRef",
+      "inline dataset",
+      "providerAccess"
+    ],
     "strategyUniverse": "Full ordered symbols/start/end equal both frozen scope and ready market manifest",
     "versionPolicy": "Persist exact reference with immutable experiment revision; omission inherits, never removes it",
     "runtimePolicy": "Only matching explicit marketResearchProfiles runner capability; no provider during F",
@@ -36,7 +43,10 @@
   },
   "readableInitialProfile": "pooled_asset_1000_v1",
   "firstProfile": {
-    "families": ["mean_reversion", "trend"],
+    "families": [
+      "mean_reversion",
+      "trend"
+    ],
     "estimator": "ridge",
     "target": "asset_price",
     "executionEnabled": false
@@ -66,7 +76,10 @@
       "GET /market-preparation-plans/:id",
       "GET /market-preparation-jobs/:id"
     ],
-    "fields": ["researchAdmissions", "preferredResearchAdmission"],
+    "fields": [
+      "researchAdmissions",
+      "preferredResearchAdmission"
+    ],
     "availableRequires": [
       "MARKET_RESEARCH_ENABLED=true",
       "runner heartbeat under 120 seconds",
@@ -75,12 +88,17 @@
     "entries": [
       {
         "admissionProfile": "pooled_asset_1000_v1",
-        "families": ["mean_reversion", "trend"],
+        "families": [
+          "mean_reversion",
+          "trend"
+        ],
         "estimator": "ridge"
       },
       {
         "admissionProfile": "pooled_asset_1000_auto_candidate_v1",
-        "families": ["mean_reversion"],
+        "families": [
+          "mean_reversion"
+        ],
         "estimator": "auto"
       }
     ],
@@ -93,5 +111,35 @@
       "minRefitDays": 20
     },
     "sourcePolicy": "A ready source supports either registered computation profile without fetching again; every run still validates exact fields/scope/configuration."
+  },
+  "ownerSources": {
+    "list": "GET /quant/api/market-datasets?page=1&pageSize=30",
+    "detail": "GET /quant/api/market-datasets/:datasetId?datasetRoot=:datasetRoot",
+    "readbackKeys": [
+      "marketDatasetRef",
+      "universeScopeRef",
+      "scope",
+      "fields",
+      "rowCount",
+      "sourceKind",
+      "createdAt",
+      "researchAdmissions",
+      "preferredResearchAdmission"
+    ]
+  },
+  "researchRunner": {
+    "capabilityKey": "marketResearchProfiles",
+    "requiredTransport": "atlas.quant.bundle/1",
+    "claimKeys": [
+      "marketDatasetRef",
+      "universeScopeRef",
+      "universeScope",
+      "admissionProfile",
+      "sourceEvidence",
+      "marketInputUrl"
+    ],
+    "input": "GET /quant/api/runner/research-markets/:jobId/input",
+    "header": "X-Dataset-Lease",
+    "pinnedReads": "Every document/part requires exact datasetRoot query; input returns descriptors and paths; no provider access is injected."
   }
 }
