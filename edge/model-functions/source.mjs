@@ -5,6 +5,7 @@ const sorted = value => Array.isArray(value) ? value.map(sorted)
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted(value[key])]))
     : value;
 const same = (a, b) => JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
+const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
 const requireSame = (actual, expected, label) => {
   if (expected === undefined || !same(actual, expected))
     throw new ApiError('FUNCTION_SOURCE_MISMATCH', `函数与冻结研究的${label}不一致；此来源不能用于试算或派生`, 503);
@@ -15,6 +16,8 @@ const requireSame = (actual, expected, label) => {
  * saved strategy here or infer missing fields from the portable artifact.
  */
 export function assertFunctionSource(artifact, fit, strategy) {
+  requireSame(object(artifact) && ['scope', 'training', 'featureConstruction', 'provenance', 'estimator', 'transforms']
+    .every(key => object(artifact[key])) && Array.isArray(artifact.inputSchema) && artifact.inputSchema.every(object), true, '函数结构');
   requireSame(fit?.status, 'valid', '拟合状态');
   requireSame(artifact.scope, {
     family: strategy?.model?.family,

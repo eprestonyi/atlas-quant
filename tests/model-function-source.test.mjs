@@ -6,6 +6,11 @@ import {validateFunction} from '../web/model-function-runtime.js';
 
 const fixture=JSON.parse(await fs.readFile(new URL('./fixtures/model-source-ridge-v1.json',import.meta.url),'utf8'));
 const artifact=await validateFunction(fixture.fit.functionArtifact);
+for(const key of ['scope','training','featureConstruction','provenance','estimator','transforms','inputSchema'])
+  test(`missing ${key} fails closed with a stable source error`,()=>{
+    const malformed=structuredClone(artifact);delete malformed[key];
+    assert.throws(()=>assertFunctionSource(malformed,fixture.fit,fixture.strategy),e=>e.code==='FUNCTION_SOURCE_MISMATCH'&&e.status===503);
+  });
 test('actual fitted audit binds both an auto-selected Ridge and an explicit Ridge declaration',()=>{
   assert.equal(fixture.strategy.model.estimator,'auto');
   assert.equal(fixture.fit.estimator,'ridge');
