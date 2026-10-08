@@ -7,9 +7,9 @@ import sys
 
 import pytest
 
-from test_research_dataset_components import sources
-from test_snapshot_market_view import legacy_source
-from test_financial_graph_dataset import graph_source
+from test_research_dataset_components import sources, long_sources
+from test_snapshot_market_view import legacy_source, derive
+from test_financial_graph_dataset import build as graph_build
 from test_graph_dataset_audit import rebuild as source_directory
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -20,14 +20,16 @@ import financial_bundle_audit as old
 
 
 @pytest.fixture(scope='module')
-def fixture(graph_source,sources):
-    pub,_,reader=graph_source[1]
+def fixture(legacy_source,long_sources):
+    sources=long_sources
+    pub,_,reader=graph_build(derive(legacy_source,sources['scope']),sources)
     values={c['componentId']:json.loads(reader.payload(c['componentId'])) for c in reader.manifest['components']}
     envelope=values['researchColumns'];p=envelope['provenance']
     strategy={'schemaVersion':2,'name':'SYNTHETIC_TRANSPORT_FIXTURE_NO_FIT','universe':sources['scope'],
-        'research':{'mode':'statistical_quant'},'target':{'kind':'asset_price'},
+        'research':{'mode':'statistical_quant','observationDays':1},'target':{'kind':'asset_price','horizonSessions':5},
         'model':{'family':'fundamental','estimator':'auto','refitDays':20},'execution':{'enabled':False},
-        'validation':{'innerFolds':2,'outerFolds':2},'factors':[{'id':'one','role':'predictor'}]}
+        'validation':{'innerFolds':2,'outerFolds':2,'holdoutFraction':0.2},
+        'factors':[{'id':'one','role':'predictor','expression':'model_fin_revenue_quarter_yoy'}]}
     prediction={k:v for k,v in strategy.items() if k not in {'execution','portfolio','costs','name','graph'}}
     phash=audit.sha(audit.canonical(prediction));fhash='1'*64
     ref={'datasetId':'00000000-0000-0000-0000-000000000083','datasetRoot':pub.dataset_root,
@@ -37,13 +39,40 @@ def fixture(graph_source,sources):
         'sourceEvidenceClosure':'separate_research_dataset_v3','dataFingerprint':fhash,
         'sourceDataFingerprint':p['dataFingerprint'],'financialSourceCommitment':commitment,
         'provenance':p,'numericInput':envelope['numericInput']}
-    forecast={'schemaVersion':1,'totalRows':0,'truncated':False,'sourceStrategy':strategy,'rows':[],
-        'targetDefinitions':[],'modelFits':[],'hedgeFits':[],'diagnostics':{},
+    # Construct the entire declared grid, with explicitly unavailable predictions.
+    # No fixture performs a model fit; source/coverage validity is separate from F.
+    dates=values['schema']['calendarSessions'];start=61
+    holdout=dates[start+int((len(dates)-start)*0.8)]
+    interval={'holdoutStart':holdout,'holdoutEnd':dates[-1]}
+    targets=[]
+    for symbol in sources['scope']['symbols']:
+        content={'kind':'asset_price','symbols':[symbol],'quantities':[1],
+            'unit':'CNY_adjusted_research_price','construction':'single_asset',
+            'formationStart':None,'formationEnd':None,'hedgeAudit':{}}
+        targets.append({'id':'target_'+audit.sha(audit.canonical(content))[:24],**content})
+    origins=[];rows=[]
+    for t in range(start,len(dates)):
+        if dates[t]<holdout:continue
+        for target in targets:
+            plan={'date':dates[t],'targetId':target['id'],
+                'entryDate':dates[t+1] if t+1<len(dates) else None,
+                'targetDate':dates[t+6] if t+6<len(dates) else None,'inputValid':False}
+            origins.append(plan)
+            rows.append({**{k:v for k,v in plan.items() if k!='inputValid'},
+                'forecastId':'fixture_'+str(len(rows)), 'modelFitId':None,
+                'informationCutoff':dates[t]+'_AFTER_CLOSE','horizonSessions':5,
+                'status':'invalid','invalidReason':'SYNTHETIC_NO_FIT'})
+    forecast={'schemaVersion':1,'totalRows':len(rows),'truncated':False,'sourceStrategy':strategy,'rows':rows,
+        'targetDefinitions':targets,'modelFits':[],'hedgeFits':[],
+        'diagnostics':{**interval,'factorIncrement':{'baselineRows':deepcopy(rows),
+            'baselineModelFits':[],'baselineValidation':deepcopy(interval)}},
         'dataFingerprint':fhash,'predictionConfigHash':phash}
     report={'schemaVersion':2,'status':'SYNTHETIC_TRANSPORT_FIXTURE_NO_FIT','strategy':strategy,
-        'provenance':{'dataSha256':fhash,'financialSourceCommitment':commitment},'research':{'executionOnly':False},
+        'provenance':{'dataSha256':fhash,'financialSourceCommitment':commitment},
+        'research':{'executionOnly':False,'observationDays':1},'validation':deepcopy(interval),
         'metrics':None,'equity':[],'trades':[], 'execution':{'enabled':False,'ledger':[],'decisions':[]}}
-    docs={'forecast':forecast,'report':report,'coverage':{'schemaVersion':1,'source':'legacy_artifact_derived','baselineRequired':False,'origins':[]},'snapshot':snapshot}
+    docs={'forecast':forecast,'report':report,'coverage':{'schemaVersion':1,'source':'samples_before_model_fitting',
+        'baselineRequired':True,'holdoutStart':holdout,'origins':origins},'snapshot':snapshot}
     return pub,values,sources['registry'],docs,ref
 
 
@@ -116,6 +145,9 @@ def test_transport_pair_pin_and_legacy_rejection_without_model_fit(fixture,tmp_p
     assert report['datasetRootPinned'] and report['externalRegistryBytesMatched']
     assert report['modelFitted'] is False and report['providerCalls']==0
     assert report['financialFormulasRecomputed'] is False and report['modelAdmissionRegistered'] is False
+    assert report['sourceForecastDomainVerified'] is True and report['inputValidityRecomputed'] is False
+    assert report['sourceCoverage']['expectedOriginDates']==41
+    assert report['sourceCoverage']['expectedForecastRows']==len(fixture[1]['coverage']['observedSymbols'])*41
     with pytest.raises(ValueError):old.audit_financial_bundle(result)
     for kw in [{'expected_bundle_id':'0'*64},{'expected_dataset_root':'0'*64}]:
         with pytest.raises(ValueError):audit.audit_financial_graph_bundle(result,source_dataset=dataset,**kw)
@@ -163,3 +195,73 @@ def test_stdlib_cli_incomplete_then_pair_without_engine(fixture,tmp_path):
     paired=subprocess.run(command+['--source-dataset',str(dataset)],capture_output=True,text=True)
     assert paired.returncode==0,paired.stdout+paired.stderr
     assert json.loads(paired.stdout)['engineImports'] is False
+
+
+@pytest.mark.parametrize('attack',['asset','day','tail','empty','tail_endpoint','horizon','holdout','target_quantity','baseline'])
+def test_coordinated_rehashed_domains_cannot_hide_source_origins(fixture,tmp_path,attack):
+    def mutate(docs):
+        f=docs['forecast'];coverage=docs['coverage'];inc=f['diagnostics']['factorIncrement']
+        first_date=f['rows'][0]['date'];first_target=f['targetDefinitions'][0]['id']
+        def keep(row):
+            if attack=='asset':return row['targetId']!=first_target
+            if attack=='day':return row['date']!=first_date
+            if attack=='tail':return row['targetDate'] is not None
+            return attack!='empty'
+        if attack in {'asset','day','tail','empty'}:
+            f['rows']=[x for x in f['rows'] if keep(x)]
+            inc['baselineRows']=[x for x in inc['baselineRows'] if keep(x)]
+            coverage['origins']=[x for x in coverage['origins'] if keep(x)]
+            f['totalRows']=len(f['rows'])
+            if attack=='asset':f['targetDefinitions']=[x for x in f['targetDefinitions'] if x['id']!=first_target]
+        elif attack=='tail_endpoint':
+            for rows in (f['rows'],inc['baselineRows'],coverage['origins']):
+                rows[-1]['entryDate']='20250101';rows[-1]['targetDate']='20250108'
+        elif attack=='horizon':
+            for rows in (f['rows'],inc['baselineRows']):rows[0]['horizonSessions']=6
+        elif attack=='holdout':
+            coverage['holdoutStart']='20240101'
+            for d in (f['diagnostics'],inc['baselineValidation'],docs['report']['validation']):d['holdoutStart']='20240101'
+        elif attack=='target_quantity':f['targetDefinitions'][0]['quantities']=[2]
+        elif attack=='baseline':
+            coverage['baselineRequired']=False
+            del inc['baselineRows'];del inc['baselineModelFits']
+    result=build(fixture,tmp_path,mutate);dataset=source(fixture,tmp_path)
+    # All inner hashes, recipes and totals have been rebuilt. The predecessor's
+    # self-consistency checks still accept; the frozen source domain must reject.
+    assert audit.audit_financial_graph_bundle(result)['status']=='INCOMPLETE_SOURCE'
+    with pytest.raises(ValueError,match='asset grid|Targets|Target definition|clock|baseline|Origin order'):
+        audit.audit_financial_graph_bundle(result,source_dataset=dataset)
+
+
+@pytest.mark.parametrize('observation,expression,start',[(3,'model_fin_revenue_quarter_yoy',61),
+    (5,'lag(model_fin_revenue_quarter_yoy,80)',81)])
+def test_declared_stride_is_anchored_before_terminal_boundary(fixture,tmp_path,observation,expression,start):
+    docs=deepcopy(fixture[3]);dates=fixture[1]['schema']['calendarSessions']
+    strategy=docs['forecast']['sourceStrategy']
+    strategy['research']['observationDays']=observation
+    strategy['factors'][0]['expression']=expression
+    docs['report']['strategy']=strategy;docs['report']['research']['observationDays']=observation
+    prediction={k:v for k,v in strategy.items() if k not in {'execution','portfolio','costs','name','graph'}}
+    docs['forecast']['predictionConfigHash']=audit.sha(audit.canonical(prediction))
+    holdout=dates[start+int((len(dates)-start)*0.8)]
+    wanted={dates[t] for t in range(start,len(dates),observation) if dates[t]>=holdout}
+    def select_dates(documents,selected):
+        f=documents['forecast'];inc=f['diagnostics']['factorIncrement'];coverage=documents['coverage']
+        for d in (f['diagnostics'],inc['baselineValidation'],documents['report']['validation']):d['holdoutStart']=holdout
+        coverage['holdoutStart']=holdout
+        f['rows']=[r for r in f['rows'] if r['date'] in selected]
+        inc['baselineRows']=[r for r in inc['baselineRows'] if r['date'] in selected]
+        coverage['origins']=[r for r in coverage['origins'] if r['date'] in selected]
+        f['totalRows']=len(f['rows'])
+    altered=(*fixture[:3],docs,fixture[4]);good=tmp_path/'good';good.mkdir()
+    result=build(altered,good,lambda d:select_dates(d,wanted));dataset=source(fixture,tmp_path)
+    report=audit.audit_financial_graph_bundle(result,source_dataset=dataset)
+    assert report['sourceCoverage']['sampleStartIndex']==start
+    assert report['sourceCoverage']['expectedOriginDates']==len(wanted)
+    # Resetting the step at holdout is a coherent, differently selected clock.
+    reset=set(dates[dates.index(holdout)::observation]);assert reset!=wanted
+    bad=tmp_path/'bad';bad.mkdir()
+    result=build(altered,bad,lambda d:select_dates(d,reset))
+    assert audit.audit_financial_graph_bundle(result)['status']=='INCOMPLETE_SOURCE'
+    with pytest.raises(ValueError,match='asset grid|Origin order'):
+        audit.audit_financial_graph_bundle(result,source_dataset=dataset)

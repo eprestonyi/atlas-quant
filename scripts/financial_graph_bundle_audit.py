@@ -16,6 +16,7 @@ from bundle_archive import _open_archive, _header, _write_body
 from financial_bundle_audit import bounded_decode, financial_json
 import graph_dataset_audit as graph_audit
 from dataset_audit import Checks, read_file
+from market_dataset_audit import validate_asset_coverage
 
 FORMAT = 'atlas.quant.financial_bundle'
 RESEARCH_PROFILE = 'financial_fundamental_graph_auto_50_v1'
@@ -318,7 +319,16 @@ class FinancialGraphBundleAudit(BundleAudit):
         require(financial_json(snapshot['financialSourceCommitment']) == financial_json(commitment), 'Snapshot commitment differs from dataset')
         strategy = self.documents['forecast']['sourceStrategy']
         require({k:strategy['universe'][k] for k in ('symbols','start','end')} == manifest['scope'], 'Forecast scope differs from source dataset')
+        # audit_semantics binds this schema's full calendar to the frozen external
+        # calendar record, market provenance and joined table. Missing market or
+        # financial observations must never shrink the requested symbol domain.
+        schema = graph_audit.decode(payloads['schema'], graph_audit.LOGICAL, check)
+        domain = validate_asset_coverage(self, {
+            'calendar':schema['calendarSessions'], 'scope':manifest['scope'],
+            'fields':schema['columns'], 'rowCount':table['rowCount'],
+        }, strategy, check)
         return {'sourceEvidenceClosed':True, 'sourceViewProjectionVerified':True, 'datasetRoot':sha(raw),
+                'sourceForecastDomainVerified':True, 'sourceCoverage':domain,
                 'datasetRootPinned':expected_dataset_root is not None, 'datasetChecks':check.count, 'datasetDetails':details,
                 'registryTrustStatus':'external_registry_bytes_matched' if registry_pins is not None else 'unverified',
                 'externalRegistryBytesMatched':registry_pins is not None, 'externalSourceBytesMatched':source_pins is not None}
@@ -358,11 +368,12 @@ def audit_financial_graph_bundle(path, *, source_dataset=None, registry_pins=Non
                 require(verifier.bundle_id == expected_bundle_id, 'Caller-pinned financial bundle id differs')
             result = verifier.run()
             source = {'sourceEvidenceClosed':False, 'registryTrustStatus':'unverified',
+                      'sourceForecastDomainVerified':False,
                       'datasetRootPinned':False, 'externalRegistryBytesMatched':False, 'externalSourceBytesMatched':False}
             if source_dataset is not None:
                 source = verifier.verify_dataset(source_dataset,registry_pins,source_pins,expected_dataset_root)
             return {**result, **source, 'status':'PASS' if source['sourceEvidenceClosed'] else 'INCOMPLETE_SOURCE',
-                'auditor':'atlas.financial_graph_bundle.stdlib_audit/1', 'bundleVersion':2, 'bundleIdPinned':expected_bundle_id is not None,
+                'auditor':'atlas.financial_graph_bundle.stdlib_audit/2', 'bundleVersion':2, 'bundleIdPinned':expected_bundle_id is not None,
                 'transportVerified':True, 'exactSnapshotTokensVerified':True, 'snapshotRows':verifier.numeric_table['rowCount'],
                 'logicalExpandedSnapshot':verifier.logical_snapshot, 'snapshotPhysicalBytes':verifier.manifest['documents']['snapshot']['byteLength'],
                 'recomposition':'not_performed', 'sourceResearchFingerprintRecomputed':False,
@@ -370,10 +381,12 @@ def audit_financial_graph_bundle(path, *, source_dataset=None, registry_pins=Non
                 'pdfAuthenticityVerified':False, 'providerAuthenticityVerified':False,
                 'modelAdmissionRegistered':False, 'modelFitted':False, 'providerCalls':0,
                 'modelFunctionsReevaluated':False, 'researchStatisticsRecomputed':False,
+                'inputValidityRecomputed':False,
                 'forecastNumericalIdentitiesVerified':True,
                 'limitations':[
                     'Result/source hashes and external pins must be independently authorized; self-consistent archives do not grant authority.',
-                    'Exact column snapshot, paired source closure and numerical forecast identities are checked; financial formulas and F are not recomputed.',
+                    'Exact column snapshot, paired source closure, complete source-derived asset/origin domain and numerical forecast identities are checked; financial formulas and F are not recomputed.',
+                    'Input-validity flags and feature values are not independently recomputed; missing observations never remove an expected origin.',
                     'No supplier, PDF, original publication/revision authenticity, model admission or hosted acceptance is established.',
                     'Research/provider pandas fingerprints are not rederived; complete frozen source rows, provenance and commitments are checked.',
                     'Full callable-F evaluation and research statistics validation remain separate checks; this audit preserves and hashes all supplied forecast/model/statistics collections.'
