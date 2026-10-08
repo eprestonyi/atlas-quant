@@ -46,6 +46,11 @@ const root = 'a'.repeat(64),
       selectedStateIds: [stateId],
     },
     researchAdmission: { profile: 'financial_snapshot_view_50_v1' },
+    researchAdmissions: [
+      { profile: 'financial_snapshot_view_50_v1', estimator: 'ridge', configurationEligible: true, runnerAvailable: true },
+      { profile: 'financial_fundamental_auto_50_v1', estimator: 'auto', configurationEligible: true, runnerAvailable: false, limits: { symbols: 50, factors: 16, calendarDays: 366, innerFolds: 2, outerFolds: 2, minRefitDays: 20 } },
+    ],
+    preferredResearchAdmission: null,
     researchBindingEnabled: true,
     archiveUrl:
       '/quant/api/datasets/' + datasetId + '/archive?datasetRoot=' + root,
@@ -55,6 +60,7 @@ let planFailures = 1,
   startFailures = 1,
   compositionOnline = false,
   lastPlan = null,
+  detailGate = null, savedExperiment = null,
   releaseInitial;
 const initialGate = new Promise((r) => (releaseInitial = r));
 w.fetch = async (url, opts = {}) => {
@@ -132,10 +138,10 @@ w.fetch = async (url, opts = {}) => {
       ],
       total: 1,
     };
-  else if (path.startsWith('/datasets/' + datasetId + '?')) value = detail;
+  else if (path.startsWith('/datasets/' + datasetId + '?')) { if (detailGate) await detailGate; value = detail; }
   else if (path === '/statistical-quant/experiments' && opts.method === 'POST')
     value = {
-      experiment: {
+      experiment: savedExperiment = {
         id: datasetId,
         version: 1,
         strategy: validateStatisticalQuant(data.strategy),
@@ -146,6 +152,7 @@ w.fetch = async (url, opts = {}) => {
         },
       },
     };
+  else if (path === '/statistical-quant/experiments/' + datasetId) value = { experiment: savedExperiment };
   else if (path.endsWith('/run'))
     value = { job: { id: datasetId, status: 'queued' } };
   return { ok: true, status: 200, text: async () => JSON.stringify(value) };
@@ -172,6 +179,7 @@ const code = await build({
 });
 w.eval(code.outputFiles[0].text);
 const q = w.qa;
+q.state.session = { workspace: { id: 'financial_owner_a' }, capabilities: { tushareHosted: true } };
 const tick = () => new Promise((r) => setTimeout(r, 35));
 async function route(hash) {
   w.location.hash = hash;
@@ -282,6 +290,12 @@ assert(w.document.querySelector('main').textContent.includes('2024-04-01'));
 assert(
   w.document.querySelector('a[download]').href.includes('archive?datasetRoot='),
 );
+assert(w.document.querySelector('[data-ds="bind"]').disabled,'a Ridge-capable runner does not silently substitute for auto');
+assert(!w.document.querySelector('[data-ds="bind-ridge"]').disabled,'Studio Ridge is an explicit separate action');
+assert(w.document.querySelector('main').textContent.includes('计算节点尚未就绪'));
+detail.researchAdmissions[1].runnerAvailable = true;
+detail.preferredResearchAdmission = detail.researchAdmissions[1];
+await q.workspace.datasets.routeChanged(true); await tick();
 click('bind');
 await tick();
 assert.equal(q.state.dataSource, 'ready_dataset');
@@ -313,7 +327,8 @@ assert.deepEqual(
   JSON.parse(JSON.stringify(q.state.datasetBinding.datasetRef)),
   ref,
 );
-assert.equal(q.state.strategy.model.estimator, 'ridge');
+assert.equal(q.state.strategy.model.estimator, 'auto');
+assert(w.location.hash.includes('/easy/state'));
 assert.equal(q.state.strategy.execution.enabled, false);
 await route('#quant/universe');
 assert(!w.document.querySelector('[data-sq-config="universe.start"]'));
@@ -330,10 +345,32 @@ assert(savedVersion, 'real server validator must accept the UI save payload');
 assert.equal(q.state.dirty, false);
 const saved = calls.find((x) => x.path === '/statistical-quant/experiments');
 assert.deepEqual(saved.data.datasetRef, ref);
-assert.equal(saved.data.admissionProfile, 'financial_snapshot_view_50_v1');
+assert.equal(saved.data.admissionProfile, 'financial_fundamental_auto_50_v1');
+assert.equal(lastPlan.profile, 'financial_snapshot_view_50_v1', 'composition protocol remains independent');
 assert.doesNotThrow(() => validateStatisticalQuant(saved.data.strategy));
 assert.equal(Object.hasOwn(saved.data.strategy.factors[0], 'name'), false);
 assert.equal(q.state.datasetBinding.stateDefinitions[0].name, '现金资产占比');
+// Old persisted Ridge versions remain Ridge and keep their original source/admission.
+savedExperiment.strategy.model.estimator = 'ridge';
+savedExperiment.datasetBinding.admissionProfile = 'financial_snapshot_view_50_v1';
+const openOld = w.document.createElement('button');openOld.dataset.sq='experiment-load';openOld.dataset.id=datasetId;w.document.body.append(openOld);openOld.click();await tick();
+await route('#quant/easy/model');
+assert.equal(q.state.strategy.model.estimator,'ridge');
+assert.equal(q.state.datasetBinding.admissionProfile,'financial_snapshot_view_50_v1');
+assert(w.document.querySelector('main').textContent.includes('当前已保存版本使用 Ridge'));
+// Binding refresh is owner- and draft-fenced; it cannot replace edits made in flight.
+await route('#quant/studio/datasets/dataset/' + datasetId + '?root=' + root);
+let releaseDetail; detailGate = new Promise(resolve=>{releaseDetail=resolve;});
+click('bind');await tick();const keptStrategy=JSON.stringify(q.state.strategy);
+q.state.session.workspace.id='financial_owner_b';releaseDetail();await tick();detailGate=null;
+assert.equal(JSON.stringify(q.state.strategy),keptStrategy);
+assert.equal(q.state.strategy.model.estimator,'ridge');
+assert(w.document.querySelector('main').textContent.includes('工作区已变化'));
+q.state.session.workspace.id='financial_owner_a';
+// Explicit Studio selection can create a new Ridge draft; default automatic entry remains distinct.
+click('bind-ridge');await tick();
+assert.equal(q.state.strategy.model.estimator,'ridge');assert(w.location.hash.includes('/studio/state'));
+assert.equal(q.state.datasetBinding.admissionProfile,'financial_snapshot_view_50_v1');
 q.workspace.datasets.dispose();
 q.workspace.financial.dispose();
 dom.window.close();
@@ -347,7 +384,7 @@ console.log(
     inputRetention: true,
     heartbeatRefreshRetainsPlanAndBothRequestIds: true,
     coverageObservedDates: true,
-    explicitForecastOnlyBinding: true,
+    explicitForecastOnlyBinding: true, automaticFinancialAdmission: true, noRidgeFallback: true, compositionSeparate: true, legacyRidgePreserved: true, freshBindingOwnerFence: true,
     realServerValidationOnBindAndSave: true,
     browserVisualAcceptance: false,
   }),

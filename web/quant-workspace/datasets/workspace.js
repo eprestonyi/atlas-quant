@@ -1,3 +1,4 @@
+import { financialAdmission } from '../financial/research-binding.js';
 /** Immutable source selection. Nothing is called ready before a server receipt. */
 export function createDatasetWorkspace(C, F, { onBind }) {
   const { api, esc: e, render, toast, state: app } = C,
@@ -144,11 +145,11 @@ export function createDatasetWorkspace(C, F, { onBind }) {
   }
   function detail() {
     if (!s.detail) return '<p role="status">正在读取冻结数据集…</p>';
-    const d = s.detail;
+    const d = s.detail, automatic = financialAdmission(d), ridge = financialAdmission(d, 'ridge');
     return (
       panel(
         d.name,
-        `<dl class="fin-summary"><dt>范围</dt><dd>${e(d.scope.symbols.join('、'))} · ${e(date(d.scope.start))}–${e(date(d.scope.end))}</dd><dt>完整行情行数</dt><dd>${e(d.summary.marketRows)}</dd><dt>可用股票×状态</dt><dd>${e(d.summary.availableStateCoverage)} / ${e(d.summary.stateCoverage)}</dd><dt>来源闭包</dt><dd>原行情快照、显式子范围、财务输入与准备、日历授权均保留</dd></dl>${note('覆盖可用不等于预测有效。原始发布版本与修订时点未核验；用户声明的单位仍是假设。')}<div class="sq-actions"><a class="sq-button" href="${e(d.archiveUrl)}" download>下载完整数据集闭包</a>${btn('bind', '创建仅预测的财务研究', { primary: true, disabled: s.busy || !d.researchBindingEnabled })}</div>${!d.researchBindingEnabled ? note('财务模型研究入口尚未开放；可以核对并下载来源和覆盖。') : note('将创建基本面 / Ridge / 单资产价格研究，固定当前范围并关闭交易执行。')}${advanced('不可变数据身份', `<code>${e(d.datasetRef.datasetRoot)}</code>`)}`,
+        `<dl class="fin-summary"><dt>范围</dt><dd>${e(d.scope.symbols.join('、'))} · ${e(date(d.scope.start))}–${e(date(d.scope.end))}</dd><dt>完整行情行数</dt><dd>${e(d.summary.marketRows)}</dd><dt>可用股票×状态</dt><dd>${e(d.summary.availableStateCoverage)} / ${e(d.summary.stateCoverage)}</dd><dt>来源闭包</dt><dd>原行情快照、显式子范围、财务输入与准备、日历授权均保留</dd></dl>${note('覆盖可用不等于预测有效。原始发布版本与修订时点未核验；用户声明的单位仍是假设。')}<div class="sq-actions"><a class="sq-button" href="${e(d.archiveUrl)}" download>下载完整数据集闭包</a>${btn('bind', '创建自动拟合因子研究', { primary: true, disabled: s.busy || !automatic.available })}</div>${automatic.available ? note('以已冻结范围创建基本面自动拟合研究。输入来自实际财务状态；不重新取数，不执行交易。') : note(automatic.reason || '自动拟合协议尚未就绪。', 'warning')}${advanced('Studio · 明确使用固定估计器', '<p>这是单独声明的 Ridge 研究入口。选择不会改变已有研究版本。</p>' + btn('bind-ridge', '在 Studio 创建 Ridge 研究', { disabled: s.busy || !ridge.available }) + (!ridge.available ? note(ridge.reason || 'Ridge 协议尚未就绪。') : ''))}${advanced('不可变数据身份', `<code>${e(d.datasetRef.datasetRoot)}</code>`)}`,
       ) +
       panel(
         '逐状态覆盖',
@@ -417,12 +418,18 @@ export function createDatasetWorkspace(C, F, { onBind }) {
           method: 'POST',
           body: '{}',
         });
-      else if (action === 'bind') {
-        await onBind(
-          s.detail,
-          s.detail.summary.selectedStateIds,
-          s.definitions,
-        );
+      else if (action === 'bind' || action === 'bind-ridge') {
+        const original = s.detail, routeAtStart = location.hash, draft = app.strategy,
+          fingerprint = JSON.stringify(app.strategy), source = app.dataSource,
+          workspaceId = app.session?.workspace?.id, estimator = action === 'bind-ridge' ? 'ridge' : 'auto';
+        if (!workspaceId) throw Error('等待私有工作区身份确认后再绑定财务数据。');
+        const fresh = await api(`/datasets/${encodeURIComponent(original.datasetRef.datasetId)}?datasetRoot=${encodeURIComponent(original.datasetRef.datasetRoot)}`);
+        if (location.hash !== routeAtStart || s.detail !== original || app.strategy !== draft || JSON.stringify(app.strategy) !== fingerprint || app.dataSource !== source || app.session?.workspace?.id !== workspaceId) throw Error('草稿、数据来源或工作区已变化，财务数据尚未绑定；当前修改保留。');
+        if (JSON.stringify(fresh.datasetRef) !== JSON.stringify(original.datasetRef) || JSON.stringify(fresh.scope) !== JSON.stringify(original.scope)) throw Error('返回的财务数据身份或冻结范围不一致。');
+        const selected = financialAdmission(fresh, estimator);
+        s.detail = fresh;
+        if (!selected.available) throw Error(selected.reason || '所选拟合协议不可用。');
+        await onBind(fresh, fresh.summary.selectedStateIds, s.definitions, { estimator });
       }
     } finally {
       s.busy = false;

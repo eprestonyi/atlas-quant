@@ -1,3 +1,4 @@
+import { financialAdmission, financialBindingErrors, FINANCIAL_AUTO } from './financial/research-binding.js';
 import { SOURCE_LABELS, scopeKey, activeBinding, bindingFields, restoreBindings, marketBindingErrors } from './research-data-binding.js';
 import { createMarketPreparation } from './market/preparation.js';
 import { createModuleHub } from './module-hub.js';
@@ -184,7 +185,9 @@ window.AtlasQuantV4 = {
     function boundNote() {
       return (
         note(
-          '本研究使用已冻结数据集。范围固定；模型为基本面 / Ridge / 单资产价格，交易执行关闭。',
+          s.datasetBinding.admissionProfile === FINANCIAL_AUTO
+            ? '本研究使用已冻结财务数据和完整范围，以基本面条件自动拟合未来状态；只生成预测，不执行交易。'
+            : '这是已声明的基本面 / Ridge / 单资产价格协议。冻结范围和原模型选择保持不变，交易执行关闭。',
         ) +
         `<a class="sq-button" href="#quant/studio/datasets/dataset/${e(s.datasetBinding.datasetRef.datasetId)}?root=${e(s.datasetBinding.datasetRef.datasetRoot)}">查看数据覆盖与完整来源</a>`
       );
@@ -197,14 +200,16 @@ window.AtlasQuantV4 = {
       ui.universeScope = { ref: clone(binding.universeScopeRef), key: scopeKey(s.strategy.universe), workspaceId: s.session?.workspace?.id };
       persistDraft();
     }
-    async function bindDataset(detail, stateIds, stateDefinitions = []) {
+    async function bindDataset(detail, stateIds, stateDefinitions = [], options = {}) {
+      const estimator = options.estimator || 'auto', available = financialAdmission(detail, estimator);
+      if (!available.available) throw Error(available.reason || '所选财务计算协议不可用。');
       if (!detail.researchBindingEnabled || !stateIds?.length)
         throw Error('该数据集目前不能创建模型研究。');
       const strategy = defaultStrategy();
       strategy.name = detail.name + ' · 财务预测';
       strategy.universe = clone(detail.scope);
       strategy.model.family = 'fundamental';
-      strategy.model.estimator = 'ridge';
+      strategy.model.estimator = estimator;
       strategy.target.kind = 'asset_price';
       strategy.execution.enabled = false;
       strategy.factors = stateIds.map((id) => ({
@@ -219,7 +224,8 @@ window.AtlasQuantV4 = {
       s.dataset = null;
       s.datasetBinding = {
         datasetRef: clone(detail.datasetRef),
-        admissionProfile: detail.researchAdmission.profile,
+        admissionProfile: available.admission.profile,
+        workspaceId: s.session?.workspace?.id || null,
         scope: clone(detail.scope),
         selectedStateIds: [...stateIds],
         stateDefinitions: clone(
@@ -233,7 +239,7 @@ window.AtlasQuantV4 = {
       s.strategyId = null;
       s.strategyVersion = null;
       persistDraft();
-      goto('state');
+      location.hash = route('state', estimator === 'ridge');
     }
     function universePage() {
       if (boundDataset())
@@ -304,7 +310,7 @@ window.AtlasQuantV4 = {
         return panel(
           '基本面条件预测 · 当前可用协议',
           boundNote() +
-            `${isStudio() ? `<div class="sq-form-grid">${input('训练窗口', 'model.trainWindow', { min: 120, max: 1260, unit: '交易日' })}${input('重新拟合间隔', 'model.refitDays', { min: 1, max: 126, unit: '交易日' })}</div>` : note('此类冻结财务数据目前仅开放 Ridge 协议；其他估计器尚未接通。')}`,
+            `${isStudio() ? `<div class="sq-form-grid">${input('训练窗口', 'model.trainWindow', { min: 120, max: 1260, unit: '交易日' })}${input('重新拟合间隔', 'model.refitDays', { min: 1, max: 126, unit: '交易日' })}</div>` : note(s.datasetBinding.admissionProfile === FINANCIAL_AUTO ? '系统在预先声明的八组候选中进行内层时间选择，外层及最终报告区间不参与挑选；不保证消除偏差或过拟合。' : '当前已保存版本使用 Ridge。继续读取保留原协议；新自动研究须从数据集入口明确创建。')}`,
         );
       return `${panel(
         '先声明模型机制',
@@ -721,7 +727,7 @@ window.AtlasQuantV4 = {
         return null;
       }
       prepareFactorProtocol();
-      const errors = [...validateStrategy(s.strategy), ...marketBindingErrors(s)];
+      const errors = [...validateStrategy(s.strategy), ...marketBindingErrors(s), ...financialBindingErrors(s)];
       if (errors.length) {
         ui.pageErrors = errors;
         render();
@@ -794,7 +800,7 @@ window.AtlasQuantV4 = {
     async function run() {
       if (s.submitting) return;
       prepareFactorProtocol();
-      const bindingErrors = marketBindingErrors(s, { run: true });
+      const bindingErrors = [...marketBindingErrors(s, { run: true }), ...financialBindingErrors(s)];
       if (bindingErrors.length) { ui.runError = bindingErrors.join('；'); goto('report'); render(); toast(ui.runError, true); return; }
       if (s.dataSource === 'ready_dataset' && !s.datasetBinding) {
         toast('请重新选择已冻结数据集。', true);

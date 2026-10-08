@@ -34,6 +34,7 @@ export function restoreBindings(s, item) {
   s.datasetBinding = item.datasetBinding ? structuredClone(item.datasetBinding) : null;
   s.marketDatasetBinding = item.marketDatasetBinding ? structuredClone(item.marketDatasetBinding) : null;
   if (s.datasetBinding) {
+    s.datasetBinding.workspaceId = s.session?.workspace?.id || null;
     s.datasetBinding.selectedStateIds = s.datasetBinding.selectedStateIds?.length ? s.datasetBinding.selectedStateIds : s.strategy.factors.map(f => f.id);
     s.dataSource = 'ready_dataset';
   } else if (s.marketDatasetBinding) {
