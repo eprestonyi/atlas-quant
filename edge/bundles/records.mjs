@@ -20,6 +20,14 @@ const date = (value, optional = false) => {
 const any = (value) =>
   Array.isArray(value) ? value.length > 0 : object(value) ? Object.keys(value).length > 0 : false;
 
+/** Shared identity validation for both snapshot index policies. */
+export function snapshotRecordKey(row) {
+  if (!object(row)) fail('记录须为对象');
+  const symbol = identifier(row.ts_code, '行情证券');
+  if (!/^\d{6}\.(?:SH|SZ)$/.test(symbol)) fail('冻结行情证券无效');
+  return date(row.trade_date) + '|' + symbol;
+}
+
 export function targetSummary(row) {
   return {
     id: row.id,
@@ -140,10 +148,8 @@ export async function recordIndex(collection, row, ordinal, chunkOrdinal, itemIn
     };
     status = identifier(row.status, '拟合状态', true);
   } else if (collection === 'snapshotRows') {
-    const symbol = identifier(row.ts_code, '行情证券');
-    if (!/^\d{6}\.(?:SH|SZ)$/.test(symbol)) fail('冻结行情证券无效');
-    day = date(row.trade_date);
-    rowId = day + '|' + symbol;
+    rowId = snapshotRecordKey(row);
+    day = row.trade_date;
   } else if (collection === 'trades') {
     day = date(row.date);
     referenceId = identifier(row.forecastId, '成交引用预测');

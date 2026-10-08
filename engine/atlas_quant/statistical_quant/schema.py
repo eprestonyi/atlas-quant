@@ -48,9 +48,17 @@ def section(parent, name, allowed, defaults=None):
     return raw
 
 
-def validate(strategy):
+def validate(strategy, *, capacity_profile=None):
     from ..factors import validate_expression
+    from ..financial_statements.admission import (
+        is_fundamental_field, is_registered_statement_state,
+    )
     from .metadata import text, normalize_universe, normalize_bindings
+    profile = None
+    if capacity_profile is not None:
+        from ..capacity.profiles import get_profile
+        profile = get_profile(capacity_profile)
+    symbol_limit = profile.max_symbols if profile is not None else 50
     if not isinstance(strategy, dict) or strategy.get("schemaVersion") != 2:
         fail("INVALID_STATISTICAL_QUANT", "预测研究需要 schemaVersion=2")
     allowed = {"schemaVersion", "name", "universe", "research", "factors", "preprocess", "target", "model", "validation", "execution", "portfolio", "costs", "dataBindings"}
@@ -64,8 +72,8 @@ def validate(strategy):
     if not isinstance(u, dict):
         fail("INVALID_STATISTICAL_QUANT", "需要股票池")
     symbols = u.get("symbols")
-    if not isinstance(symbols, list) or not 1 <= len(symbols) <= 50 or any(not isinstance(x, str) or not re.fullmatch(r"\d{6}\.(SH|SZ)", x) for x in symbols) or len(set(symbols)) != len(symbols):
-        fail("INVALID_STATISTICAL_QUANT", "需要1–50只唯一沪深A股")
+    if not isinstance(symbols, list) or not 1 <= len(symbols) <= symbol_limit or any(not isinstance(x, str) or not re.fullmatch(r"\d{6}\.(SH|SZ)", x) for x in symbols) or len(set(symbols)) != len(symbols):
+        fail("INVALID_STATISTICAL_QUANT", f"需要1–{symbol_limit}只唯一沪深A股")
     try:
         start, end = (datetime.strptime(u[k], "%Y%m%d") for k in ("start", "end"))
         if not all(isinstance(u[k], str) and re.fullmatch(r"\d{8}", u[k]) for k in ("start", "end")) or not 0 < (end-start).days <= 366*8:
@@ -96,6 +104,11 @@ def validate(strategy):
         if isinstance(f["direction"], bool) or f["direction"] not in (-1, 1) or f["role"] not in ("predictor", "hedge", "event"):
             fail("INVALID_STATISTICAL_QUANT", "因子方向或角色无效")
         fields[f["id"]] = validate_expression(f.get("expression"))["fields"]
+        if any(
+            x.startswith("model_fin_") and not is_registered_statement_state(x)
+            for x in fields[f["id"]]
+        ):
+            fail("UNREGISTERED_FINANCIAL_STATE", "财务状态须使用已注册的公式 ID")
         roles[f["id"]] = f["role"]
     pre = section(s, "preprocess", {"winsorize", "standardize", "decorrelation", "correlationThreshold"}, {"winsorize": True, "standardize": True, "decorrelation": "drop_correlated", "correlationThreshold": .9})
     if any(not isinstance(pre[k], bool) for k in ("winsorize", "standardize")) or pre["decorrelation"] not in ("none", "drop_correlated"):
@@ -141,8 +154,10 @@ def validate(strategy):
         model[key] = number(model[key], key, lo, hi, True)
     if model["family"] == "pair_reversion" and target.get("basket", {}).get("method") != "pair_ols":
         fail("INCOMPATIBLE_TARGET", "pair_reversion需要pair_ols冻结篮子")
-    fundamental = {"pb", "pe", "pe_ttm", "ps", "ps_ttm", "dv_ratio", "dv_ttm", "total_mv", "circ_mv"}
-    if model["family"] == "fundamental" and not any(roles[k] == "predictor" and any(x.startswith(("fd_", "pcd_")) or x in fundamental for x in v) for k, v in fields.items()):
+    if model["family"] == "fundamental" and not any(
+        roles[key] == "predictor" and any(is_fundamental_field(field) for field in selected)
+        for key, selected in fields.items()
+    ):
         fail("MISSING_MODEL_DATA", "财务条件模型需要已选实际基本面字段")
     if model["family"] == "event" and not any(roles[k] == "event" and any(x.startswith(("ext_", "pcd_", "fd_")) for x in v) for k, v in fields.items()):
         fail("MISSING_MODEL_DATA", "事件模型需要role:event的点时外部数值")
@@ -154,6 +169,11 @@ def validate(strategy):
     ex = section(s, "execution", {"enabled", "side", "shorting", "minEdgeBps", "maxPositions"}, {"enabled": True, "side": "long_short", "shorting": "theoretical", "minEdgeBps": 10, "maxPositions": 5})
     if not isinstance(ex["enabled"], bool) or ex["side"] not in ("long_only", "long_short") or ex["shorting"] != "theoretical":
         fail("INVALID_STATISTICAL_QUANT", "执行模式无效；空头仅限明确理论情景")
+    if ex["enabled"] and any(
+        field.startswith("model_fin_")
+        for selected in fields.values() for field in selected
+    ):
+        fail("FINANCIAL_FORECAST_ONLY_REQUIRED", "财务状态当前仅支持明确 execution.enabled=false 的预测研究。")
     ex["minEdgeBps"] = number(ex["minEdgeBps"], "minEdgeBps", 0, 10000)
     ex["maxPositions"] = number(ex["maxPositions"], "maxPositions", 1, 50, True)
     p = section(s, "portfolio", {"initialCapital", "grossExposure", "maxWeight", "rebalanceDays", "rebalanceThresholdBps", "netExposureLimit", "sizingMode", "targetAnnualVolatility", "volatilityLookback", "factorExposureLimits"}, {"initialCapital": 1e6, "grossExposure": 1, "maxWeight": .3, "rebalanceDays": 1, "rebalanceThresholdBps": 25, "netExposureLimit": 2., "sizingMode": "fixed", "targetAnnualVolatility": .1, "volatilityLookback": 60, "factorExposureLimits": []})
@@ -173,6 +193,8 @@ def validate(strategy):
     c = section(s, "costs", {"commissionBps", "slippageBps", "sellTaxBps", "transferBps", "minCommission", "borrowAnnualBps"}, {"commissionBps": 2.5, "slippageBps": 3, "sellTaxBps": 5, "transferBps": .1, "minCommission": 5, "borrowAnnualBps": 300})
     for key, hi in (("commissionBps", 100), ("slippageBps", 200), ("sellTaxBps", 100), ("transferBps", 100), ("minCommission", 1000), ("borrowAnnualBps", 10000)):
         c[key] = number(c[key], key, 0, hi)
+    if profile is not None:
+        profile.validate_strategy(s)
     return s
 
 

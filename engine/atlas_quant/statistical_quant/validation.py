@@ -26,19 +26,26 @@ def folds(dates, count, minimum, gap):
     return [(dates[:first+i*size], dates[first+i*size:first+(i+1)*size] if i<count-1 else dates[first+i*size:]) for i in range(count)]
 
 
-def _train(samples, spec, train_dates, cutoff, strategy):
+def _train(samples, spec, train_dates, cutoff, strategy, runtime=None):
     mask = mature_mask(samples, cutoff, train_dates, strategy["model"]["trainWindow"])
     actual_dates = sorted(samples.meta.loc[mask, "date"].unique())
     if len(actual_dates) < strategy["validation"]["minTrainDates"]:
         fail("INSUFFICIENT_FORECAST_DATA", "当前拟合截止前的已成熟训练观察日不足")
-    model = models.fit(spec, samples.X.loc[mask], samples.y.loc[mask], strategy["preprocess"])
+    if runtime is not None:
+        runtime.before_fit(spec, cutoff, int(mask.sum()))
+    try:
+        model = models.fit(spec, samples.X.loc[mask], samples.y.loc[mask], strategy["preprocess"])
+    finally:
+        if runtime is not None:
+            runtime.after_fit()
     audit = {"trainStart": actual_dates[0], "trainEnd": actual_dates[-1],
              "informationCutoff": cutoff, "labelEndMax": samples.meta.loc[mask, "targetDate"].max(),
              "trainDates": len(actual_dates), **model.audit}
     return model, audit
 
 
-def select(samples, specs, dates, strategy):
+def select(samples, specs, dates, strategy, runtime=None):
+    runtime_args = {} if runtime is None else {"runtime": runtime}
     schedule = folds(dates, strategy["validation"]["innerFolds"], strategy["validation"]["minTrainDates"], strategy["target"]["horizonSessions"]+1)
     trials = []
     for spec in specs:
@@ -47,7 +54,7 @@ def select(samples, specs, dates, strategy):
         reason = None
         for training, testing in schedule:
             try:
-                model, audit = _train(samples, spec, training, testing[0], strategy)
+                model, audit = _train(samples, spec, training, testing[0], strategy, **runtime_args)
                 valid = samples.meta.date.isin(testing) & samples.meta.inputValid & samples.y.notna().all(axis=1)
                 if not valid.any():
                     fail("INSUFFICIENT_FORECAST_DATA", "验证折没有可评分标签")
@@ -58,6 +65,8 @@ def select(samples, specs, dates, strategy):
                 scores.append(score)
                 audits.append({"testStart": testing[0], "testEnd": testing[-1], "score": score, **audit})
             except (ValueError, FloatingPointError) as exc:
+                if str(getattr(exc, "code", "")).startswith("CAPACITY_"):
+                    raise
                 reason = getattr(exc, "code", "MODEL_FIT_FAILED")
                 break
         trials.append({**spec, "score": float(np.mean(scores)) if reason is None else None,
@@ -106,7 +115,7 @@ def _records(samples, idx, prediction, fit_id, strategy):
     return records
 
 
-def forecast_origins(samples, strategy):
+def forecast_origins(samples, strategy, *, max_forecasts=None):
     """Pre-fit terminal origin plan, independent of predictions or model success."""
     dates = samples.dates
     eligible_calendar = dates[samples.start_index:]
@@ -115,15 +124,17 @@ def forecast_origins(samples, strategy):
         fail("INSUFFICIENT_FORECAST_DATA", "终端报告窗口不足")
     holdout = eligible_calendar[boundary]
     indices = samples.meta.index[samples.meta.date >= holdout]
-    if len(indices) > MAX_FORECASTS:
-        fail("FORECAST_BUDGET", "完整预测超过25000条；请降低观察频率或减少标的")
+    max_forecasts = MAX_FORECASTS if max_forecasts is None else max_forecasts
+    if len(indices) > max_forecasts:
+        fail("FORECAST_BUDGET", f"完整预测超过{max_forecasts}条；请降低观察频率或减少标的")
     return holdout, indices
 
 
-def forecast(samples, strategy):
+def forecast(samples, strategy, *, max_forecasts=None, runtime=None):
     from ..engine import ResearchError
+    runtime_args = {} if runtime is None else {"runtime": runtime}
     dates = samples.dates
-    holdout, indices = forecast_origins(samples, strategy)
+    holdout, indices = forecast_origins(samples, strategy, max_forecasts=max_forecasts)
     development = sorted(samples.meta.loc[mature_mask(samples, holdout), "date"].unique())
     specs = models.candidates(strategy["model"]["estimator"])
     gap = strategy["target"]["horizonSessions"]+1
@@ -133,20 +144,20 @@ def forecast(samples, strategy):
     for train_dates, test_dates in outer_schedule:
         # Inner selection receives only labels already mature at this outer cutoff.
         inner_dates = sorted(samples.meta.loc[mature_mask(samples, test_dates[0], train_dates), "date"].unique())
-        winner, trials = select(samples, specs, inner_dates, strategy)
-        fitted, audit = _train(samples, winner, inner_dates, test_dates[0], strategy)
+        winner, trials = select(samples, specs, inner_dates, strategy, **runtime_args)
+        fitted, audit = _train(samples, winner, inner_dates, test_dates[0], strategy, **runtime_args)
         test = samples.meta.date.isin(test_dates) & samples.meta.inputValid & samples.y.notna().all(axis=1)
         scores = models.metrics(fitted.predict(samples.X.loc[test]), samples.y.loc[test].to_numpy(), samples.meta.loc[test, "date"].to_numpy())
         outer.append({"testStart": test_dates[0], "testEnd": test_dates[-1], "selection": winner,
                       "trials": trials, "fit": audit, "metrics": scores})
-    winner, trials = select(samples, specs, development, strategy)
+    winner, trials = select(samples, specs, development, strategy, **runtime_args)
     records, fitted_models = [], []
     current_model, fit_id, last_fit = None, None, -100000
     for date, group in samples.meta.loc[indices].groupby("date", sort=True):
         t = dates.index(date)
         if current_model is None or t-last_fit >= strategy["model"]["refitDays"]:
             try:
-                current_model, audit = _train(samples, winner, None, date, strategy)
+                current_model, audit = _train(samples, winner, None, date, strategy, **runtime_args)
                 audit["status"] = "valid"
             except ResearchError as exc:
                 if exc.code not in {"MISSING_MODEL_DATA", "INSUFFICIENT_FORECAST_DATA", "MODEL_DID_NOT_CONVERGE", "INVALID_FORECAST"}:

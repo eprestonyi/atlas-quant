@@ -50,9 +50,19 @@ def run_statistical_quant(strategy, data, provenance=None, *, plan_sink=None):
     panel, dates, audit = _prepare_data(data, s, p)
     with threadpool_limits(limits=1):
         samples = build_samples(panel, dates, s)
+        return _research_from_samples(s, panel, dates, audit, p, samples, plan_sink=plan_sink)
+
+
+def _research_from_samples(s, panel, dates, audit, p, samples, *, plan_sink=None, max_forecasts=None, runtime=None):
+    """Shared pooled validation; alternate storage never substitutes local models."""
+    from ..engine import _finite_json
+    limits = {} if max_forecasts is None else {"max_forecasts": max_forecasts}
+    if runtime is not None:
+        limits["runtime"] = runtime
+    with threadpool_limits(limits=1):
         if plan_sink is not None:
             from .validation import forecast_origins
-            holdout, origins = forecast_origins(samples, s)
+            holdout, origins = forecast_origins(samples, s, max_forecasts=max_forecasts)
             plan_sink({"schemaVersion": 1, "source": "samples_before_model_fitting",
                 "baselineRequired": any(name.startswith("factor:") for name in samples.X),
                 "holdoutStart": holdout,
@@ -64,7 +74,7 @@ def run_statistical_quant(strategy, data, provenance=None, *, plan_sink=None):
             valid_dates = samples.meta.loc[samples.meta.inputValid, "date"].nunique()
             if valid_dates < s["validation"]["minTrainDates"]+40:
                 fail("MISSING_MODEL_DATA", "条件模型缺少足够实际可观测输入日期用于嵌套验证")
-        rows, fits, diagnostics = forecast(samples, s)
+        rows, fits, diagnostics = forecast(samples, s, **limits)
         diagnostics["inputCoverage"] = {"totalOrigins": len(samples.meta),
             "validInputOrigins": int(samples.meta.inputValid.sum()),
             "invalidReasons": {str(k): int(v) for k, v in samples.meta.invalidReason.dropna().value_counts().items()},
@@ -74,7 +84,7 @@ def run_statistical_quant(strategy, data, provenance=None, *, plan_sink=None):
             # Hold q, labels, coverage mask, maturity and candidate budget fixed.
             # Re-select/re-fit the state-only baseline in its own train folds.
             baseline_samples = replace(samples, X=samples.X.drop(columns=factor_columns))
-            baseline_rows, baseline_fits, baseline_diagnostics = forecast(baseline_samples, s)
+            baseline_rows, baseline_fits, baseline_diagnostics = forecast(baseline_samples, s, **limits)
             from .comparison import compare_factor_increment
             diagnostics["factorIncrement"] = compare_factor_increment(
                 rows, baseline_rows, factor_columns, baseline_fits, baseline_diagnostics)
@@ -98,6 +108,26 @@ def execute_forecasts(strategy, data, artifact, provenance=None):
     """
     from ..engine import _prepare_data
     s = validate(strategy)
+    from ..factors import validate_expression
+    financial_factors = any(
+        field.startswith("model_fin_")
+        for factor in s["factors"]
+        for field in validate_expression(factor["expression"])["fields"]
+    )
+    financial_rows = any(
+        str(column).startswith("model_fin_")
+        for column in getattr(data, "columns", ())
+    )
+    financial_roots = isinstance(provenance, dict) and any(
+        key in provenance for key in (
+            "financialInputs", "financialDatasetRoot", "financialCompositionVersion",
+        )
+    )
+    if financial_factors or financial_rows or financial_roots:
+        fail(
+            "FINANCIAL_REPLAY_NOT_AVAILABLE",
+            "财务预测的执行重放尚未接入完整输入证据闭包；进程内来源登记不能替代归档复现。",
+        )
     if not isinstance(artifact, dict) or artifact.get("schemaVersion") != 1 or artifact.get("truncated") is not False:
         fail("FORECAST_ARTIFACT_MISMATCH", "需要完整版本化预测产物")
     a = copy.deepcopy(artifact)
