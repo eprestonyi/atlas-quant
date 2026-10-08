@@ -16,7 +16,8 @@ export const experimentView = (row) => ({
   id: row.id,
   name: row.name,
   version: row.version,
-  strategy: validateStoredStatisticalQuant(parse(row.spec)),
+  // Stored views are not admission: large drafts still require an owner-bound scope.
+  strategy: validateStoredStatisticalQuant(parse(row.spec), {scopeSymbolLimit:10000}),
   parentId: row.parent_id,
   archived: !!row.archived,
   createdAt: row.created_at,

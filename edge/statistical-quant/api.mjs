@@ -1,3 +1,4 @@
+import {readScope,bindWholeScope,experimentScope,experimentScopeStatement} from '../market-preparation/scope.mjs';
 import {admitDatasetResearch,experimentDatasetBinding,experimentBindingStatement} from '../datasets/research.mjs';
 import { ownedForecastStage, streamDocumentResponse } from '../bundles/user-api.mjs';
 import { ownedStageForRun, parsedStage } from '../bundles/storage.mjs';
@@ -40,7 +41,14 @@ const pagination = (req) => {
   return { page, pageSize, offset: (page - 1) * pageSize };
 };
 
-export async function createExperiment(env, owner, strategy, parentId = null, binding = null) {
+async function scopeStrategy(env, owner, strategy, ref, stored = false) {
+  if (!ref) return stored ? validateStoredStatisticalQuant(strategy) : validateStatisticalQuant(strategy);
+  const frozen = await readScope(env, owner, ref);
+  return validateStatisticalQuant(bindWholeScope(strategy, frozen.scope), {scopeSymbolLimit:10000});
+}
+
+export async function createExperiment(env, owner, strategy, parentId = null, binding = null, universeScopeRef = null) {
+  strategy = await scopeStrategy(env, owner, strategy, universeScopeRef);
   const count = await env.DB.prepare(
     'SELECT count(*) n FROM quant_experiments WHERE owner=? AND archived=0'
   )
@@ -58,9 +66,10 @@ export async function createExperiment(env, owner, strategy, parentId = null, bi
     env.DB.prepare(
       'INSERT INTO quant_experiment_versions(experiment_id,version,spec,created_at) VALUES(?,1,?,?)'
     ).bind(id, spec, time),
-    ...(admission?[experimentBindingStatement(env,owner,id,1,admission,time)]:[])
+    ...(admission?[experimentBindingStatement(env,owner,id,1,admission,time)]:[]),
+    ...(universeScopeRef?[experimentScopeStatement(env,owner,id,1,universeScopeRef,spec,time)]:[])
   ]);
-  return {...experimentView(await ownedExperiment(env, owner, id)),datasetBinding:await experimentDatasetBinding(env,owner,id,1)};
+  return {...experimentView(await ownedExperiment(env, owner, id)),datasetBinding:await experimentDatasetBinding(env,owner,id,1),universeScopeRef:await experimentScope(env,owner,id,1)};
 }
 
 async function experimentDetail(env, owner, id) {
@@ -83,7 +92,7 @@ async function experimentDetail(env, owner, id) {
       .all()
   ]);
   return {
-    experiment: {...experimentView(row),datasetBinding:await experimentDatasetBinding(env,owner,id,row.version)},
+    experiment: {...experimentView(row),datasetBinding:await experimentDatasetBinding(env,owner,id,row.version),universeScopeRef:await experimentScope(env,owner,id,row.version)},
     runs: runs.results.map((r) => ({
       ...jobItem(r),
       jobKind: r.kind,
@@ -240,7 +249,7 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
           .bind(owner)
           .first();
       const rows = await env.DB.prepare(
-        `SELECT e.*,
+        `SELECT e.*, (SELECT json_object('scopeId',s.scope_id,'scopeRoot',s.scope_root,'format','atlas.quant.universe_scope','version',1) FROM quant_experiment_scopes s WHERE s.experiment_id=e.id AND s.version=e.version AND s.owner=e.owner) AS universe_scope_ref,
           (SELECT json_object(
             'id',j.id,'status',j.status,'jobKind',q.kind,
             'experimentVersion',q.experiment_version,
@@ -256,7 +265,7 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
       return json({
         items: rows.results.map((row) => ({
           ...experimentView(row),
-          latestRun: parse(row.latest_run)
+          latestRun: parse(row.latest_run), universeScopeRef:parse(row.universe_scope_ref)
         })),
         total: count.n,
         page: p.page,
@@ -265,11 +274,11 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
     }
     if (!id && req.method === 'POST') {
       const input = await body(req, 200000);
-      keys(input, ['strategy', 'datasetRef', 'admissionProfile'], '研究请求');
+      keys(input, ['strategy', 'datasetRef', 'admissionProfile', 'universeScopeRef'], '研究请求');
       if((input.datasetRef===undefined)!==(input.admissionProfile===undefined))throw new ApiError('DATASET_RUN_BINDING','来源引用与研究口径须一起保存');
       return json(
         {
-          experiment: await createExperiment(env, owner, validateStatisticalQuant(input.strategy),null,input.datasetRef?input:null)
+          experiment: await createExperiment(env, owner, input.strategy,null,input.datasetRef?input:null,input.universeScopeRef??null)
         },
         201
       );
@@ -278,17 +287,20 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
     const row = await ownedExperiment(env, owner, id);
     if (action === 'run' && req.method === 'POST') {
       const input = await body(req, 26 * 1024 * 1024);
-      keys(input, ['version', 'dataSource', 'dataset', 'datasetRef', 'admissionProfile'], '运行请求');
+      keys(input, ['version', 'dataSource', 'dataset', 'datasetRef', 'admissionProfile', 'universeScopeRef'], '运行请求');
       if (input.version !== row.version)
         throw new ApiError('REVISION_CONFLICT', '研究已修改，请重新加载后运行', 409);
       if (row.archived) throw new ApiError('ARCHIVED_RESEARCH', '已归档研究需复制后运行', 409);
+      const savedScope=await experimentScope(env,owner,id,row.version);
+      if(input.universeScopeRef!==undefined && !same(input.universeScopeRef,savedScope))throw new ApiError('UNIVERSE_RUN_BINDING','运行范围必须与保存版本的完整股票池一致',409);
       const savedBinding=await experimentDatasetBinding(env,owner,id,row.version);
       if(savedBinding&&(input.dataSource!=='ready_dataset'||!sameDatasetRef(savedBinding.datasetRef,input.datasetRef)||savedBinding.admissionProfile!==input.admissionProfile))throw new ApiError('DATASET_RUN_BINDING','运行来源必须与该保存版本的数据集绑定一致',409);
       const job = await enqueue(
         env,
         owner,
         {
-          strategy: validateStoredStatisticalQuant(parse(row.spec)),
+          strategy: await scopeStrategy(env,owner,parse(row.spec),savedScope,true),
+          ...(savedScope?{universeScopeRef:savedScope}:{}),
           dataSource: input.dataSource,
           ...(input.dataset === undefined ? {} : { dataset: input.dataset }),
           ...(input.datasetRef === undefined ? {} : { datasetRef: input.datasetRef }),
@@ -302,11 +314,12 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
     if (action === 'copy' && req.method === 'POST') {
       const input = await body(req, 1000);
       keys(input, ['name'], '复制请求');
-      const strategy = validateStoredStatisticalQuant(parse(row.spec));
+      const copiedScope=await experimentScope(env,owner,id,row.version);
+      const strategy = await scopeStrategy(env,owner,parse(row.spec),copiedScope,true);
       strategy.name = input.name ?? strategy.name.slice(0, 70) + ' · 副本';
       return json(
         {
-          experiment: await createExperiment(env, owner, validateStatisticalQuant(strategy), id, await experimentDatasetBinding(env,owner,id,row.version))
+          experiment: await createExperiment(env, owner, strategy, id, await experimentDatasetBinding(env,owner,id,row.version),copiedScope)
         },
         201
       );
@@ -318,9 +331,10 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
     if (!action && req.method === 'GET') return json(await experimentDetail(env, owner, id));
     if (!action && req.method === 'PUT') {
       const input = await body(req, 200000);
-      keys(input, ['strategy', 'version', 'datasetRef', 'admissionProfile'], '保存请求');
+      keys(input, ['strategy', 'version', 'datasetRef', 'admissionProfile', 'universeScopeRef'], '保存请求');
       if((input.datasetRef===undefined)!==(input.admissionProfile===undefined))throw new ApiError('DATASET_RUN_BINDING','来源引用与研究口径须一起保存');
-      const s = validateStatisticalQuant(input.strategy),
+      const savedScope=input.universeScopeRef??await experimentScope(env,owner,id,row.version);
+      const s = await scopeStrategy(env,owner,input.strategy,savedScope),
         time = NOW(),
         spec = JSON.stringify(s);
       if (input.version !== row.version)
@@ -336,11 +350,12 @@ export async function statisticalQuantPrivate(req, env, path, owner, { enqueue }
         env.DB.prepare(
           'INSERT INTO quant_experiment_versions(experiment_id,version,spec,created_at) SELECT id,version,spec,updated_at FROM quant_experiments WHERE id=? AND owner=? AND changes()=1'
         ).bind(id, owner),
-        ...(admission?[experimentBindingStatement(env,owner,id,input.version+1,admission,time)]:[])
+        ...(admission?[experimentBindingStatement(env,owner,id,input.version+1,admission,time)]:[]),
+        ...(savedScope?[experimentScopeStatement(env,owner,id,input.version+1,savedScope,spec,time)]:[])
       ]);
       const updated = operations[0].results[0];
       if (!updated) throw new ApiError('REVISION_CONFLICT', '研究版本冲突', 409);
-      return json({ experiment: {...experimentView(updated),datasetBinding:await experimentDatasetBinding(env,owner,id,updated.version)} });
+      return json({ experiment: {...experimentView(updated),datasetBinding:await experimentDatasetBinding(env,owner,id,updated.version),universeScopeRef:await experimentScope(env,owner,id,updated.version)} });
     }
     if (!action && req.method === 'DELETE') {
       await env.DB.prepare(
