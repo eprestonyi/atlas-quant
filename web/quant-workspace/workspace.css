@@ -2273,3 +2273,36 @@
   overflow-wrap: anywhere;
 }
 .mfe-scope [role="status"] { display: block; margin-top: 6px; }
+
+/* The guided workbench keeps the active task in one canvas. */
+.sq-focused-layout { grid-template-columns: minmax(0, 1fr); }
+.sq-research-entry { text-decoration: none; }
+.sq-family-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 0; }
+.sq-family { min-height: 118px; padding: 18px; }
+.sq-family > small { font-size: 10px; color: #b69c7d; }
+.sq-family strong { margin-bottom: 0; }
+.sq-basket-heading, .sq-data-binding { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 0 12px; }
+.sq-window-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.sq-field output { display: block; min-height: 42px; padding: 12px; border: 1px solid var(--sq-line); border-radius: 5px; color: #bacdc9; font: 12px var(--sq-mono); }
+.sq-factor-workbench { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, 1fr); gap: 22px; align-items: start; }
+.sq-factor-source { min-width: 0; }
+.sq-factor-workbench .sq-selected-factors { position: sticky; top: 24px; margin: 0; min-height: 230px; padding: 18px; }
+.sq-factor-workbench .sq-selected-factor { flex-wrap: wrap; }
+.sq-factor-workbench .sq-selected-factor > div { flex-basis: 140px; }
+.sq-factor-workbench .sq-selected-factor label { width: auto; flex: 1 0 112px; min-width: 112px; }
+.sq-factor-workbench .sq-selected-factor .sq-button { margin-left: auto; }
+.sq-factor-workbench .sq-tabs { margin-top: 0; }
+.sq-model-placeholder { display: flex; align-items: center; gap: 22px; padding: 28px 0; }
+.sq-model-placeholder > span { font: 34px Georgia, serif; color: #d5e9d9; }
+.sq-model-placeholder > strong { font-size: 12px; color: #89a198; font-weight: 400; }
+@media (max-width: 1150px) {
+  .sq-family-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sq-factor-workbench { grid-template-columns: minmax(0, 1fr); }
+  .sq-factor-workbench .sq-selected-factors { position: static; grid-row: 1; }
+}
+@media (max-width: 700px) {
+  .sq-family-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sq-family { min-height: 96px; padding: 14px; }
+  .sq-window-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .sq-factor-workbench { gap: 18px; }
+}

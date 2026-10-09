@@ -1,5 +1,12 @@
 # v0.9 candidate release plan
 
+Historical plan: v0.9 was subsequently accepted as Worker
+`0.9.0-dde714d6b128`, source `d969f250540963ac7c22acdd439127d3e9e01ab1`,
+and six installed Python 0.9.0 services. The release is available as GitHub tag
+`v0.9.0`; new dataset/graph/market admission gates remain closed. The following
+text records the original plan, not current deployment status. The next candidate
+is [v0.9.1](RELEASE_V091_PLAN.md); do not replay v0.9 release tools.
+
 Status: **not deployed**. This is the release plan for the factor-first rebuild,
 not a production acceptance record. The last accepted production release is
 [v0.8](RELEASE_V08.md). All new production dataset, market-research and capacity

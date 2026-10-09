@@ -1,5 +1,6 @@
 """Purged nested selection and sequential out-of-sample, immutable forecasts."""
 from __future__ import annotations
+from bisect import bisect_left
 import numpy as np
 import pandas as pd
 from . import models
@@ -185,7 +186,10 @@ def forecast_origins(samples, strategy, *, max_forecasts=None):
     """Pre-fit terminal origin plan, independent of predictions or model success."""
     dates = samples.dates
     eligible_calendar = dates[samples.start_index:]
-    boundary = int(len(eligible_calendar)*(1-strategy["validation"]["holdoutFraction"]))
+    validation = strategy["validation"]
+    boundary = (bisect_left(eligible_calendar, validation["testStart"])
+                if "testStart" in validation
+                else int(len(eligible_calendar)*(1-validation["holdoutFraction"])))
     if boundary < 1 or len(eligible_calendar)-boundary < 10:
         fail("INSUFFICIENT_FORECAST_DATA", "终端报告窗口不足")
     holdout = eligible_calendar[boundary]

@@ -410,9 +410,8 @@ assert(
   )
 );
 assert(document.querySelector('main').textContent.includes('同时保留'));
-await click('[data-sq="forecast-tab"][data-id="execution"]');
+assert(!document.querySelector('[data-sq="forecast-tab"][data-id="execution"]'), 'factor-only reports omit the execution page');
 assert(!document.querySelector('[data-sq="forecast-execute"]'));
-assert(document.querySelector('main').textContent.includes('交易执行与执行重放尚未开放'));
 await click('[data-sq="forecast-tab"][data-id="provenance"]');
 assert(document.querySelector('a[href^="#quant/studio/datasets/dataset/"]'));
 // Graph results use the new exact codec tuple and the same bounded report/editor controls.
@@ -484,7 +483,7 @@ assert(marketAttachments.some(x=>x.textContent==='下载市场预测结果包'))
 assert(marketAttachments.some(x=>x.textContent==='下载完整行情来源包'&&x.getAttribute('href')===`/quant/api/market-datasets/${marketRef.datasetId}/download?datasetRoot=${marketRef.datasetRoot}`));
 assert(!marketAttachments.some(x=>x.href.includes('datasetRoot='+'d'.repeat(64))),'draft reference never substitutes for the report source');
 assert(document.querySelector('main').textContent.includes('同时保留市场预测结果包与完整行情来源包'));
-await click('[data-sq="forecast-tab"][data-id="execution"]');assert(document.querySelector('main').textContent.includes('仅预测的市场研究'));
+assert(!document.querySelector('[data-sq="forecast-tab"][data-id="execution"]'), 'market factor reports omit execution');
 await click('[data-sq="forecast-tab"][data-id="provenance"]');assert(document.querySelector('main').textContent.includes('本报告保存的行情来源身份'));
 assert.equal(JSON.stringify(activeReport),marketBefore);
 activeReport={...activeReport,provenance:{...activeReport.provenance,marketSource:{...marketSource,marketDatasetRef:{...marketRef,datasetRoot:'invalid'}}}};C.render();

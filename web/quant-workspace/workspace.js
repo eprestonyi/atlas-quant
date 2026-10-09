@@ -2,7 +2,7 @@ import { financialProfile, datasetLocation } from './datasets/protocol.js';
 import { financialAdmission, financialBindingErrors } from './financial/research-binding.js';
 import { SOURCE_LABELS, scopeKey, activeBinding, bindingFields, restoreBindings, marketBindingErrors } from './research-data-binding.js';
 import { createMarketPreparation } from './market/preparation.js';
-import { mechanismAdmission, admissionLabel } from './mechanism-admission.js';
+import { mechanismAdmission } from './mechanism-admission.js';
 import { createModuleHub } from './module-hub.js';
 import { createDatasetWorkspace } from './datasets/workspace.js';
 // Statistical research routes and private-workspace orchestration; numerical work stays in the engine.
@@ -122,7 +122,7 @@ window.AtlasQuantV4 = {
           ? s.quantStep
           : 'universe';
     const route = (id = step(), studio = isStudio()) =>
-      'quant/' + (studio ? 'studio/' : 'easy/') + ({ target: 'settings', risk: 'strategies', execution: 'instruments' }[id] || id);
+      'quant/' + (studio ? 'studio/' : 'easy/') + ({ target: 'model', validation: 'report', risk: 'strategies', execution: 'instruments' }[id] || id);
     const hub = createModuleHub(C, F, { heading, route });
     const goto = (id) => {
       location.hash = route(id);
@@ -135,22 +135,24 @@ window.AtlasQuantV4 = {
     const sourceLabel = () => SOURCE_LABELS[s.dataSource] || '待选择';
 
     function sidebar() {
-      const current = step();
-      return `<aside class="sq-sidebar"><a href="#dashboard" class="sq-brand"><span class="atlas-mark">A</span><span>atlas <b>quant</b><small>OPEN QUANTITATIVE RESEARCH</small></span></a><a class="sq-workspace-label" href="#${route('statistical')}">统计量化交易<span>STATISTICAL QUANT</span></a><nav aria-label="工作区"><a href="#quant/modes" class="sq-nav ${s.view === 'dashboard' || s.quantStep === 'modes' ? 'active' : ''}">${i('grid')}选择模式</a><a href="#${route('statistical')}" class="sq-nav ${s.quantStep === 'statistical' ? 'active' : ''}">${i('workflow')}统计量化模块</a><a href="#quant/researches" class="sq-nav ${s.quantStep === 'researches' ? 'active' : ''}">${i('save')}我的研究<span>${ui.experimentsLoaded ? ui.experimentTotal || '' : ''}</span></a></nav><div class="sq-nav-caption">因子研究 <span>01 — 06</span></div><nav aria-label="统计量化研究步骤">${STEPS.map((x, n) => `<a class="sq-step ${s.view === 'quant' && s.quantStep === x.id ? 'active' : ''}" href="#${route(x.id)}" ${s.view === 'quant' && s.quantStep === x.id ? 'aria-current="step"' : ''}><b>${String(n + 1).padStart(2, '0')}</b><span>${x.name}</span>${i(x.icon)}</a>`).join('')}</nav><div class="sq-nav-caption">研究工具</div><nav><a href="#quant/studio/datasets/source" class="sq-nav ${s.quantStep === 'datasets' ? 'active' : ''}">${i('database')}行情与财务数据集</a><a href="#quant/studio/financial" class="sq-nav ${s.quantStep === 'financial' ? 'active' : ''}">${i('database')}财务输入与状态</a><a href="#quant/studio/code" class="sq-nav ${s.quantStep === 'code' ? 'active' : ''}">${i('code')}代码与 AI 审阅</a><a href="#quant/community" class="sq-nav ${s.quantStep === 'community' ? 'active' : ''}">${i('users')}因子社区</a><a href="#quant/recipes" class="sq-nav">${i('layers')}模块配方目录</a><a href="#quant/compare" class="sq-nav">${i('chart')}研究比较</a><a href="#quant/history" class="sq-nav ${s.quantStep === 'history' ? 'active' : ''}">${i('clock')}历史版本研究</a></nav><div class="sq-sidebar-bottom"><span><i class="dot ${s.session?.runner?.online ? 'online' : ''}"></i>${s.session?.runner?.online ? '计算节点在线' : '计算节点状态待确认'}</span><a href="https://github.com/eprestonyi/atlas-quant" target="_blank" rel="noopener noreferrer">${i('code')} GitHub 开源代码</a><a href="/cn/terminal">${i('external')} Atlas Terminal</a></div></aside>`;
+      const factorWorkspace = s.view === 'runs' || (s.view === 'quant' && !['modes', 'statistical', 'strategies', 'instruments', 'monitor'].includes(s.quantStep));
+      return `<aside class="sq-sidebar"><a href="#dashboard" class="sq-brand"><span class="atlas-mark">A</span><span>atlas <b>quant</b><small>OPEN QUANTITATIVE RESEARCH</small></span></a><a class="sq-workspace-label" href="#${route('statistical')}">统计量化交易<span>STATISTICAL QUANT</span></a><nav aria-label="工作区"><a href="#${route('statistical')}" class="sq-nav ${s.view === 'dashboard' || s.quantStep === 'statistical' ? 'active' : ''}">${i('workflow')}统计量化交易</a><a href="#quant/researches" class="sq-nav ${s.quantStep === 'researches' ? 'active' : ''}">${i('save')}我的研究<span>${ui.experimentsLoaded ? ui.experimentTotal || '' : ''}</span></a></nav><a class="sq-nav-caption sq-research-entry" href="#quant/modes">因子研究 <span>01 — 05</span></a>${factorWorkspace ? `<nav aria-label="统计量化研究步骤">${STEPS.map((x, n) => `<a class="sq-step ${s.view === 'quant' && s.quantStep === x.id ? 'active' : ''}" href="#${route(x.id)}" ${s.view === 'quant' && s.quantStep === x.id ? 'aria-current="step"' : ''}><b>${String(n + 1).padStart(2, '0')}</b><span>${x.name}</span>${i(x.icon)}</a>`).join('')}</nav><div class="sq-nav-caption">研究工具</div><nav><a href="#quant/studio/datasets/source" class="sq-nav ${s.quantStep === 'datasets' ? 'active' : ''}">${i('database')}行情与财务数据集</a><a href="#quant/studio/financial" class="sq-nav ${s.quantStep === 'financial' ? 'active' : ''}">${i('database')}财务输入与状态</a><a href="#quant/studio/code" class="sq-nav ${s.quantStep === 'code' ? 'active' : ''}">${i('code')}代码与 AI 审阅</a><a href="#quant/community" class="sq-nav ${s.quantStep === 'community' ? 'active' : ''}">${i('users')}因子社区</a><a href="#quant/recipes" class="sq-nav">${i('layers')}模块配方目录</a><a href="#quant/compare" class="sq-nav">${i('chart')}研究比较</a><a href="#quant/history" class="sq-nav ${s.quantStep === 'history' ? 'active' : ''}">${i('clock')}历史版本研究</a></nav>` : ''}<div class="sq-sidebar-bottom"><span><i class="dot ${s.session?.runner?.online ? 'online' : ''}"></i>${s.session?.runner?.online ? '计算节点在线' : '计算节点状态待确认'}</span><a href="https://github.com/eprestonyi/atlas-quant" target="_blank" rel="noopener noreferrer">${i('code')} GitHub 开源代码</a><a href="/cn/terminal">${i('external')} Atlas Terminal</a></div></aside>`;
     }
     function topbar() {
-      return `<header class="sq-topbar"><a href="#dashboard" class="sq-mobile-brand">atlas <b>quant</b></a><div class="sq-breadcrumb">STATISTICAL QUANT <span>/</span> <strong>${e(s.view === 'dashboard' ? '选择模式' : STEPS.find((x) => x.id === s.quantStep)?.name || { modes: '选择模式', statistical: '统计量化交易', strategies: '策略研究', instruments: '执行仪器', monitor: 'E 检测仪', researches: '我的研究', code: '代码与 AI', financial: '财务输入与状态', datasets: '行情与财务数据集', history: '历史版本', community: '因子社区', compare: '研究比较' }[s.quantStep] || '报告')}</strong></div><div class="sq-topbar-actions"><span class="sq-version">FORECAST FIRST</span><a class="sq-source-link" href="https://github.com/eprestonyi/atlas-quant" target="_blank" rel="noopener noreferrer" aria-label="查看 Atlas Quant GitHub 开源代码">${i('code')}<span>源码</span></a><a class="sq-window-link" href="#quant/modes" target="_blank" rel="noopener" title="在独立窗口中打开统计量化工作区" aria-label="独立打开统计量化工作区">${i('external')}</a><a class="sq-mode-switch" href="#${route(s.view === 'runs' || STEPS.some(x => x.id === s.quantStep) ? step() : 'statistical', !isStudio())}">${i(isStudio() ? 'workflow' : 'code')}${isStudio() ? '轻松模式' : 'Quant Studio'}</a></div></header>`;
+      const title = s.view === 'dashboard' ? '统计量化交易' : STEPS.find((x) => x.id === s.quantStep)?.name || { modes: '选择模式', statistical: '统计量化交易', strategies: '策略研究', instruments: '执行仪器', monitor: 'E 检测仪', researches: '我的研究', code: '代码与 AI', financial: '财务输入与状态', datasets: '行情与财务数据集', history: '历史版本', community: '因子社区', compare: '研究比较' }[s.quantStep] || '报告';
+      const research = s.view === 'runs' || s.quantStep === 'modes' || STEPS.some(x => x.id === s.quantStep);
+      return `<header class="sq-topbar"><a href="#dashboard" class="sq-mobile-brand">atlas <b>quant</b></a><div class="sq-breadcrumb"><a href="#quant/statistical">统计量化交易</a>${research ? '<span>/</span><a href="#quant/modes">因子研究</a>' : ''}${title !== '统计量化交易' ? `<span>/</span><strong>${e(title)}</strong>` : ''}</div><div class="sq-topbar-actions"><a class="sq-source-link" href="https://github.com/eprestonyi/atlas-quant" target="_blank" rel="noopener noreferrer" aria-label="查看 Atlas Quant GitHub 开源代码">${i('code')}<span>源码</span></a><a class="sq-window-link" href="#quant/statistical" target="_blank" rel="noopener" title="在独立窗口中打开统计量化工作区" aria-label="独立打开统计量化工作区">${i('external')}</a></div></header>`;
     }
     function heading(kicker, title, description, actions = '') {
-      return `<div class="sq-page-heading"><div><span class="sq-kicker">${e(kicker)}</span><h1>${e(title)}</h1><p>${e(description)}</p></div>${actions ? `<div class="sq-actions">${actions}</div>` : ''}</div>`;
+      return `<div class="sq-page-heading"><div><span class="sq-kicker">${e(kicker)}</span><h1>${e(title)}</h1>${description ? `<p>${e(description)}</p>` : ''}</div>${actions ? `<div class="sq-actions">${actions}</div>` : ''}</div>`;
     }
     function researchName() {
       return `<div class="sq-research-name"><label><span>当前研究</span><input id="sq-research-name" maxlength="80" value="${e(s.strategy.name)}" aria-label="研究名称"></label><span>${ui.activeId ? `版本 ${ui.activeVersion}` : '未保存草稿'} · ${s.dirty ? '有更改' : '已保存'}</span></div>`;
     }
     function summary() {
-      if (legacy()) return '';
+      if (legacy() || !isStudio()) return '';
       const st = s.strategy;
-      return `<aside class="sq-summary"><details ${ui.summaryOpen ? 'open' : ''} id="sq-summary"><summary>当前研究协议 <span>${st.universe.symbols.length} 标的 · ${st.factors.length} 因子</span>${i('sliders')}</summary><div><span class="sq-kicker">CONFIGURATION SNAPSHOT</span><h3>${e(st.name)}</h3><dl><dt>研究范围</dt><dd>${st.universe.symbols.length} 个筛选成员</dd><dt>目标</dt><dd>${targetLabel()}</dd><dt>预测期限</dt><dd>${e(st.target.horizonSessions)} 个交易日</dd><dt>模型族</dt><dd>${e(FAMILIES[st.model.family]?.name || st.model.family)}</dd><dt>拟合方式</dt><dd>${!isStudio() && !boundDataset() ? '系统按时间验证选择' : e(ESTIMATORS[st.model.estimator] || st.model.estimator)}</dd><dt>观察 / 重拟合</dt><dd>${st.research.observationDays} / ${st.model.refitDays} 日</dd><dt>研究类型</dt><dd>因子模型研究</dd><dt>数据</dt><dd>${e(sourceLabel())}</dd></dl><div class="sq-summary-equation">V̂ = F<sub>h</sub>(X<sub>t</sub>)<br><small>e = 当前状态 − 预期未来状态</small></div>${button('save', '保存研究', { icon: 'save', disabled: s.saving })}<p>模型估计与交易结果分别检验。配置版本与数据来源随运行固定。</p></div></details></aside>`;
+      return `<aside class="sq-summary"><details ${ui.summaryOpen ? 'open' : ''} id="sq-summary"><summary>当前研究协议 <span>${st.universe.symbols.length} 标的 · ${st.factors.length} 因子</span>${i('sliders')}</summary><div><span class="sq-kicker">CONFIGURATION SNAPSHOT</span><h3>${e(st.name)}</h3><dl><dt>研究范围</dt><dd>${st.universe.symbols.length} 个筛选成员</dd><dt>目标</dt><dd>${targetLabel()}</dd><dt>预测期限</dt><dd>${e(st.target.horizonSessions)} 个交易日</dd><dt>模型族</dt><dd>${e(FAMILIES[st.model.family]?.name || st.model.family)}</dd><dt>拟合方式</dt><dd>${!isStudio() && !boundDataset() ? '系统按时间验证选择' : e(ESTIMATORS[st.model.estimator] || st.model.estimator)}</dd><dt>观察 / 重拟合</dt><dd>${st.research.observationDays} / ${st.model.refitDays} 日</dd><dt>研究类型</dt><dd>因子模型研究</dd><dt>数据</dt><dd>${e(sourceLabel())}</dd></dl><div class="sq-summary-equation">V̂ = F<sub>h</sub>(X<sub>t</sub>)<br><small>e = 当前状态 − 预期未来状态</small></div>${button('save', '保存研究', { icon: 'save', disabled: s.saving })}</div></details></aside>`;
     }
     function frame(body) {
       return `<div class="sq-shell">${sidebar()}<main class="sq-main" id="main-content" tabindex="-1">${topbar()}${['modes','statistical','strategies','instruments','monitor'].includes(s.quantStep) || s.view === 'dashboard' ? '' : ['financial', 'datasets'].includes(s.quantStep) ? '<div class="sq-mobile-step"><a href="#quant/studio/financial">财务输入列表</a><a href="#quant/studio/state">返回研究</a></div>' : `<div class="sq-mobile-step"><label for="sq-step-picker">研究步骤</label><select id="sq-step-picker">${STEPS.map((x, n) => `<option value="${x.id}" ${step() === x.id ? 'selected' : ''}>${n + 1}. ${x.name}</option>`).join('')}</select><a href="#quant/researches">研究列表</a></div>`}<div class="sq-content">${s.error ? note(s.error, 'error') + '<button class="sq-button small" data-action="refresh">重新连接服务</button>' : ''}${ui.errors.length ? note(ui.errors.join('；'), 'warning') + button('workspace-retry', '重新读取工作区', { small: true }) : ''}${body}</div><footer class="sq-footer"><span>ATLAS QUANT · OPEN RESEARCH</span><span>预测有据 · 目标固定 · 执行可核对</span></footer></main></div>`;
@@ -180,7 +182,7 @@ window.AtlasQuantV4 = {
         meta = STEPS[index];
       if (legacy())
         return `${heading('HISTORICAL CONFIGURATION', '这是历史版本研究', '原始配置和报告保持其当时的语义。新研究采用独立预测协议。', button('new', '创建新的预测研究', { primary: true, icon: 'plus' }))}<div class="sq-legacy">${C.legacy.renderScreen('code')}</div>`;
-      return `${heading(`${isStudio() ? 'QUANT STUDIO' : 'EASY MODE'} / ${String(index + 1).padStart(2, '0')}`, meta.name, meta.hint, button('save', '保存', { icon: 'save', disabled: s.saving }))}${researchName()}${ui.pageErrors.length ? `<div id="sq-page-errors" tabindex="-1" role="alert">${note(ui.pageErrors.join('；'), 'warning')}</div>` : ''}<div class="sq-progress"><span style="width:${((index + 1) / STEPS.length) * 100}%"></span></div><div class="sq-research-layout"><div class="sq-research-body">${{ universe: universePage, state: statePage, settings: settingsPage, model: modelPage, validation: validationPage, report: reviewPage }[st]()}<div class="sq-page-navigation">${index ? button('step', `上一步 · ${STEPS[index - 1].short}`, { id: STEPS[index - 1].id }) : `<a class="sq-button" href="#${route('statistical')}">统计量化模块</a>`}<span>STEP ${index + 1} OF ${STEPS.length}</span>${index < STEPS.length - 1 ? button('step', `下一步 · ${STEPS[index + 1].short}`, { id: STEPS[index + 1].id, direction: 'next', primary: true, icon: 'arrow' }) : button('run', s.submitting ? '正在提交' : '拟合并生成 F 模型', { primary: true, icon: 'play', disabled: s.submitting })}</div></div>${summary()}</div>`;
+      return `${heading(`${isStudio() ? 'QUANT STUDIO' : 'EASY MODE'} / ${String(index + 1).padStart(2, '0')}`, meta.name, '', button('save', '保存', { icon: 'save', disabled: s.saving }))}${researchName()}${ui.pageErrors.length ? `<div id="sq-page-errors" tabindex="-1" role="alert">${note(ui.pageErrors.join('；'), 'warning')}</div>` : ''}<div class="sq-progress"><span style="width:${((index + 1) / STEPS.length) * 100}%"></span></div><div class="sq-research-layout ${isStudio() ? '' : 'sq-focused-layout'}"><div class="sq-research-body">${{ universe: universePage, state: statePage, settings: settingsPage, model: modelPage, report: reviewPage }[st]()}<div class="sq-page-navigation">${index ? button('step', `上一步 · ${STEPS[index - 1].short}`, { id: STEPS[index - 1].id }) : `<a class="sq-button" href="#${route('statistical')}">统计量化交易</a>`}<span>STEP ${index + 1} OF ${STEPS.length}</span>${index < STEPS.length - 1 ? button('step', `下一步 · ${STEPS[index + 1].short}`, { id: STEPS[index + 1].id, direction: 'next', primary: true, icon: 'arrow' }) : button('run', s.submitting ? '正在提交' : '拟合并生成 F 模型', { primary: true, icon: 'play', disabled: s.submitting })}</div></div>${summary()}</div>`;
     }
     const boundDataset = () =>
       s.dataSource === 'ready_dataset' && s.datasetBinding;
@@ -214,6 +216,11 @@ window.AtlasQuantV4 = {
       const strategy = defaultStrategy();
       strategy.name = detail.name + ' · 财务预测';
       strategy.universe = clone(detail.scope);
+      // A newly created bound study chooses an explicit boundary inside its immutable dates.
+      const from = Date.parse(C.dateText(detail.scope.start)), to = Date.parse(C.dateText(detail.scope.end));
+      if (Number.isFinite(from) && Number.isFinite(to) && from < to)
+        strategy.validation.testStart = new Date(from + (to - from) * .8).toISOString().slice(0, 10).replaceAll('-', '');
+      else delete strategy.validation.testStart;
       strategy.model.family = 'fundamental';
       strategy.model.estimator = estimator;
       strategy.target.kind = 'asset_price';
@@ -258,88 +265,57 @@ window.AtlasQuantV4 = {
       return `<div class="sq-legacy sq-universe">${C.legacy.flow.universePage()}</div>`;
     }
     function statePage() {
-      if (boundDataset())
-        return panel(
-          '数据集中的财务状态',
-          boundNote() +
-            `<p>按实际来源定义选择输入；缺失值仍然保留。模型是否有足够样本由运行时检验。</p><div class="ds-members">${s.datasetBinding.selectedStateIds.map((id) => `<label class="fin-checkbox"><input type="checkbox" data-sq-dataset-state="${e(id)}" ${s.strategy.factors.some((f) => f.expression === id) ? 'checked' : ''}>${e(s.datasetBinding.stateDefinitions?.find((x) => x.id === id)?.name || s.strategy.factors.find((f) => f.id === id)?.name || id)}</label>`).join('')}</div>`,
-        );
+      if (boundDataset()) return panel('因子库', `<div class="ds-members">${s.datasetBinding.selectedStateIds.map((id) => `<label class="fin-checkbox"><input type="checkbox" data-sq-dataset-state="${e(id)}" ${s.strategy.factors.some((f) => f.expression === id) ? 'checked' : ''}>${e(s.datasetBinding.stateDefinitions?.find((x) => x.id === id)?.name || s.strategy.factors.find((f) => f.id === id)?.name || id)}</label>`).join('')}</div>`);
       const factors = s.strategy.factors;
-      return `${panel('把信息定义为可审计的状态', `<div class="sq-equation-strip"><span>点时数据</span>${i('arrow')}<span>因果变换</span>${i('arrow')}<span>X<sub>t</sub> 状态与因子</span>${i('arrow')}<span>F<sub>h</sub> 的输入</span></div><p>预测因子是 F 模型的数值输入；正负方向仅改变特征编码，不决定交易方向或仓位。对冲暴露用于构造 PCA 篮子；事件因子必须具有实际可用时间。</p>`, { kicker: 'INFORMATION SET' })}<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>当前状态输入 <span>${factors.length} / 32</span></h2><a class="sq-button small" href="#quant/studio/state">展开 Studio</a></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(C.findFactor(f.id)?.name || f.id)}</strong><code>${e(f.expression)}</code></div><label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option><option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>PCA 对冲暴露</option><option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入 · 需 PIT</option></select></label>${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('') || empty('尚未添加额外因子', '模型仍可使用其明确声明的内置状态。拖入模块或点击目录中的“加入”。')}<div class="sq-drop-caption">${i('plus')}拖入状态模块，或用键盘选择“加入”</div></div><div class="sq-tabs" role="group" aria-label="状态输入编辑方式">${[['catalog', '因子目录'], ['modules', '状态模块'], ['builder', '构建因子'], ...(isStudio() ? [['fields', '数据库字段']] : [])].map(([id, label]) => button('feature-tab', label, { id, primary: ui.featureTab === id, pressed: ui.featureTab === id, small: true })).join('')}</div>${ui.featureTab === 'modules' ? catalog.view('state') : `<div class="sq-legacy">${ui.featureTab === 'builder' ? C.legacy.builder() : ui.featureTab === 'fields' ? C.legacy.fieldBrowser() : C.legacy.catalogBrowser()}</div>`}${advanced('预处理与输入冗余', `<div class="sq-form-grid">${toggle('训练期截尾', 'preprocess.winsorize', '阈值只由拟合数据确定。')}${toggle('训练期标准化', 'preprocess.standardize', '验证与预测复用训练参数。')}${select('冗余处理', 'preprocess.decorrelation', { none: '保留全部输入', drop_correlated: '剔除高度相关输入' })}${input('绝对相关阈值', 'preprocess.correlationThreshold', { min: 0.5, max: 1, step: 0.01 })}</div>`, isStudio())}`;
+      const selected = `<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>已选因子 <span>${factors.length} / 32</span></h2></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(C.findFactor(f.id)?.name || f.name || f.id)}</strong>${isStudio() ? `<code>${e(f.expression)}</code>` : ''}</div><label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option><option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>对冲暴露</option><option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入</option></select></label>${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('')}<div class="sq-drop-caption">${i('plus')}拖入因子</div></div>`;
+      const tabs = [['catalog', '因子库'], ['builder', '构建因子'], ...(isStudio() ? [['modules', '状态模块'], ['fields', '数据库字段']] : [])];
+      const active = tabs.some(([id]) => id === ui.featureTab) ? ui.featureTab : 'catalog';
+      const library = active === 'modules' ? catalog.view('state') : `<div class="sq-legacy sq-factor-library">${active === 'builder' ? C.legacy.builder({ compact: true }) : active === 'fields' ? C.legacy.fieldBrowser() : C.legacy.catalogBrowser({ compact: true })}</div>`;
+      return `<div class="sq-factor-workbench"><div class="sq-factor-source"><div class="sq-tabs" role="group" aria-label="因子来源">${tabs.map(([id, label]) => button('feature-tab', label, { id, primary: active === id, pressed: active === id, small: true })).join('')}</div>${library}</div>${selected}</div>` +
+        (isStudio() ? advanced('预处理与输入冗余', `<div class="sq-form-grid">${toggle('训练期截尾', 'preprocess.winsorize')}${toggle('训练期标准化', 'preprocess.standardize')}${select('冗余处理', 'preprocess.decorrelation', { none: '保留全部输入', drop_correlated: '剔除高度相关输入' })}${input('绝对相关阈值', 'preprocess.correlationThreshold', { min: 0.5, max: 1, step: 0.01 })}</div>`) : '');
     }
     const mechanismStatus = family => mechanismAdmission(s, family, market.researchAdmission, isStudio());
-    function admissionView() {
-      const status = mechanismStatus(s.strategy.model.family);
-      return panel('当前研究准入', `<div data-mechanism-admission="${e(status.status)}"><strong>${e(FAMILIES[s.strategy.model.family]?.name)} · ${e(admissionLabel(status.status))}</strong><p>${e(status.message)}</p><p class="sq-subtle">完整筛选范围：${s.strategy.universe.symbols.length} 个成员。配置准入、数据准备和模型有效性分别检验。</p></div>`);
+    function suggestedTestStart() {
+      const u = s.strategy.universe;
+      const parse = value => Date.parse(`${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6,8)}T00:00:00Z`);
+      const start = parse(u.start), end = parse(u.end);
+      return Number.isFinite(start) && Number.isFinite(end) && start < end
+        ? new Date(start + (end - start) * (1 - s.strategy.validation.holdoutFraction)).toISOString().slice(0,10).replaceAll('-', '')
+        : '';
     }
     function settingsPage() {
-      const st = s.strategy;
-      const dates = boundDataset()
-        ? `<dl class="fin-summary"><dt>冻结研究窗口</dt><dd>${e(C.dateText(st.universe.start))} — ${e(C.dateText(st.universe.end))}</dd></dl>`
-        : `<div class="sq-form-grid">${input('研究窗口起始', 'universe.start', { type: 'date', value: C.dateText(st.universe.start) })}${input('研究窗口结束', 'universe.end', { type: 'date', value: C.dateText(st.universe.end) })}</div>`;
-      return admissionView() + panel('研究数据与窗口', `${boundDataset() ? boundNote() : `<div class="sq-legacy">${C.legacy.flow.sourceControls()}</div>`}${dates}<p class="sq-subtle">这个窗口用于训练和样本外检验，与股票筛选条件分开保存。</p>`) + (!boundDataset() && ['tushare', 'ready_market'].includes(s.dataSource) ? market.view() : '') + targetPage() +
-        (isStudio() ? advanced('跨数据库时点映射', C.legacy.mappingEditor(), false) : '');
+      const st = s.strategy, split = st.validation.testStart;
+      const boundary = (label, path, value) => boundDataset()
+        ? `<div class="sq-field"><span>${e(label)}</span><output>${e(C.dateText(value))}</output></div>`
+        : input(label, path, { type: 'date', value: C.dateText(value) });
+      return `<div class="sq-window-grid">${panel('训练集', `<div class="sq-form-grid">${boundary('开始日期', 'universe.start', st.universe.start)}<div class="sq-field"><span>${split ? '结束边界（不含）' : '日期占比'}</span><output>${split ? e(C.dateText(split)) : `${Math.round((1-st.validation.holdoutFraction)*100)}%`}</output></div></div>`)}${panel('测试集', `<div class="sq-form-grid">${split ? input('开始日期', 'validation.testStart', { type: 'date', value: C.dateText(split) }) : input('末尾日期占比', 'validation.holdoutFraction', { min: .1, max: .4, step: .05 })}${boundary('结束日期', 'universe.end', st.universe.end)}</div>${split ? '' : button('date-split', '改为日期切分', { small: true })}`)}</div>${panel('滚动窗口', `<div class="sq-form-grid">${input('训练窗口', 'model.trainWindow', { min: 120, max: 1260, unit: '交易日' })}${input('重新拟合间隔', 'model.refitDays', { min: 1, max: 126, unit: '交易日' })}</div>`)}`;
     }
     function targetPage() {
-      if (boundDataset())
-        return panel(
-          '单资产价格目标',
-          boundNote() +
-            `<div class="sq-form-grid">${input('预测期限 h', 'target.horizonSessions', { min: 1, max: 60, unit: '交易日', help: '观察收盘后，下一官方交易日开盘为入场时点；未来目标为其后 h 个交易日开盘。h=1 不是下一日收盘。' })}${input('观察间隔', 'research.observationDays', { min: 1, max: 60, unit: '交易日', help: '当前数据最小粒度为 1 个交易日，默认每天观察一次；这不等于预测期限 h=1。' })}</div>`,
-        );
       const t = s.strategy.target;
-      return `${panel(
-        '预测什么？',
-        `<div class="sq-choice-grid">${[
-          ['asset_price', '单资产价格', '每个选定标的独立预测，目标数量为 1。'],
-          [
-            'frozen_basket',
-            '冻结数量篮子',
-            '每次预测保存固定数量，当前值和未来标签使用同一篮子。',
-          ],
-        ]
-          .map(
-            ([id, name, description]) =>
-              `<button class="sq-choice ${t.kind === id ? 'selected' : ''}" data-sq="target-kind" data-id="${id}" aria-pressed="${t.kind === id}">${i(id === 'asset_price' ? 'chart' : 'layers')}<strong>${name}</strong><p>${description}</p><span>${t.kind === id ? '已选择' : '选择目标'}</span></button>`,
-          )
-          .join(
-            '',
-          )}</div><div class="sq-form-grid">${input('预测期限 h', 'target.horizonSessions', { min: 1, max: 60, unit: '交易日', help: '从下一官方交易日开盘，到其后 h 个交易日开盘。' })}${input('观察间隔', 'research.observationDays', { min: 1, max: 60, unit: '交易日', help: '当前最小可用粒度为 1 个交易日；与预测期限分别定义。' })}</div>`,
-        { kicker: 'TARGET DEFINITION' },
-      )}${t.kind === 'frozen_basket' ? basketDefinition() : ''}${panel('当前状态与未来标签', '<p>F 使用观察时点已知信息估计有限期限内的未来状态。每条记录保留信息截止、参考状态、实际目标时间与成熟后误差；未来标签不会提前参与拟合。</p>')}${isStudio() ? catalog.view('target') : ''}`;
+      const choices = boundDataset() ? '' : `<div class="sq-choice-grid">${[
+        ['asset_price', '单资产价格'], ['frozen_basket', '冻结数量篮子'],
+      ].map(([id, name]) => `<button class="sq-choice ${t.kind === id ? 'selected' : ''}" data-sq="target-kind" data-id="${id}" aria-pressed="${t.kind === id}">${i(id === 'asset_price' ? 'chart' : 'layers')}<strong>${name}</strong></button>`).join('')}</div>`;
+      return panel('研究目标', `${choices}<div class="sq-form-grid">${input('预测期限', 'target.horizonSessions', { min: 1, max: 60, unit: '交易日' })}${input('观察间隔', 'research.observationDays', { min: 1, max: 60, unit: '交易日' })}</div>`) +
+        (t.kind === 'frozen_basket' ? basketDefinition() : '');
     }
     function basketDefinition() {
       const b = s.strategy.target.basket || {};
-      return panel(
-        '冻结数量篮子定义',
-        `${note(b.method === 'pair_ols' ? `已选择 ${(b.symbols || []).length} / 2 条腿。请明确勾选两只股票再继续。` : b.method === 'pca_residual' ? `已选择 ${(b.symbols || []).length} 条腿。PCA 目标需要 3–20 个明确成员。` : `已选择 ${(b.symbols || []).length} 条腿。请填写每条腿的固定数量。`)}${select('构造方法', 'target.basket.method', { pair_ols: '两腿价格 OLS 配对', pca_residual: 'PCA 投影状态篮子', fixed: '明确的固定数量' })}<div class="sq-basket-members">${s.strategy.universe.symbols.map((code) => `<label><input type="checkbox" data-sq-basket-symbol="${e(code)}" ${(b.symbols || []).includes(code) ? 'checked' : ''}><span>${e(code)}</span>${b.method === 'fixed' ? `<input type="number" data-sq-quantity="${e(code)}" aria-label="${e(code)} 固定数量" value="${e(b.quantities?.[code] ?? '')}" min="-1000000" max="1000000" step="any" ${(b.symbols || []).includes(code) ? '' : 'disabled'}>` : ''}</label>`).join('') || '<p>先在研究范围页明确选择成员。</p>'}</div><div class="sq-form-grid">${b.method !== 'fixed' ? input('形成窗口', 'target.basket.formationDays', { min: 60, max: 504, unit: '交易日' }) : ''}${b.method === 'pca_residual' ? input('共同主成分数量', 'target.basket.components', { min: 1, max: Math.min(10, Math.max(1, (b.symbols || []).length - 2)) }) : ''}</div>${note(b.method === 'pair_ols' ? '明确选择两只股票。OLS 截距是模型状态，不是可交易的一条腿；本身不构成协整证明。' : b.method === 'pca_residual' ? 'PCA 只构造共同成分与状态。未来变化由下一步的 F 模型预测，PCA 不直接生成仓位。' : '明确数量须与选定成员一一对应、非全零；零或负篮子价值仍使用正的总名义尺度进行归一。')}`,
-        { kicker: 'FROZEN TARGET · SAME QUANTITIES' },
-      );
+      return panel('篮子定义', `${select('构造方法', 'target.basket.method', { pair_ols: '两腿价格 OLS 配对', pca_residual: 'PCA 投影状态篮子', fixed: '固定数量' })}<div class="sq-basket-heading"><span>篮子成员</span><strong>${(b.symbols || []).length}${b.method === 'pair_ols' ? ' / 2' : ' / 20'}</strong></div><div class="sq-basket-members">${s.strategy.universe.symbols.map((code) => `<label><input type="checkbox" data-sq-basket-symbol="${e(code)}" ${(b.symbols || []).includes(code) ? 'checked' : ''}><span>${e(code)}</span>${b.method === 'fixed' ? `<input type="number" data-sq-quantity="${e(code)}" aria-label="${e(code)} 固定数量" value="${e(b.quantities?.[code] ?? '')}" min="-1000000" max="1000000" step="any" ${(b.symbols || []).includes(code) ? '' : 'disabled'}>` : ''}</label>`).join('') || '<span>暂无筛选成员</span>'}</div><div class="sq-form-grid">${b.method !== 'fixed' ? input('形成窗口', 'target.basket.formationDays', { min: 60, max: 504, unit: '交易日' }) : ''}${b.method === 'pca_residual' ? input('主成分数量', 'target.basket.components', { min: 1, max: Math.min(10, Math.max(1, (b.symbols || []).length - 2)) }) : ''}</div>`);
     }
     function modelPage() {
-      if (boundDataset())
-        return panel(
-          '基本面条件预测 · 当前可用协议',
-          boundNote() +
-            `${isStudio() ? `<div class="sq-form-grid">${input('训练窗口', 'model.trainWindow', { min: 120, max: 1260, unit: '交易日' })}${input('重新拟合间隔', 'model.refitDays', { min: 1, max: 126, unit: '交易日' })}</div>` : note(boundAdmissionIs('auto') ? '系统在预先声明的八组候选中进行内层时间选择，外层及最终报告区间不参与挑选；不保证消除偏差或过拟合。' : boundAdmissionIs('ridge') ? '当前已保存版本使用 Ridge。继续读取保留原协议；新自动研究须从数据集入口明确创建。' : '当前保存的计算协议尚未识别，不能改称 Ridge 或自动运行。')}`,
-        );
-      return `${panel(
-        '先声明模型机制',
-        `<div class="sq-family-grid">${Object.entries(FAMILIES)
-          .map(
-            ([id, x]) => {
-              const status = mechanismStatus(id);
-              return `<button class="sq-family ${s.strategy.model.family === id ? 'selected' : ''}" data-sq="family" data-id="${id}" ${!status.selectable ? 'disabled' : ''}><span>${i(id === 'pair_reversion' ? 'link' : id === 'event' ? 'spark' : 'model')}</span><strong>${e(x.name)}</strong><p>${e(x.description)}</p><small data-mechanism-status="${e(status.status)}">${e(admissionLabel(status.status))} · ${e(status.message)}</small></button>`;
-            },
-          )
-          .join(
-            '',
-          )}</div>${s.strategy.model.family === 'fundamental' ? note('需要真实、已披露的基本面预测字段。仅有目录定义不构成可用数据。') : s.strategy.model.family === 'event' ? note('需要 role:event 的 PIT 外部数值输入及足够已观测事件。名称和日收益本身不提供事件数据。') : ''}${isStudio() ? `<div class="sq-form-grid">${select('函数估计方式', 'model.estimator', ESTIMATORS, 'auto 只比较有限候选与参数，使用按时间清除跨界标签的验证。')}${input('训练窗口', 'model.trainWindow', { min: 120, max: 1260, unit: '过去观测日期' })}${input('重新拟合间隔', 'model.refitDays', { min: 1, max: 126, unit: '交易日' })}</div>` : note('系统在预先固定的候选方法中，按时间顺序进行内层选择和外层检验。选择的是本次协议下表现较好的候选，不保证不存在偏差或过拟合。')}`,
-        { kicker: 'F_h · CONDITIONAL FORECAST' },
-      )}${panel('每次预测必须输出', `<div class="sq-contract-values"><div><span>当前状态</span><strong>P<sub>t</sub></strong></div><div><span>预期入场</span><strong>V̂<sub>entry</sub></strong></div><div><span>预期未来</span><strong>V̂<sub>future</sub></strong></div><div><span>预测价差</span><strong>e = P − V̂</strong></div></div><p>模型同时拟合入场与目标状态。无变化预测提供明确的零剩余 edge 基准；因子分数、z-score 和 PCA 载荷不会作为预测值直接送入执行。</p>`)}${isStudio() ? catalog.view('model') : ''}`;
-    }
-    function validationPage() {
-      return panel('自动拟合协议', `<div class="sq-validation-flow"><span>预先冻结候选</span>${i('arrow')}<span>内层时序选择</span>${i('arrow')}<span>外层顺序检验</span>${i('arrow')}<span>保留最终报告</span></div><p>预处理、相关性筛选和估计器只在对应训练区间拟合；跨越验证边界的标签从训练中清除。正则化约束模型复杂度，不能消除反复试验或数据窥探造成的过拟合。</p>${isStudio() ? `<div class="sq-form-grid">${input('最终报告区间占比', 'validation.holdoutFraction', { min: 0.1, max: 0.4, step: 0.05 })}${input('最少训练日期', 'validation.minTrainDates', { min: 40, max: 252 })}${input('内层时间折数', 'validation.innerFolds', { min: 2, max: 3 })}${input('外层时间折数', 'validation.outerFolds', { min: 2, max: 3 })}</div>` : `<dl class="fin-summary"><dt>选择协议</dt><dd>预声明候选 + 时间验证</dd><dt>最终报告区间</dt><dd>末尾 ${Math.round(s.strategy.validation.holdoutFraction * 100)}% 日期</dd><dt>执行交易</dt><dd>不属于因子研究</dd></dl>`}${note('本轮不使用 RL 选择模型。增加候选数量、网格搜索或惩罚项，都不能保证无 bias、无 overfit；没有样本外改善时明确保留无改善结果。')}`) + panel('可核对的研究输出', `<div class="sq-diagnostic-grid"><div><h3>函数与拟合</h3><p>函数定义、输入变换、训练截止与候选比较。</p></div><div><h3>因子统计</h3><p>按实际产物展示分布、相关性、IC 和缺失；未计算项明确标记。</p></div><div><h3>联合分布</h3><p>基于明确样本与分箱的经验分布，不把频数表视作理论总体分布。</p></div><div><h3>预测检验</h3><p>样本外误差、无变化基准与未成熟标签分开记录。</p></div></div>`) + (isStudio() ? catalog.view('validation') : '');
+      const mechanisms = boundDataset()
+        ? `<div class="sq-family-grid"><button class="sq-family selected" type="button" aria-pressed="true" disabled><span>${i('model')}</span><strong>${e(FAMILIES[s.strategy.model.family]?.name || '基本面条件预测')}</strong></button></div>`
+        : `<div class="sq-family-grid">${Object.entries(FAMILIES).map(([id, x]) => {
+            const status = mechanismStatus(id);
+            return `<button class="sq-family ${s.strategy.model.family === id ? 'selected' : ''}" data-sq="family" data-id="${id}" aria-pressed="${s.strategy.model.family === id}" data-mechanism-status="${e(status.status)}" ${!status.selectable ? 'disabled' : ''}><span>${i(id === 'pair_reversion' ? 'link' : id === 'event' ? 'spark' : 'model')}</span><strong>${e(x.name)}</strong>${!status.selectable ? '<small>暂不可用</small>' : ''}</button>`;
+          }).join('')}</div>`;
+      const data = boundDataset()
+        ? `<div class="sq-data-binding"><span>${e(sourceLabel())}</span><a class="sq-button small" href="${e(datasetLocation(s.datasetBinding.datasetRef)?.page || '#quant/studio/datasets/source')}">查看数据</a></div>`
+        : `<div class="sq-legacy">${C.legacy.flow.sourceControls({ compact: true })}</div>`;
+      return panel('研究机制', mechanisms) + targetPage() +
+        panel('数据', data) +
+        (!boundDataset() && ['tushare', 'ready_market'].includes(s.dataSource) ? advanced('数据准备', market.view()) : '') +
+        (isStudio() ? advanced('模型设置', `<div class="sq-form-grid">${select('函数估计方式', 'model.estimator', ESTIMATORS)}${input('最少训练日期', 'validation.minTrainDates', { min: 40, max: 252 })}${input('内层时间折数', 'validation.innerFolds', { min: 2, max: 3 })}${input('外层时间折数', 'validation.outerFolds', { min: 2, max: 3 })}</div>`) + advanced('跨数据库时点映射', C.legacy.mappingEditor()) : '');
     }
     function reviewPage() {
       const errors = validateStrategy(s.strategy, {
@@ -348,7 +324,7 @@ window.AtlasQuantV4 = {
         dataset: s.dataset,
         session: s.session,
       });
-      return `${ui.runError ? panel('运行准入未通过', note(ui.runError, 'error') + '<p>已保存的研究和完整筛选集合保留；系统没有改成更小的股票子集。</p>') : ''}${panel('冻结本次研究协议', `${errors.length ? errors.map((x) => note(x, 'warning')).join('') : note('静态配置通过检查。真实字段覆盖、成熟标签与拟合条件会在运行时验证。')}<div class="sq-review-grid"><div><span>目标与期限</span><strong>${targetLabel()} · ${s.strategy.target.horizonSessions} 日</strong><p>参考、入场和未来目标使用同一计量定义。</p></div><div><span>模型协议</span><strong>${e(FAMILIES[s.strategy.model.family]?.name)} / ${e(ESTIMATORS[s.strategy.model.estimator])}</strong><p>训练窗口 ${s.strategy.model.trainWindow} 日期 · 每 ${s.strategy.model.refitDays} 日允许重拟合</p></div><div><span>研究范围</span><strong>${s.strategy.universe.symbols.length} 个筛选成员</strong><p>${e(C.dateText(s.strategy.universe.start))} — ${e(C.dateText(s.strategy.universe.end))}</p></div><div><span>运行内容</span><strong>F 模型、预测产物与因子诊断</strong><p>${e(sourceLabel())}</p></div></div><div class="sq-actions">${button('save', '保存版本', { icon: 'save' })}${button('export', '导出配置', { icon: 'download' })}</div>`, { kicker: 'IMMUTABLE RESEARCH RUN' })}${panel('研究的核心输出', `<div class="sq-contract-values"><div><span>当前状态</span><strong>P</strong></div><div><span>预期未来</span><strong>V̂</strong></div><div><span>预测价差</span><strong>e</strong></div><div><span>成熟后</span><strong>实现值 / 误差</strong></div></div><p>包括未交易、失效、尾部未成熟的预测。预览与完整私有产物分别展示，运行结果不以是否盈利决定保留。</p>`)}${ui.activeId ? button('experiment-detail', '查看这个研究的历史运行', { id: ui.activeId, icon: 'clock' }) : ''}`;
+      return `${ui.runError ? panel('运行准入未通过', note(ui.runError, 'error')) : ''}${panel('F 模型', `${errors.length ? errors.map((x) => note(x, 'warning')).join('') : ''}<div class="sq-model-placeholder"><span>F<sub>h</sub>(X)</span><strong>尚未拟合</strong></div><dl class="fin-summary"><dt>研究机制</dt><dd>${e(FAMILIES[s.strategy.model.family]?.name)}</dd><dt>范围</dt><dd>${s.strategy.universe.symbols.length} 个成员 · ${s.strategy.factors.length} 个因子</dd><dt>目标</dt><dd>${targetLabel()} · ${s.strategy.target.horizonSessions} 交易日</dd><dt>数据</dt><dd>${e(sourceLabel())}</dd></dl><div class="sq-actions">${button('save', '保存版本', { icon: 'save' })}${button('export', '导出配置', { icon: 'download' })}${ui.activeId ? button('experiment-detail', '已生成的模型与报告', { id: ui.activeId, icon: 'clock' }) : ''}</div>`)}`;
     }
     function latestRunStatus(item) {
       if (!Object.hasOwn(item, 'latestRun'))
@@ -425,7 +401,8 @@ window.AtlasQuantV4 = {
       let body;
       if (s.view === 'runs')
         body = `<div class="sq-report-wrap">${C.runsView()}</div>`;
-      else if (s.view === 'dashboard' || s.quantStep === 'modes') body = hub.modes();
+      else if (s.quantStep === 'modes') body = hub.modes();
+      else if (s.view === 'dashboard') body = hub.statistical();
       else if (s.quantStep === 'statistical') body = hub.statistical();
       else if (['strategies', 'instruments', 'monitor'].includes(s.quantStep)) body = hub.pending(s.quantStep);
       else if (s.quantStep === 'financial') body = financial.render();
@@ -939,6 +916,7 @@ window.AtlasQuantV4 = {
           );
       const st = step(),
         spec = s.strategy;
+      if (st === 'settings') errors.push(...validateStrategy(spec).filter(x => /研究日期|测试集开始日期|训练窗口|重新拟合间隔|最终报告占比/.test(x)));
       if (
         st === 'universe' &&
         !spec.universe.symbols.length
@@ -946,7 +924,7 @@ window.AtlasQuantV4 = {
         errors.push('先计算股票筛选条件，完整结果至少需要一个成员。');
       if (st === 'universe' && spec.universe.selection && spec.universe.subsetPolicy !== 'all')
         errors.push('请重新计算完整筛选集合；旧版研究子集不会被当作完整结果。');
-      if (st === 'settings' && spec.target.kind === 'frozen_basket') {
+      if (st === 'model' && spec.target.kind === 'frozen_basket') {
         const b = spec.target.basket || {},
           legs = b.symbols || [];
         if (b.method === 'pair_ols' && legs.length !== 2)
@@ -1018,6 +996,13 @@ window.AtlasQuantV4 = {
         }
         ui.pageErrors = [];
         goto(id);
+      }
+      if (action === 'date-split') {
+        const value = suggestedTestStart();
+        if (!value) throw Error('先填写有效的研究日期。');
+        s.strategy.validation.testStart = value;
+        persistDraft();
+        render();
       }
       if (action === 'save') await save();
       if (action === 'run') await run();
@@ -1250,9 +1235,7 @@ window.AtlasQuantV4 = {
         await loadCompareChoices();
       const stageMap = {
         state: 'state',
-        settings: 'target',
-        model: 'model',
-        validation: 'validation',
+        model: 'target',
         risk: 'risk',
         execution: 'execution',
       };

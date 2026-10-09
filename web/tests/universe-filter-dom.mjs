@@ -1,0 +1,71 @@
+/** UI set operations against the real deterministic resolver; no market/F calls. */
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {build} from 'esbuild';
+import {JSDOM} from 'jsdom';
+import {compileUniverseCatalog, universeOptions, resolveUniverseSelection, universeResolutionHash} from '../../edge/universe.mjs';
+const securities = Array.from({length:1000}, (_,n) => ({
+  ts_code: `${String(n + 1).padStart(6,'0')}.${n % 2 ? 'SZ' : 'SH'}`,
+  name:'股票'+n, area:n < 80 ? '北京' : '上海', industry:'材料', exchange:n % 2 ? 'SZSE' : 'SSE',
+}));
+const pool={id:'csi1000',name:'中证1000',category:'index',curated:true,availability:{status:'ready'},symbols:securities.map(x=>x.ts_code),symbolCount:1000};
+const catalog=compileUniverseCatalog({securities,items:[pool],hash:'a'.repeat(64),asOf:'2026-10-09'});
+const dom=new JSDOM('<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>',{url:'http://localhost/quant/#quant/easy/universe',runScripts:'outside-only',pretendToBeVisual:true});
+const w=dom.window;w.structuredClone=structuredClone;w.scrollTo=()=>{};w.matchMedia=()=>({matches:false,addEventListener(){}});
+let resolutions=0;
+w.fetch=async(url,opts={})=>{
+  const p=new URL(url,'http://localhost').pathname;let value={items:[],total:0};
+  if(p.endsWith('/universe-options'))value=universeOptions(catalog);
+  if(p.endsWith('/universes/csi1000'))value={item:pool};
+  if(p.endsWith('/universes/resolve')){resolutions++;value=resolveUniverseSelection(JSON.parse(opts.body).selection,catalog);value.resolutionHash=await universeResolutionHash(value);}
+  return {ok:true,status:200,text:async()=>JSON.stringify(value)};
+};
+const bundle=await build({entryPoints:['web/main.js'],bundle:true,write:false,format:'iife',plugins:[{name:'no-init',setup(b){b.onLoad({filter:/\/web\/app\.js$/},async a=>({contents:(await fs.readFile(a.path,'utf8')).replace('  init();','  window.qa={state,studio,workspace,parseRoute,render};'),loader:'js'}));}}]});
+w.eval(bundle.outputFiles[0].text);const q=w.qa,s=q.state;s.loading=false;s.session={capabilities:{tushareHosted:true},runner:{online:true}};q.parseRoute();
+await q.studio.flow.initialize();q.render();
+const tick=()=>new Promise(r=>setTimeout(r,30));
+const click=async selector=>{const el=w.document.querySelector(selector);assert(el,selector);el.click();await tick();};
+const change=async(selector,value)=>{const el=w.document.querySelector(selector);assert(el,selector);el.value=value;el.dispatchEvent(new w.Event('change',{bubbles:true}));await tick();};
+assert.equal(w.document.querySelectorAll('.uf-workbench').length,1);
+assert.equal(w.document.querySelectorAll('.v2-universe-grid').length,0);
+await click('[data-v2="pool-preset"][data-id="csi1000"]');
+assert.equal(s.strategy.universe.symbols.length,1000);
+assert.equal(w.document.querySelectorAll('.uf-results tbody tr').length,40);
+await click('[data-v2="pool-preset"][data-id="csi1000"]');
+assert.equal(s.strategy.universe.selection.includeGroups.length,1,'same recommendation does not duplicate groups');
+assert.equal(resolutions,1);
+await click('[data-v2="pool-add-filter"]');
+const group=s.strategy.universe.selection.includeGroups[0].id;
+await change(`[data-rq-value="${group}"][data-index="1"]`,'北京');
+await click('[data-v2="pool-resolve"]');
+assert.equal(s.strategy.universe.symbols.length,80);
+const beijingResolutions=resolutions;
+await click('[data-v2="pool-preset"][data-id="csi1000"]');
+assert.equal(s.strategy.universe.symbols.length,80,'reselecting a recommendation preserves its AND filters');
+assert.equal(s.strategy.universe.selection.includeGroups.length,1,'filtered recommendation does not add an unfiltered OR group');
+assert.equal(resolutions,beijingResolutions,'reselecting an included recommendation makes no new resolution request');
+await click('[data-v2="pool-add-group"][data-scope="excludeGroups"]');
+await click('[data-v2="pool-resolve"]');
+assert.equal(s.strategy.universe.symbols.length,40);
+assert(s.strategy.universe.symbols.every(code=>code.endsWith('.SZ')));
+const excludedResolutions=resolutions;
+await click('[data-v2="pool-preset"][data-id="csi1000"]');
+assert.equal(s.strategy.universe.symbols.length,40,'reselecting preserves AND filters and exclusion groups');
+assert.equal(s.strategy.universe.selection.includeGroups.length,1);
+assert.equal(s.strategy.universe.selection.excludeGroups.length,1);
+assert.equal(resolutions,excludedResolutions);
+const removed=s.strategy.universe.symbols[0];
+await click(`[data-v2="pool-exclude-symbol"][data-id="${removed}"]`);
+assert.equal(s.strategy.universe.symbols.length,39);
+assert(s.strategy.universe.selection.excludeSymbols.includes(removed));
+assert(!s.strategy.universe.symbols.includes(removed));
+assert.equal(s.strategy.universe.subsetPolicy,'all');
+const all=[...s.strategy.universe.symbols];
+await change('#rq-member-search','nonexistent');
+assert.deepEqual([...s.strategy.universe.symbols],all,'display search does not change scope');
+assert(!w.document.querySelector('[data-rq-member]'));
+assert(!w.document.querySelector('[data-v2="pool-take"]'));
+assert(!w.document.querySelector('input[type="date"]'));
+assert(!w.document.querySelector('.uf-workbench').textContent.includes('尚未验证历史'));
+console.log(JSON.stringify({singleFilter:true,completeCounts:[1000,80,40,39],realSetResolver:true,noProviderOrModelCalls:true}));
+dom.window.close();

@@ -1,0 +1,58 @@
+.sq-saved-model { min-width: 0; }
+.sq-saved-model h3 { margin: 1.5rem 0 .75rem; font-size: .95rem; }
+.sq-model-formulas { padding: 1.3rem; border: 1px solid var(--line, #343c32); border-radius: .8rem; background: var(--surface, #10170f); }
+.sq-model-equation { margin: .8rem 0; color: var(--text, #efeee8); white-space: pre-wrap; overflow-wrap: anywhere; font: 500 clamp(.95rem, 1.1vw, 1.2rem)/1.8 ui-monospace, SFMono-Regular, monospace; }
+.sq-model-entry summary { cursor: pointer; color: var(--muted, #8d9788); font-size: .8rem; }
+.sq-model-identity { display: flex; gap: .5rem 1rem; flex-wrap: wrap; font-size: .72rem; color: var(--muted, #8d9788); margin-top: 1rem; }
+.sq-model-identity code { overflow-wrap: anywhere; min-width: 0; }
+.sq-model-meta { display: flex; gap: .5rem 1.5rem; flex-wrap: wrap; padding-top: 1rem; font-size: .8rem; color: var(--muted, #8d9788); }
+.sq-model-hyperparameters { display: flex; gap: .6rem; flex-wrap: wrap; margin: 0 0 1rem; }
+.sq-model-hyperparameters div { display: flex; gap: .7rem; align-items: baseline; border: 1px solid var(--line, #343c32); border-radius: .4rem; padding: .4rem .7rem; }
+.sq-model-hyperparameters dt { font: .75rem ui-monospace, monospace; color: var(--muted, #8d9788); }
+.sq-model-hyperparameters dd { margin: 0; font: .8rem ui-monospace, monospace; }
+.sq-model-transform { display: block; margin: 0 0 1rem; font-size: .9rem; }
+.sq-report-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+.sq-report-heading h2 { font-size: 1.1rem; margin: 0; }
+.sq-report-heading .sq-status { white-space: normal; }
+.sq-report-tabs { overflow-x: auto; flex-wrap: nowrap; }
+.sq-report-tabs .sq-button { flex-shrink: 0; }
+.sq-report-stat-heat { --heat: 0; background: rgb(154 180 116 / var(--heat)); }
+.sq-report-stat-heat.negative { background: rgb(178 123 110 / var(--heat)); }
+.sq-model-fit-picker { max-width: 36rem; width: 100%; }
+.sq-model-fit-picker select { min-width: 0; max-width: 100%; width: 100%; }
+.sq-saved-model .sq-table-scroll { min-width: 0; width: 100%; }
+.sq-saved-model .sq-report-controls > .sq-field { min-width: 0; flex: 1; }
+.sq-report-edit-note { margin: 0 0 10px; color: var(--muted, #8d9788); font-size: 11px; }
+.sq-report-edit-note > summary { cursor: pointer; width: fit-content; }
+.sq-report-edit-note > p { padding-top: 8px; line-height: 1.7; }
+.sq-report-wrap .sq-factor-report > .page-heading { margin-bottom: 8px; gap: 16px; }
+.sq-factor-report > .page-heading h1 { font-size: 24px; line-height: 1.35; }
+.sq-factor-report > .page-heading .eyebrow { margin-bottom: 4px; }
+.sq-factor-report > .page-heading .report-meta { margin-top: 5px; }
+.sq-factor-report > .page-heading > .actions { flex-shrink: 0; }
+.sq-factor-report .sq-report-heading { justify-content: flex-start; margin-bottom: 0; gap: 8px; }
+.sq-factor-report .sq-report-heading > h2 { display: none; }
+.sq-factor-report .sq-report-heading > .sq-advanced { margin: 0 0 0 auto; }
+.sq-factor-report .sq-report-heading > .sq-advanced > summary { padding: 7px 12px; font-size: 11px; gap: 10px; }
+.sq-factor-report .sq-report-tabs { margin: 10px 0 14px; padding-bottom: 10px; }
+.sq-model-primary > header { padding: 12px 16px; }
+.sq-model-primary > .sq-panel-body { padding: 16px; }
+.sq-model-primary .sq-model-fit-picker { display: flex; flex-direction: row; align-items: center; gap: 10px; max-width: 31rem; margin: 0; }
+.sq-model-primary .sq-model-fit-picker > span { white-space: nowrap; margin: 0; }
+.sq-model-primary .sq-model-fit-picker > select { min-height: 34px; padding-block: 5px; }
+@media (max-width: 640px) {
+  .sq-model-formulas { padding: .85rem; }
+  .sq-model-fit-picker { max-width: 100%; }
+  .sq-report-tabs { margin-inline: -.25rem; }
+  .sq-saved-model .sq-table { font-size: 12px; }
+  .sq-saved-model .sq-table th { font-size: 11px; }
+  .sq-report-wrap .sq-factor-report > .page-heading { display: block; }
+  .sq-report-wrap .sq-factor-report > .page-heading > .actions { margin-top: 8px; justify-content: flex-start; }
+  .sq-factor-report > .page-heading h1 { font-size: 21px; }
+  .sq-model-primary > header > div { align-items: center; gap: 8px; }
+  .sq-model-primary > header h2 { font-size: 14px; flex-shrink: 0; }
+  .sq-model-primary .sq-model-fit-picker { gap: 6px; min-width: 0; }
+  .sq-model-primary .sq-model-fit-picker > span { font-size: 10px; }
+  .sq-model-primary .sq-model-fit-picker > select { font-size: 10px; }
+  .sq-model-primary > .sq-panel-body { padding: 12px; }
+}

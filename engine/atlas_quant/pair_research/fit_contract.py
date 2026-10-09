@@ -50,6 +50,8 @@ def _controls(model, preprocess, validation, resources):
             and preprocess["decorrelation"] in ("none", "drop_correlated"),
             "PAIR_FIT_CONTROL", "Explicit supported training-only transforms required")
     _number(preprocess["correlationThreshold"], "correlationThreshold", .5, 1)
+    # Stage 2B's independently versioned contract remains fraction-only. General
+    # statistical research's optional testStart must not silently extend it.
     keys(validation, {"holdoutFraction", "minTrainDates", "innerFolds", "outerFolds"}, "validation")
     for key, lo, hi, integer in (("holdoutFraction", .1, .4, False), ("minTrainDates", 40, 252, True),
                                  ("innerFolds", 2, 3, True), ("outerFolds", 2, 3, True)):

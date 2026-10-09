@@ -13,7 +13,7 @@ assert.equal(sourceDownload,`/quant/api/market-datasets/${id(4)}/download?datase
 for(const ref of [null,{}, {...marketRef,version:2},{...marketRef,format:'atlas.quant.research_dataset'},{...marketRef,datasetRoot:'x'.repeat(64)},{...marketRef,datasetId:'../foreign'}])assert.equal(marketDatasetDownload(ref),null);
 const admissions = [{ admissionProfile: 'pooled_asset_1000_auto_candidate_v1', available: true, families: ['mean_reversion'], estimator: 'auto', targetKind: 'asset_price', executionEnabled: false, maxSymbols: 1000, maxCalendarDays: 366, maxFactors: 16, innerFolds: 2, outerFolds: 2, minRefitDays: 20 }];
 const calls = []; let plan, job, saved, startFail = true, saveGate, jobGate, planReadGate, completed = false, sourceKind = 'fixture', wrongSource = false;
-const dom = new JSDOM('<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>', { url: 'http://localhost/quant/#quant/easy/settings', runScripts: 'outside-only', pretendToBeVisual: true });
+const dom = new JSDOM('<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>', { url: 'http://localhost/quant/#quant/easy/model', runScripts: 'outside-only', pretendToBeVisual: true });
 const w = dom.window; w.structuredClone = structuredClone; w.scrollTo = () => {}; w.matchMedia = () => ({ matches: false, addEventListener() {} });
 w.fetch = async (url, options = {}) => {
   const path = String(url).replace('/quant/api', ''), data = options.body ? JSON.parse(options.body) : null;
@@ -47,6 +47,7 @@ const code = await build({ entryPoints: ['web/main.js'], bundle: true, write: fa
 const legacyRecord=JSON.stringify({job:{id:id(8),status:'queued'},startUnknown:true});w.localStorage.setItem('atlas-quant-market-preparation-v1',legacyRecord);
 w.eval(code.outputFiles[0].text); const q = w.qa, s = q.state;
 s.loading = false; s.session = { workspace: { id: 'owner_a' }, capabilities: { tushareHosted: true } };
+delete s.strategy.validation.testStart; // This fixture retains its pre-existing fraction split.
 s.strategy.universe = { symbols, start: '20250101', end: '20251231', selection: { version: 1, includeGroups: [{ id: 'g_1', name: '完整目录', filters: [{ field: 'exchange', value: 'SSE' }] }], excludeGroups: [], includeSymbols: [], excludeSymbols: [] }, subsetPolicy: 'all', snapshotHash: root, resolutionHash: root };
 q.parseRoute(); q.render();
 assert.equal(q.workspace.market.state.job,null,'unpartitioned records are retained but not restored');
@@ -56,7 +57,7 @@ const route = async step => { w.location.hash = '#quant/easy/' + step; await tic
 const click = async action => { const button = w.document.querySelector(`[data-sq="${action}"]`); assert(button, action); assert(!button.disabled, action+' enabled'); button.click(); await tick(); };
 await click('market-select'); assert.equal(s.dataSource,'ready_market');
 await q.workspace.run(); assert(!calls.some(x=>x.path.endsWith('/run')),'unprepared source cannot submit a research');
-await route('settings');
+await route('model');
 await click('market-plan');
 assert.equal(plan.scope.symbols.length,1000); assert(w.document.querySelector('main').textContent.includes('2001'));
 assert(!calls.some(x=>x.path.endsWith('/start')),'planning never starts provider work');
@@ -69,7 +70,7 @@ for (const family of ['trend', 'pair_reversion', 'event', 'fundamental']) {
   s.strategy.target = family === 'pair_reversion' ? { ...target, kind: 'frozen_basket', basket: { method: 'pair_ols', symbols: [] } } : structuredClone(target);
   q.render();
   assert(w.document.querySelector('[data-sq="market-start"]').disabled, family);
-  assert.equal(w.document.querySelector('[data-mechanism-admission]').dataset.mechanismAdmission, 'blocked');
+  assert.equal(w.document.querySelector('[data-sq="family"].selected').dataset.mechanismStatus, 'blocked');
   const button = w.document.querySelector('[data-sq="market-start"]'); button.disabled = false; button.click(); await tick();
   assert(!calls.some(x => x.path.endsWith('/start')), family + ' has no provider intent');
   assert.equal(q.workspace.market.state.startRequestId, null);
@@ -77,7 +78,7 @@ for (const family of ['trend', 'pair_reversion', 'event', 'fundamental']) {
   assert.equal(s.strategy.model.estimator, 'auto', 'no implicit model fallback');
 }
 s.strategy.model.family = 'mean_reversion'; s.strategy.target = target; q.render();
-assert.equal(w.document.querySelector('[data-mechanism-admission]').dataset.mechanismAdmission, 'ready');
+assert.equal(w.document.querySelector('[data-sq="family"].selected').dataset.mechanismStatus, 'ready');
 // The render-time declaration is not sufficient: start re-reads current server admission.
 admissions[0].available = false; admissions[0].reason = 'RUNNER_OFFLINE';
 await click('market-start');
@@ -167,13 +168,13 @@ assert.equal(s.strategy.universe.symbols.length,1000);
 // Saved immutable source identity is checked without this browser's preparation history.
 const preparation = q.workspace.market.state, oldPlan = preparation.plan, oldJob = preparation.job;
 preparation.plan = null; preparation.job = null; preparation.sources = {};
-await route('settings');
+await route('model');
 assert(w.document.querySelector('main').textContent.includes('合成行情 · 仅供测试'),'saved source retains fixture warning after a fresh detail read');
 assert.equal(Object.keys(preparation.sources).length,1);
-preparation.sources = {}; wrongSource = true; await route('report'); await route('settings');
+preparation.sources = {}; wrongSource = true; await route('report'); await route('model');
 assert(w.document.querySelector('main').textContent.includes('来源类型尚未核对'),'mismatched detail cannot certify source kind');
 assert(!w.document.querySelector('main').textContent.includes('合成行情 · 仅供测试'));
-wrongSource = false; sourceKind = 'provider'; await route('report'); await route('settings');
+wrongSource = false; sourceKind = 'provider'; await route('report'); await route('model');
 assert(w.document.querySelector('main').textContent.includes('来源类型：供应商冻结行情'));
 sourceKind = 'fixture'; preparation.plan = oldPlan; preparation.job = oldJob;
 // No automatic model downgrade when the mechanism is outside the registered auto profile.
@@ -181,7 +182,7 @@ s.strategy.model.family='trend'; s.dirty=true; const beforeUnsupported=calls.len
 assert.equal(s.strategy.model.estimator,'auto'); assert(!calls.slice(beforeUnsupported).some(x=>x.path.endsWith('/run')));
 s.strategy.model.family='mean_reversion';
 // A delayed binding read cannot overwrite a newly chosen source.
-await route('settings');let releaseJob;jobGate=new Promise(r=>{releaseJob=r;});
+await route('model');let releaseJob;jobGate=new Promise(r=>{releaseJob=r;});
 w.document.querySelector('[data-sq="market-bind"]').click();await tick();s.dataSource='upload';releaseJob();await tick();jobGate=null;
 assert.equal(s.dataSource,'upload');assert(w.document.querySelector('main').textContent.includes('当前草稿保留')||q.workspace.market.state.error.includes('当前草稿保留'));
 s.dataSource='ready_market';q.render();
@@ -197,7 +198,7 @@ await q.workspace.run();const run=calls.findLast(x=>x.path.endsWith('/run'));
 assert.equal(run.data.dataSource,'ready_market');assert.deepEqual(run.data.marketDatasetRef,marketRef);assert(!Object.hasOwn(run.data,'datasetRef')&&!Object.hasOwn(run.data,'dataset'));
 assert.equal(calls.filter(x=>x.path.endsWith('/start')).length,2,'research never starts another provider job');
 // An owner switch neither restores another owner's unknown job nor accepts its late response.
-await route('settings');const ownerRecord=w.localStorage.getItem('atlas-quant-market-preparation-v1:owner_a');
+await route('model');const ownerRecord=w.localStorage.getItem('atlas-quant-market-preparation-v1:owner_a');
 let releaseOwner;jobGate=new Promise(r=>{releaseOwner=r;});
 w.document.querySelector('[data-sq="market-refresh"]').click();await tick();s.session.workspace.id='owner_b';q.render();
 assert.equal(q.workspace.market.state.job,null);assert.equal(q.workspace.market.state.startUnknown,false);

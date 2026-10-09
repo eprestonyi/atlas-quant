@@ -48,6 +48,8 @@ async function assertBlockedContinuation() {
   assert(w.document.querySelector('[data-report-saved-edit]'));
   assert.equal(w.document.querySelector('[data-action="fork-run"]'), null);
   assert.match(w.document.querySelector('[data-report-source-hint]').textContent, /当前保存版本可能晚于本次运行/);
+  assert.equal(w.document.querySelector('[data-report-source-hint]').tagName, 'DETAILS');
+  assert.equal(w.document.querySelector('[data-report-source-hint]').open, false, 'editing explanation starts collapsed');
   // A stale previously rendered button must be guarded as well, before any mutation.
   const stale = w.document.createElement('button');
   stale.dataset.action = 'fork-run'; w.document.body.append(stale); stale.click(); await tick(); stale.remove();

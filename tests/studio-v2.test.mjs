@@ -144,7 +144,24 @@ test('statistical-quant DSL review receives the actual conditional-value horizon
  const response=await review('returns(close,20)','ai',{language:'dsl',strategy:current});assert.equal(response.status,200);
  const call=JSON.parse((await db.prepare("SELECT value FROM meta WHERE key='test_ai_call'").first()).value),payload=JSON.parse(call.payload.messages[1].content),context=payload.researchContext;
  assert.equal(context.codeScope,'factor_expression');assert.equal(context.target,'frozen_basket');assert.equal(context.horizon,10);assert.equal(context.observationDays,3);assert.equal(context.basketMethod,'pair_ols');assert.deepEqual(context.model,{family:'pair_reversion',estimator:'ridge',trainWindow:504,refitDays:20});assert.deepEqual(context.expression,{syntaxValid:true,fields:['close'],lookback:20});assert.equal(context.executionEnabled,false);
+ assert.deepEqual(context.validation,{innerFolds:2,outerFolds:2,minTrainDates:80,splitMode:'fraction',holdoutFraction:.2});
  assert.match(call.payload.messages[0].content,/absence of those stages in a one-line DSL fragment/);assert.match(call.payload.messages[0].content,/x\[t\]\/x\[t-n\]-1/);assert.ok(!JSON.stringify(call.payload).includes('PRIVATE_SENTINEL'));assert.ok(!JSON.stringify(call.payload).includes('PRIVATE_SYMBOL'));
+});
+
+test('AI review receives the declared date split instead of the inactive fraction', async()=>{
+ const current={schemaVersion:2,research:{mode:'statistical_quant'},validation:{testStart:'20260101',holdoutFraction:.2,innerFolds:2,outerFolds:2,minTrainDates:80}};
+ await mock({answer:{response:{summary:'Context transport fixture',findings:[],patches:[]}}});
+ const response=await review('returns(close,20)','ai',{language:'dsl',strategy:current});assert.equal(response.status,200);
+ let call=JSON.parse((await db.prepare("SELECT value FROM meta WHERE key='test_ai_call'").first()).value);
+ let validation=JSON.parse(call.payload.messages[1].content).researchContext.validation;
+ assert.deepEqual(validation,{innerFolds:2,outerFolds:2,minTrainDates:80,splitMode:'date',testStart:'20260101'});
+ assert.equal(Object.hasOwn(validation,'holdoutFraction'),false);
+ for(const testStart of ['20260230',null,'',20260101]){
+  const invalid=await review('returns(close,20)','ai',{language:'dsl',strategy:{...current,validation:{...current.validation,testStart}}});assert.equal(invalid.status,200);
+  call=JSON.parse((await db.prepare("SELECT value FROM meta WHERE key='test_ai_call'").first()).value);
+  validation=JSON.parse(call.payload.messages[1].content).researchContext.validation;
+  assert.equal(validation.splitMode,'invalid_date');assert.equal(validation.testStart,null);assert.equal(Object.hasOwn(validation,'holdoutFraction'),false);
+ }
 });
 
 test('AI structured response objects use the same findings and original-source patch validation as JSON text',async()=>{

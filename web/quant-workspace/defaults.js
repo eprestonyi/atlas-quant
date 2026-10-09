@@ -1,12 +1,11 @@
 // Versioned research defaults and client-side protocol checks; server validation remains authoritative.
 export const RESEARCH_MODE = 'statistical_quant';
 export const STEPS = [
-  { id: 'universe', name: '股票筛选', short: '筛选', icon: 'database', hint: '逐层加入和剔除条件，完整筛选结果就是研究票池' },
-  { id: 'model', name: '研究机制', short: '机制', icon: 'model', hint: '选择 F 所检验的经济或统计假设' },
-  { id: 'settings', name: '研究设置', short: '设置', icon: 'clock', hint: '定义数据、研究窗口、观察频率与预测期限' },
-  { id: 'state', name: '因子与状态', short: '因子', icon: 'layers', hint: '定义 X，拟合和方法选择由系统按时间验证完成' },
-  { id: 'validation', name: '拟合与检验', short: '检验', icon: 'shield', hint: '冻结候选协议，比较样本外预测误差与无变化基准' },
-  { id: 'report', name: 'F 模型与报告', short: '报告', icon: 'book', hint: '保存可复核的函数、拟合记录与因子证据' },
+  { id: 'universe', name: '股票筛选', short: '筛选', icon: 'database' },
+  { id: 'model', name: '研究机制', short: '机制', icon: 'model' },
+  { id: 'settings', name: '研究窗口', short: '窗口', icon: 'clock' },
+  { id: 'state', name: '因子与状态', short: '因子', icon: 'layers' },
+  { id: 'report', name: 'F 模型与报告', short: '报告', icon: 'book' },
 ];
 export const FAMILIES = {
   mean_reversion: {
@@ -51,7 +50,7 @@ export function defaultStrategy() {
     },
     target: { kind: 'asset_price', horizonSessions: 5 },
     model: { family: 'mean_reversion', estimator: 'auto', trainWindow: 504, refitDays: 20 },
-    validation: { holdoutFraction: 0.2, minTrainDates: 80, innerFolds: 2, outerFolds: 2 },
+    validation: { testStart: '20260101', holdoutFraction: 0.2, minTrainDates: 80, innerFolds: 2, outerFolds: 2 },
     execution: {
       enabled: false,
       side: 'long_short',
@@ -104,6 +103,8 @@ export function normalizeStrategy(raw) {
     'dataBindings',
   ])
     result[key] = { ...base[key], ...raw[key] };
+  // Absence means the saved protocol used its original fraction-based split.
+  if (!Object.hasOwn(raw.validation || {}, 'testStart')) delete result.validation.testStart;
   result.factors = Array.isArray(raw.factors)
     ? raw.factors.map((f) => ({
         ...f,
@@ -156,6 +157,11 @@ export function validateStrategy(
     end = date(u.end);
   if (!start || !end || start >= end) errors.push('填写有效且递增的研究日期。');
   else if (end - start > 366 * 8 * 86400000) errors.push('研究日期范围最多 8 年。');
+  if (Object.hasOwn(s.validation || {}, 'testStart')) {
+    const split = date(s.validation.testStart);
+    if (!split || !start || !end || split < start || split > end)
+      errors.push('测试集开始日期需为研究日期范围内的有效日期。');
+  }
   const evidenceKeys = ['catalogSnapshot', 'resolutionHash', 'snapshotHash', 'subsetPolicy'];
   if (!u.selection && evidenceKeys.some((key) => u[key] !== undefined))
     errors.push('股票池版本证据需要完整集合规则；请重新解析股票池或重新导入明确成员。');
