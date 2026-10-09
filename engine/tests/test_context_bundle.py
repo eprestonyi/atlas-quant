@@ -86,3 +86,35 @@ def test_report_summarization_keeps_original_source_and_legacy_identity(syntheti
     monkeypatch.setattr(bundle,'OPTIONAL_COLLECTIONS',{})
     legacy=packed(values)
     assert current[:2]==legacy[:2]
+
+
+def test_real_queue_client_routes_context_chunks_only_in_ordinary_bundle_namespace():
+    from atlas_quant.runner import QueueClient
+    calls = []
+    raw = b'[{"context":"EXPLICIT_OFFLINE_ROUTE_FIXTURE"}]'
+    class Response:
+        status_code = 200
+        def __init__(self, content): self.content = content
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def iter_content(self, size): yield self.content
+    class Session:
+        def request(self, method, url, **kwargs):
+            calls.append((method,url,kwargs))
+            return Response(raw if method == 'GET' else b'{"ok":true}')
+    client=QueueClient({'api_base':'https://offline.test/quant/api','runner_secret':'offline-test-only'},Session())
+    identity={'id':'test-job','leaseToken':'test-lease'}
+    assert client.bundle_chunk('PUT','a'*64,'snapshotContextSources',0,identity,
+                               raw=raw,stage_id='test-stage') == {'ok':True}
+    assert client.bundle_chunk('GET','a'*64,'snapshotContextSources',0,identity) == raw
+    assert len(calls)==2
+    assert all(call[1].endswith('/runner/bundles/'+'a'*64+'/chunks/snapshotContextSources/0') for call in calls)
+    assert calls[0][2]['data'] == raw and calls[0][2]['allow_redirects'] is False
+    for namespace in ('financial-bundles','financial-graph-bundles','unknown'):
+        with pytest.raises(RunnerError) as error:
+            client.bundle_chunk('PUT','a'*64,'snapshotContextSources',0,identity,
+                                raw=raw,stage_id='test-stage',namespace=namespace)
+        assert error.value.code == 'QUEUE_ROUTE'
+    with pytest.raises(RunnerError):
+        client.bundle_chunk('PUT','a'*64,'unknownSource',0,identity,raw=raw,stage_id='test-stage')
+    assert len(calls)==2  # rejected locally, without a network call

@@ -504,8 +504,10 @@ class QueueClient:
             raise RunnerError("QUEUE_NETWORK", "无法访问队列服务。") from None
 
     def bundle_chunk(self, method, bundle_id, collection, ordinal, identity, *, raw=None, stage_id=None, deadline=None, namespace="bundles"):
-        from .bundle import HASH, COLLECTIONS, CHUNK_LIMIT
-        if namespace == "financial-graph-bundles":
+        from .bundle import HASH, COLLECTIONS, OPTIONAL_COLLECTIONS, CHUNK_LIMIT
+        if namespace == "bundles":
+            COLLECTIONS = COLLECTIONS | OPTIONAL_COLLECTIONS
+        elif namespace == "financial-graph-bundles":
             from .financial_bundle_v2 import COLLECTIONS
         if (namespace not in ("bundles", "financial-bundles", "financial-graph-bundles") or method not in ("GET", "PUT")
                 or namespace == "financial-graph-bundles" and method != "PUT" or not isinstance(bundle_id, str) or not HASH.fullmatch(bundle_id)
