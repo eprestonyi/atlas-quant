@@ -78,6 +78,30 @@ test('foreign ETF contexts require their own clock capability before run or clai
   await rejected(await request('/runner/claim',{engineVersion:'99.0.0',requestId,...capabilities},true),409,'RUNNER_UPGRADE_REQUIRED');
 });
 
+test('Yahoo inputs require v3 before reservation and cannot recover through a v2 runner',async()=>{
+  const strategy=auto();strategy.factors=[{id:'etf',expression:'ext_ctx_yf_xsd_close'}];
+  const v2={...capabilities,contextSourceFormats:['named-index-history/1','named-market-history/2']};
+  const v3={...v2,contextSourceFormats:[...v2.contextSourceFormats,'named-market-history/3']};
+  await heartbeat(v2);
+  await rejected(await run(strategy),409,'RUNNER_UPGRADE_REQUIRED');await noReservation();
+  const queued=await run(auto());assert.equal(queued.status,202);const id=(await queued.json()).job.id;
+  const stored=JSON.parse((await db.prepare('SELECT spec FROM jobs WHERE id=?').bind(id).first()).spec);
+  stored.factors=[{id:'etf',expression:'ext_ctx_yf_xsd_close',direction:1,role:'predictor'}];
+  await db.prepare("UPDATE jobs SET spec=?,data_source='tushare' WHERE id=?").bind(JSON.stringify(stored),id).run();
+  for(const requestId of [undefined,randomUUID()]){
+    const response=await request('/runner/claim',{engineVersion:'99.0.0',...v2,...(requestId?{requestId}:{})},true);
+    assert.equal(response.status,200);assert.equal((await response.json()).job,null);
+    assert.equal((await db.prepare('SELECT status FROM jobs WHERE id=?').bind(id).first()).status,'queued');
+    assert.equal((await db.prepare('SELECT count(*) n FROM runner_claims').first()).n,0);
+  }
+  const requestId=randomUUID();
+  const response=await request('/runner/claim',{engineVersion:'99.0.0',requestId,...v3},true);
+  assert.equal(response.status,200);assert.equal((await response.json()).job.id,id);
+  const before=await db.prepare('SELECT lease_token,lease_until FROM jobs WHERE id=?').bind(id).first();
+  await rejected(await request('/runner/claim',{engineVersion:'99.0.0',requestId,...v2},true),409,'RUNNER_UPGRADE_REQUIRED');
+  assert.deepEqual(await db.prepare('SELECT lease_token,lease_until FROM jobs WHERE id=?').bind(id).first(),before);
+});
+
 test('legacy studies remain exact and runnable without adopting the automatic protocol',async()=>{
   await heartbeat({});
   const created=await request('/statistical-quant/experiments',{strategy:base});assert.equal(created.status,201);
