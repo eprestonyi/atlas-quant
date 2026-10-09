@@ -314,7 +314,7 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
     fail('事件模型需要有时点来源的event用途因子');
   const v = keys(
     input.validation ?? {},
-    ['holdoutFraction', 'minTrainDates', 'innerFolds', 'outerFolds'],
+    ['holdoutFraction', 'testStart', 'minTrainDates', 'innerFolds', 'outerFolds'],
     '验证配置'
   );
   const validation = {
@@ -323,6 +323,11 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
     innerFolds: number(v.innerFolds ?? 2, '内层折数', 2, 3, true),
     outerFolds: number(v.outerFolds ?? 2, '外层折数', 2, 3, true)
   };
+  if ('testStart' in v) {
+    validation.testStart = date(v.testStart);
+    if (validation.testStart < universe.start || validation.testStart > universe.end)
+      fail('测试集起始日期须在研究区间内');
+  }
   if (validation.minTrainDates > model.trainWindow) fail('最少训练日不能超过训练窗口');
   if (input.dataBindings?.pcd)
     for (const binding of Object.values(input.dataBindings.pcd)) {

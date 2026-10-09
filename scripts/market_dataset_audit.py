@@ -1480,7 +1480,16 @@ def validate_asset_coverage(audit, manifest, strategy, check):
     )
     start = max(61, warmup + 1)
     eligible = len(calendar) - start
-    boundary = int(eligible * (1 - fraction))
+    if "testStart" in strategy["validation"]:
+        test_start = date(strategy["validation"]["testStart"], check)
+        check.require(
+            strategy["universe"]["start"] <= test_start <= strategy["universe"]["end"],
+            "Explicit terminal test date lies outside the research scope",
+            "RESULT_CLOCK",
+        )
+        boundary = next((i for i, day in enumerate(calendar[start:]) if day >= test_start), eligible)
+    else:
+        boundary = int(eligible * (1 - fraction))
     check.require(
         eligible > 0 and boundary >= 1 and eligible - boundary >= 10,
         "Frozen calendar cannot support declared terminal holdout",

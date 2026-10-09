@@ -17,6 +17,19 @@ function numbers(source, keys) {
   return Object.fromEntries(keys.map((key) => [key, number(source?.[key])]));
 }
 
+function splitContext(validation) {
+  const controls = numbers(validation, ['innerFolds', 'outerFolds', 'minTrainDates']);
+  if (!Object.hasOwn(validation || {}, 'testStart'))
+    return { ...controls, splitMode: 'fraction', holdoutFraction: number(validation?.holdoutFraction) };
+  const value = validation.testStart;
+  const formatted = typeof value === 'string' && /^\d{8}$/.test(value)
+    ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : '';
+  const parsed = new Date(formatted + 'T00:00:00Z');
+  const valid = formatted && Number.isFinite(+parsed) && parsed.toISOString().slice(0, 10) === formatted;
+  // A malformed explicit declaration must not fall back to the unused fraction.
+  return { ...controls, splitMode: valid ? 'date' : 'invalid_date', testStart: valid ? value : null };
+}
+
 export function researchContext(strategy, language, code) {
   const current = strategy?.schemaVersion === 2 && strategy?.research?.mode === 'statistical_quant';
   const context = {
@@ -37,7 +50,7 @@ export function researchContext(strategy, language, code) {
     };
     context.observationDays = number(strategy?.research?.observationDays);
     context.basketMethod = text(strategy?.target?.basket?.method);
-    context.validation = numbers(strategy?.validation, ['innerFolds', 'outerFolds', 'minTrainDates', 'holdoutFraction']);
+    context.validation = splitContext(strategy?.validation);
     context.executionEnabled = strategy?.execution?.enabled === true;
   }
   if (language === 'dsl') {

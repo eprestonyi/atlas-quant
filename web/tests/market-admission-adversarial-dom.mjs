@@ -15,7 +15,7 @@ const code = await build({ entryPoints: ['web/main.js'], bundle: true, write: fa
 const tick = () => new Promise(resolve => setTimeout(resolve, 25));
 const deferred = () => { let release; const promise = new Promise(resolve => { release = resolve; }); return { promise, release }; };
 async function harness() {
-  const dom = new JSDOM('<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>', { url: 'http://localhost/quant/#quant/easy/settings', runScripts: 'outside-only', pretendToBeVisual: true });
+  const dom = new JSDOM('<div id="app"></div><div id="toast-root"></div><div id="modal-root"></div>', { url: 'http://localhost/quant/#quant/easy/model', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window, calls = [], planReads = [];
   w.structuredClone = structuredClone; w.scrollTo = () => {}; w.matchMedia = () => ({ matches: false, addEventListener() {} });
   let plan, q;
@@ -36,6 +36,7 @@ async function harness() {
   q.state.loading = false;
   q.state.session = { workspace: { id: 'owner-a' }, capabilities: { tushareHosted: true } };
   q.state.dataSource = 'ready_market';
+  delete q.state.strategy.validation.testStart; // Preserve this pre-existing fixture protocol.
   q.state.strategy.universe = { symbols: Array.from({ length: 1000 }, (_, n) => `${600000 + n}.SH`), start: '20250101', end: '20251231', selection: { version: 1, includeGroups: [{ id: 'all', filters: [{ field: 'exchange', value: 'SSE' }] }], excludeGroups: [], includeSymbols: [], excludeSymbols: [] }, subsetPolicy: 'all', snapshotHash: root, resolutionHash: root };
   q.parseRoute(); q.render();
   w.document.querySelector('[data-sq="market-plan"]').click(); await tick();

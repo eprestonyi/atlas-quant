@@ -317,13 +317,15 @@ assert(w.location.hash.endsWith('/state'));
 assert(w.document.querySelector('main').textContent.includes('现金资产占比'));
 const initialStrategy = JSON.parse(JSON.stringify(q.state.strategy));
 await route('#quant/easy/settings');
-const settingsText = w.document.querySelector('main').textContent;
-assert(settingsText.includes('观察收盘后，下一官方交易日开盘为入场时点；未来目标为其后 h 个交易日开盘'));
-assert(settingsText.includes('h=1 不是下一日收盘'));
-assert(settingsText.includes('默认每天观察一次；这不等于预测期限 h=1'));
+assert(w.document.querySelector('[data-sq-config="validation.testStart"]'));
+assert(!w.document.querySelector('[data-sq-config="universe.start"]'), 'frozen source dates stay read only');
+assert(!w.document.querySelector('[data-sq-config="universe.end"]'));
+assert(!w.document.querySelector('[data-sq-config="target.horizonSessions"]'));
+await route('#quant/easy/model');
 assert.equal(w.document.querySelector('[data-sq-config="target.horizonSessions"]').value,'5');
 assert.equal(w.document.querySelector('[data-sq-config="research.observationDays"]').value,'1');
-assert.deepEqual(JSON.parse(JSON.stringify(q.state.strategy)),initialStrategy,'timing guidance does not migrate the frozen protocol');
+assert(!w.document.querySelector('main').textContent.includes('h=1 不是下一日收盘'));
+assert.deepEqual(JSON.parse(JSON.stringify(q.state.strategy)),initialStrategy,'moving controls does not migrate the frozen protocol');
 await route('#quant/easy/state');
 assert.doesNotThrow(() => validateStatisticalQuant(initialStrategy));
 assert.equal(Object.hasOwn(initialStrategy.factors[0], 'name'), false);
@@ -360,7 +362,7 @@ assert(
 );
 await route('#quant/model');
 assert(
-  w.document.querySelector('main').textContent.includes('基本面条件预测 · 当前可用协议'),
+  w.document.querySelector('main').textContent.includes('基本面条件预测'),
 );
 assert(!w.document.querySelector('[data-sq-config="model.family"]'));
 const savedVersion = await q.workspace.save();
@@ -381,7 +383,7 @@ const openOld = w.document.createElement('button');openOld.dataset.sq='experimen
 await route('#quant/easy/model');
 assert.equal(q.state.strategy.model.estimator,'ridge');
 assert.equal(q.state.datasetBinding.admissionProfile,'financial_snapshot_view_50_v1');
-assert(w.document.querySelector('main').textContent.includes('当前已保存版本使用 Ridge'));
+assert(!w.document.querySelector('[data-sq-config="model.estimator"]'), 'Easy has no estimator picker even for a preserved Ridge version');
 // Binding refresh is owner- and draft-fenced; it cannot replace edits made in flight.
 await route('#quant/studio/datasets/dataset/' + datasetId + '?root=' + root);
 let releaseDetail; detailGate = new Promise(resolve=>{releaseDetail=resolve;});

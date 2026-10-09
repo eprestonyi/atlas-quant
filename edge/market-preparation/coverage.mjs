@@ -13,9 +13,19 @@ export async function marketOriginDomain(strategy, calendar, symbols) {
   );
   const start = Math.max(61, warmup + 1);
   const eligible = calendar.slice(start);
-  const boundary = Math.floor(
-    eligible.length * (1 - strategy.validation.holdoutFraction),
-  );
+  let boundary;
+  if ('testStart' in strategy.validation) {
+    const value = strategy.validation.testStart;
+    const formatted = typeof value === 'string' && /^\d{8}$/.test(value)
+      ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : '';
+    const parsed = new Date(formatted + 'T00:00:00Z');
+    if (!formatted || !Number.isFinite(+parsed) || parsed.toISOString().slice(0, 10) !== formatted
+        || value < strategy.universe.start || value > strategy.universe.end)
+      reject('测试集起始日期须为研究区间内的YYYYMMDD日期');
+    boundary = eligible.findIndex(day => day >= value);
+  } else {
+    boundary = Math.floor(eligible.length * (1 - strategy.validation.holdoutFraction));
+  }
   if (boundary < 1 || eligible.length - boundary < 10)
     reject("冻结日历无法形成完整报告窗口");
   const holdoutStart = eligible[boundary],

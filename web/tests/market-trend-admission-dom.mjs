@@ -42,6 +42,7 @@ w.fetch = async (url, options = {}) => {
 const app = await build({ entryPoints: ['web/main.js'], bundle: true, write: false, format: 'iife', plugins: [{ name: 'no-init', setup(b) { b.onLoad({ filter: /\/web\/app\.js$/ }, async f => ({ loader: 'js', contents: (await fs.readFile(f.path, 'utf8')).replace('  init();', '  window.qa={state,workspace,parseRoute,render};') })); } }] });
 w.eval(app.outputFiles[0].text); q = w.qa; const s = q.state;
 s.loading = false; s.session = { workspace: { id: 'owner-a' }, capabilities: { tushareHosted: true } };
+delete s.strategy.validation.testStart; // This fixture retains its pre-existing fraction split.
 s.strategy.universe = { symbols: Array.from({ length: 1000 }, (_, n) => `${600000 + n}.SH`), start: '20240101', end: '20241231', selection: { version: 1, includeGroups: [{ id: 'all', filters: [{ field: 'exchange', value: 'SSE' }] }], excludeGroups: [], includeSymbols: [], excludeSymbols: [] }, subsetPolicy: 'all', resolutionHash: 'b'.repeat(64), snapshotHash: 'b'.repeat(64) };
 s.strategy.factors = [{ id: 'declared_close', expression: 'rank(close)', direction: 1, role: 'predictor' }];
 original = { id: id(3), version: 1, strategy: structuredClone(s.strategy), universeScopeRef: scopeRef, marketDatasetBinding: { marketDatasetRef: ref, admissionProfile: AUTO_PROFILE, universeScopeRef: scopeRef, scope: { symbols: [...s.strategy.universe.symbols], start: s.strategy.universe.start, end: s.strategy.universe.end, symbolCount: 1000, scopeRoot: scopeRef.scopeRoot } } };
@@ -56,7 +57,7 @@ await open(); await route('model');
 assert.equal(q.workspace.market.state.plan, null);
 assert.equal(w.document.querySelectorAll('[data-sq="family"]').length, 5);
 assert(!w.document.querySelector('[data-sq-config="model.estimator"]'));
-assert(trendCard().disabled); assert(trendCard().textContent.includes('尚未开放'));
+assert(trendCard().disabled); assert(trendCard().textContent.includes('暂不可用'));
 for (const mutate of [() => { trendEnabled = true; runnerTrend = false; }, () => { runnerTrend = true; runnerFresh = false; }, () => { runnerFresh = true; transportSupported = false; }, () => { transportSupported = true; marketEnabled = false; }, () => { marketEnabled = true; omitTrend = true; }]) {
   mutate(); q.workspace.market.routeChanged(); await tick();
   assert(trendCard().disabled, 'missing exact fresh server proof keeps trend disabled');
@@ -69,7 +70,7 @@ await click('[data-sq="family"][data-id="trend"]');
 assert.equal(s.strategy.model.family, 'trend'); assert.equal(s.strategy.model.estimator, 'auto');
 assert.equal(s.marketDatasetBinding.admissionProfile, AUTO_PROFILE, 'choosing a mechanism does not mutate the frozen compute binding');
 assert(marketBindingErrors(s, { run: true }).length);
-await route('settings');
+await route('model');
 assert(w.document.querySelector('main').textContent.includes('合成行情 · 仅供测试'));
 assert(w.document.querySelector('[data-sq="market-rebind"]'));
 const before = JSON.stringify(s.marketDatasetBinding);
@@ -120,7 +121,7 @@ assert.equal(savedRequest.input.strategy.universe.symbols.length, 1000);
 assert.equal(original.version, 1); assert.equal(original.strategy.model.family, 'mean_reversion'); assert.equal(original.marketDatasetBinding.admissionProfile, AUTO_PROFILE);
 assert.equal(saved.version, 2);
 s.marketDatasetBinding = null; q.workspace.market.state.sources = {};
-await open(); await route('settings');
+await open(); await route('model');
 assert.equal(s.marketDatasetBinding.admissionProfile, TREND_AUTO_PROFILE);
 assert(w.document.querySelector('main').textContent.includes('趋势条件预测 · 自动选择'));
 assert.equal(q.workspace.market.state.plan, null);

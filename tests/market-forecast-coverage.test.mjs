@@ -21,6 +21,7 @@ async function makeFixture({
   observationDays = 1,
   expression = "returns(close,20)",
   predictors = true,
+  testStart = undefined,
   mutate = null,
 } = {}) {
   const strategy = {
@@ -30,7 +31,7 @@ async function makeFixture({
     research: { mode: "statistical_quant", observationDays },
     target: { kind: "asset_price", horizonSessions: 5 },
     model: { refitDays: 20 },
-    validation: { holdoutFraction: 0.2 },
+    validation: { holdoutFraction: 0.2, ...(testStart === undefined ? {} : { testStart }) },
     factors: predictors ? [{ id: "f", expression, role: "predictor" }] : [],
   };
   const domain = await marketOriginDomain(strategy, calendar, symbols);
@@ -194,6 +195,23 @@ test("lookback and observation stride are anchored before holdout, not at its bo
   assert.equal(shifted.domain.origins[0].date, calendar[175]);
   for (const f of [fixture, shifted])
     assert.equal((await check(f)).status, 200);
+});
+
+test("explicit terminal date survives bundle coverage with the original observation phase", async () => {
+  const f = await makeFixture({ observationDays: 3, testStart: calendar[150] });
+  assert.equal(f.domain.holdoutStart, calendar[150]);
+  assert.equal(f.domain.origins[0].date, calendar[151]);
+  assert.equal((await check(f)).status, 200);
+});
+
+test("rehashed explicit-date replacement cannot retain a different complete terminal grid", async () => {
+  const f = await makeFixture({
+    testStart: calendar[150],
+    mutate({ forecast }) { forecast.sourceStrategy.validation.testStart = calendar[151]; },
+  });
+  const result = await check(f);
+  assert.equal(result.prechecks, true, JSON.stringify(result));
+  assert.equal(result.code, 'MARKET_FORECAST_COVERAGE', JSON.stringify(result));
 });
 
 for (const variant of [

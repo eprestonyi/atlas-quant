@@ -161,9 +161,19 @@ def validate(strategy, *, capacity_profile=None):
         fail("MISSING_MODEL_DATA", "财务条件模型需要已选实际基本面字段")
     if model["family"] == "event" and not any(roles[k] == "event" and any(x.startswith(("ext_", "pcd_", "fd_")) for x in v) for k, v in fields.items()):
         fail("MISSING_MODEL_DATA", "事件模型需要role:event的点时外部数值")
-    val = section(s, "validation", {"holdoutFraction", "minTrainDates", "innerFolds", "outerFolds"}, {"holdoutFraction": .2, "minTrainDates": 80, "innerFolds": 2, "outerFolds": 2})
+    val = section(s, "validation", {"holdoutFraction", "testStart", "minTrainDates", "innerFolds", "outerFolds"}, {"holdoutFraction": .2, "minTrainDates": 80, "innerFolds": 2, "outerFolds": 2})
     for key, lo, hi, integer in (("holdoutFraction", .1, .4, False), ("minTrainDates", 40, 252, True), ("innerFolds", 2, 3, True), ("outerFolds", 2, 3, True)):
         val[key] = number(val[key], key, lo, hi, integer)
+    if "testStart" in val:
+        value = val["testStart"]
+        try:
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9]{8}", value):
+                raise ValueError()
+            datetime.strptime(value, "%Y%m%d")
+            if not u["start"] <= value <= u["end"]:
+                raise ValueError()
+        except (ValueError, TypeError):
+            fail("INVALID_STATISTICAL_QUANT", "testStart须为研究区间内的YYYYMMDD日期")
     if val["minTrainDates"] > model["trainWindow"]:
         fail("INVALID_STATISTICAL_QUANT", "minTrainDates不可超过trainWindow")
     ex = section(s, "execution", {"enabled", "side", "shorting", "minEdgeBps", "maxPositions"}, {"enabled": True, "side": "long_short", "shorting": "theoretical", "minEdgeBps": 10, "maxPositions": 5})
