@@ -49,7 +49,10 @@ COLLECTIONS = {
 }
 # Optional only for ordinary forecast snapshots. Existing financial protocols
 # keep their closed collection maps and unchanged document encodings.
-OPTIONAL_COLLECTIONS = {"snapshotContextSources": ("snapshot", "/provenance/contextSources")}
+OPTIONAL_COLLECTIONS = {
+    "snapshotContextSources": ("snapshot", "/provenance/contextSources"),
+    "modelSearchCandidates": ("forecast", "/diagnostics/modelSearch/candidates"),
+}
 
 
 def fail(code, message):

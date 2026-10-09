@@ -8,7 +8,7 @@ export function validateMetadata(a, {require: ok, keys, number, equal}) {
     ok(Number.isFinite(d.valueOf()) && d.toISOString().slice(0,10) === iso, '训练日期不存在');
   };
   const {training: t, scope: s, featureConstruction: c, lineage: l} = a;
-  const automatic = a.schema === 'atlas-model-function/2';
+  const automatic = a.schema === 'atlas-model-function/2' || (a.schema === 'atlas-model-function/3' && c.schema === 'origin-state-features/2');
   keys(t, ['trainStart','trainEnd','informationCutoff','labelEndMax','trainRows','trainDates'], '训练范围');
   for (const k of ['trainStart','trainEnd','informationCutoff','labelEndMax']) date(t[k]);
   ok(t.trainStart <= t.trainEnd && t.trainEnd <= t.labelEndMax && t.labelEndMax < t.informationCutoff && int(t.trainRows,1,10000000) && int(t.trainDates,1,t.trainRows), '训练时间或数量无效');
@@ -82,7 +82,8 @@ export function validateMetadata(a, {require: ok, keys, number, equal}) {
   keys(a.identity, ['entry','future','e','expectedChange','scale'], '状态还原');
   ok(a.identity.entry === 'currentState + scale * output[0]' && a.identity.future === 'currentState + scale * output[1]' && a.identity.e === 'currentState - expectedFuture' && a.identity.expectedChange === '-e' && a.identity.scale === 'origin_known_gross_absolute_leg_value', '状态还原定义无效');
   keys(a.provenance,['estimator','parameters','sklearnVersion'],'估计器来源');
-  const grids = {no_change:[{}],historical_drift:[{}],ridge:[{alpha:1},{alpha:10}],elastic_net:[{alpha:.0001,l1_ratio:.2},{alpha:.001,l1_ratio:.5}],hist_gradient_boosting:[{max_leaf_nodes:7,l2_regularization:1},{max_leaf_nodes:15,l2_regularization:5}]};
+  const grids = {no_change:[{}],historical_drift:[{}],ridge:[{alpha:1},{alpha:10},{alpha:100},{alpha:1000}],elastic_net:[{alpha:.0001,l1_ratio:.2},{alpha:.001,l1_ratio:.5},{alpha:.01,l1_ratio:.5}],hist_gradient_boosting:[{max_leaf_nodes:7,l2_regularization:1},{max_leaf_nodes:15,l2_regularization:5}]};
+  Object.assign(grids, {polynomial_ridge:[{alpha:10,degree:2},{alpha:100,degree:2},{alpha:1000,degree:2}],polynomial_elastic_net:[{alpha:.001,l1_ratio:.5,degree:2},{alpha:.01,l1_ratio:.5,degree:2}],transformed_ridge:[{alpha:10},{alpha:100},{alpha:1000}],factorwise_basis:[{alpha:.001,l1_ratio:.5},{alpha:.01,l1_ratio:.5},{alpha:.1,l1_ratio:.5}]});
   const same = (x,y) => x && typeof x === 'object' && !Array.isArray(x) && equal(Object.keys(x).sort(),Object.keys(y).sort()) && Object.keys(y).every(k => x[k] === y[k]);
   ok(Object.hasOwn(grids,a.provenance.estimator) && grids[a.provenance.estimator].some(x => same(a.provenance.parameters,x)) && typeof a.provenance.sklearnVersion === 'string' && /^[0-9A-Za-z.+-]{1,40}$/.test(a.provenance.sklearnVersion), '估计器来源无效');
   keys(a.editPolicy,['allowed','arbitraryCode','editedEvidenceStatus'],'编辑约定');

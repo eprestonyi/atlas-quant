@@ -33,6 +33,10 @@ export const ESTIMATORS = {
   ridge: 'Ridge',
   elastic_net: 'Elastic Net',
   hist_gradient_boosting: 'Histogram Gradient Boosting',
+  polynomial_ridge: '正则化多项式',
+  polynomial_elastic_net: '稀疏多项式',
+  transformed_ridge: '对数与指数基函数',
+  factorwise_basis: '逐因子拟合与组合',
 };
 
 export function defaultStrategy({ automatic = false } = {}) {
@@ -50,7 +54,8 @@ export function defaultStrategy({ automatic = false } = {}) {
       ...(automatic ? { automatic: { schema: 'auto-factor-preprocess/1' } } : {}),
     },
     target: { kind: 'asset_price', horizonSessions: 5 },
-    model: { family: 'mean_reversion', estimator: 'auto', trainWindow: 504, refitDays: 20 },
+    model: { family: 'mean_reversion', estimator: 'auto', trainWindow: 504, refitDays: 20,
+      ...(automatic ? {search:{schema:'factor-model-search/1'},parameterSharing:'pooled'} : {}) },
     validation: { testStart: '20260101', holdoutFraction: 0.2, minTrainDates: 80, innerFolds: 2, outerFolds: 2 },
     execution: {
       enabled: false,
@@ -270,6 +275,13 @@ export function validateStrategy(
   }
   if (!FAMILIES[s.model?.family]) add('选择支持的预测模型族。');
   if (!ESTIMATORS[s.model?.estimator]) add('选择支持的估计器。');
+  if (s.model?.search !== undefined && (!s.model.search || typeof s.model.search !== 'object' ||
+      Array.isArray(s.model.search) || Object.keys(s.model.search).length !== 1 || s.model.search.schema !== 'factor-model-search/1'))
+    add('模型搜索协议无效。');
+  if (s.model?.parameterSharing !== undefined && !['pooled','per_target'].includes(s.model.parameterSharing))
+    add('模型参数作用域无效。');
+  if (s.model?.parameterSharing === 'per_target' && s.target?.kind !== 'asset_price')
+    add('逐标的模型需要逐只股票目标。');
   if (
     s.model?.family === 'pair_reversion' &&
     (s.target?.kind !== 'frozen_basket' || b.method !== 'pair_ols')

@@ -4,6 +4,7 @@ import { ApiError } from "./errors.mjs";
 
 const FIELDS = [
   "factorPreprocessFormats",
+  "functionSearchFormats",
   "contextSourceFormats",
   "datasetFormats",
   "snapshotFormats",

@@ -14,6 +14,8 @@ function reference(value) {
     return {functionId:value.functionId,artifactId:value.artifactId};
   if (exact(value,['runId','bundleId','modelFitId']) && ID.test(value.runId) && HASH.test(value.bundleId) && typeof value.modelFitId === 'string' && /^[A-Za-z0-9_.:-]{1,160}$/.test(value.modelFitId))
     return {runId:value.runId,bundleId:value.bundleId,modelFitId:value.modelFitId};
+  if (exact(value,['runId','bundleId','modelSearchCandidateId']) && ID.test(value.runId) && HASH.test(value.bundleId) && typeof value.modelSearchCandidateId === 'string' && /^[A-Za-z0-9_.:-]{1,160}$/.test(value.modelSearchCandidateId))
+    return {runId:value.runId,bundleId:value.bundleId,modelSearchCandidateId:value.modelSearchCandidateId};
   fail('请指定完整且固定版本的私有函数来源');
 }
 function item(row) {
@@ -42,11 +44,23 @@ export async function resolveFunction(env,owner,source) {
   if (!stage) fail('冻结研究函数不存在','NOT_FOUND',404);
   if (stage.bundle_id !== ref.bundleId) fail('报告版本不匹配，请重新打开报告','BUNDLE_VERSION_CHANGED',409);
   const parsed = await parsedStage(stage);
-  const fit = (await detailRecord(env,stage,parsed,new URLSearchParams({collection:'modelFits',id:ref.modelFitId}))).item;
+  const entry = (await detailRecord(env,stage,parsed,new URLSearchParams({
+    collection:ref.modelSearchCandidateId ? 'modelSearchCandidates' : 'modelFits',
+    id:ref.modelSearchCandidateId || ref.modelFitId}))).item;
+  const fit = ref.modelSearchCandidateId ? {...entry.fit,functionArtifact:entry.functionArtifact} : entry;
+  if (ref.modelSearchCandidateId && (entry.status !== 'valid' || entry.estimator !== fit.estimator ||
+      !obj(entry.params) || !obj(fit.params) || Object.keys(entry.params).length !== Object.keys(fit.params).length ||
+      Object.keys(entry.params).some(k => entry.params[k] !== fit.params[k])))
+    fail('候选与拟合记录不一致','FUNCTION_SOURCE_MISMATCH',503);
   if (!fit.functionArtifact) fail('该历史拟合没有保存可移植函数，请保留原报告','FUNCTION_NOT_EXPORTED',409);
   const artifact = await validateFunction(fit.functionArtifact);
   if (artifact.lineage.status !== 'fitted') fail('研究拟合函数的来源状态无效','FUNCTION_INTEGRITY',503);
   assertFunctionSource(artifact,fit,parsed.metadata.forecast.sourceStrategy);
+  if (parsed.metadata.forecast.sourceStrategy.model.parameterSharing === 'per_target') {
+    const target = (await detailRecord(env,stage,parsed,new URLSearchParams({collection:'targets',id:fit.targetId}))).item;
+    if (target.kind !== 'asset_price' || target.symbols?.length !== 1 || target.symbols[0] !== fit.targetSymbol)
+      fail('函数与逐标的研究目标不一致','FUNCTION_SOURCE_MISMATCH',503);
+  }
   return {ref,artifact};
 }
 async function derive(env,owner,input) {

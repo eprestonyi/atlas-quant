@@ -29,6 +29,7 @@ PATHS = {
     "perTarget": ("forecast", "/diagnostics/perTarget"),
     "outerFolds": ("forecast", "/diagnostics/outerFolds"),
     "finalTrials": ("forecast", "/diagnostics/finalTrials"),
+    "modelSearchCandidates": ("forecast", "/diagnostics/modelSearch/candidates"),
     "baselineRows": ("forecast", "/diagnostics/factorIncrement/baselineRows"),
     "baselineModelFits": ("forecast", "/diagnostics/factorIncrement/baselineModelFits"),
     "dailyLosses": ("forecast", "/diagnostics/factorIncrement/dailyLosses"),
