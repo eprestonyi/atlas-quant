@@ -14,10 +14,11 @@ const BUILTIN_DEFINITION = Object.freeze({
 });
 
 function constructionDefinition(artifact, input, factor, symbol) {
+  const asset = artifact.scope?.targetKind === 'asset_price' && artifact.identity?.scale === 'origin_known_gross_absolute_leg_value';
   const descriptor = artifact.featureConstruction?.automatic?.factors?.find(item => item.feature === input.name);
   if (!factor) return { equations: Object.hasOwn(BUILTIN_DEFINITION, input.name) ? [`${symbol} = ${BUILTIN_DEFINITION[input.name]}`] : [], operations: [], descriptor: null };
   if (!descriptor && artifact.featureConstruction?.schema === 'origin-state-features/2') return { equations: [], operations: ['构建定义缺失'], descriptor: null };
-  if (!descriptor) return { equations: [`dⱼ,ₜ = ${factor.expression}`, `${symbol} = Σⱼ(qⱼ pⱼ,ₜ / scale) × ${factor.direction} × dⱼ,ₜ`], operations: ['篮子聚合'], descriptor: null };
+  if (!descriptor) return { equations: [`dⱼ,ₜ = ${factor.expression}`, `${symbol} = ${asset ? '' : 'Σⱼ(qⱼ pⱼ,ₜ / scale) × '}${factor.direction} × dⱼ,ₜ`], operations: [asset ? '个股输入' : '篮子聚合'], descriptor: null };
   const { transform: t, scope, direction } = descriptor;
   const raw = scope === 'global' ? 'dₜ' : 'dⱼ,ₜ', out = scope === 'global' ? 'gₜ' : 'gⱼ,ₜ';
   const member = scope === 'global' ? '' : 'ⱼ,';
@@ -31,8 +32,8 @@ function constructionDefinition(artifact, input, factor, symbol) {
   };
   const labels = {identity:'原值',log_positive:'对数',log1p_nonnegative:'log1p',reciprocal_nonzero:'倒数',percent_to_fraction:'百分比转小数',return_over_trailing_volatility:'收益 / 历史波动'};
   return { descriptor, equations: [`${raw} = ${descriptor.expression}`, ...(formulas[t.kind] || ['未识别的经济变换']), `${out} 非有限 → null`,
-    `${symbol} = ${scope === 'global' ? `${direction} × ${out}` : `Σⱼ(qⱼ pⱼ,ₜ / scale) × ${direction} × ${out}`}`],
-    operations: [labels[t.kind] || t.kind, scope === 'global' ? '全局一次' : '篮子聚合'] };
+    `${symbol} = ${scope === 'global' || asset ? `${direction} × ${out}` : `Σⱼ(qⱼ pⱼ,ₜ / scale) × ${direction} × ${out}`}`],
+    operations: [labels[t.kind] || t.kind, scope === 'global' ? '全局一次' : asset ? '个股输入' : '篮子聚合'] };
 }
 
 // These are the portable function's actual numerical inputs. A factor expression
