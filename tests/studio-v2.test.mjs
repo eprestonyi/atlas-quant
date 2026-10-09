@@ -90,6 +90,50 @@ test('field pagination, source filters, availability and literal search are enfo
  assert.equal((await request('/fields?availability=imaginary')).status,400);
 });
 
+
+async function withContextFieldFixtures(check) {
+ const rows=[
+  {id:'MKT.ext_ctx_xsd_close',alias:'ext_ctx_xsd_close',label:'US XSD source',historyStatus:'adapter_supported_history_unverified'},
+  {id:'MKT.ext_ctx_801125_si_close',alias:'ext_ctx_801125_si_close',label:'CN white liquor source',availabilityStatus:'adapter_supported_requires_observations'},
+ ];
+ try {
+  await db.batch(rows.map(f=>db.prepare('INSERT INTO data_fields(id,database_key,data_type,numeric_eligible,alias,search_text,metadata) VALUES(?,?,?,?,?,?,?)')
+   .bind(f.id,'MKT','number',1,f.alias,[f.label,f.alias].join(' ').toLowerCase(),JSON.stringify({...f,source:'TUSHARE_PRO',path:'fixture/'+f.alias}))));
+  await check();
+ } finally { await db.batch(rows.map(f=>db.prepare('DELETE FROM data_fields WHERE id=?').bind(f.id))); }
+}
+
+test('unverified raw ETF fields remain unavailable on public HTTP catalog views',async()=>{
+ await withContextFieldFixtures(async()=>{
+  const response=await request('/fields?database=MKT&q=ext_ctx_xsd');assert.equal(response.status,200);
+  const all=await response.json();assert.equal(all.total,1);assert.equal(all.items[0].availability.status,'unavailable');
+  assert.match(all.items[0].availability.reason,/ETF 历史待验/);assert.equal(all.items[0].historyStatus,'adapter_supported_history_unverified');
+  const filtered=await (await request('/fields?database=MKT&availability=unavailable')).json();
+  assert.equal(filtered.total,1);assert.equal(filtered.items[0].alias,'ext_ctx_xsd_close');
+ });
+});
+
+test('ready field search and counts cannot expose unverified ETF inputs',async()=>{
+ await withContextFieldFixtures(async()=>{
+  const searched=await (await request('/fields?availability=ready&q=ext_ctx_xsd')).json();
+  assert.equal(searched.total,0);assert.deepEqual(searched.items,[]);
+  const first=await (await request('/fields?database=MKT&availability=ready&pageSize=1')).json();
+  const second=await (await request('/fields?database=MKT&availability=ready&pageSize=1&page=2')).json();
+  assert.equal(first.total,2);assert.equal(second.total,2);
+  assert.ok([...first.items,...second.items].every(f=>f.availability.status==='ready'&&f.alias!=='ext_ctx_xsd_close'));
+ });
+});
+
+test('China context fields retain adapter readiness and their source metadata',async()=>{
+ await withContextFieldFixtures(async()=>{
+  const response=await request('/fields?database=MKT&availability=ready&q=ext_ctx_801125');assert.equal(response.status,200);
+  const view=await response.json();assert.equal(view.total,1);const item=view.items[0];
+  assert.equal(item.availability.status,'ready');assert.equal(item.source,'TUSHARE_PRO');
+  assert.equal(item.alias,'ext_ctx_801125_si_close');assert.equal(item.availabilityStatus,'adapter_supported_requires_observations');
+  assert.equal((await (await request('/fields?availability=unavailable&q=ext_ctx_801125')).json()).total,0);
+ });
+});
+
 test('factor paging crosses builtin-to-derived boundary without duplicates or text recipes',async()=>{
  const all=[];for(let page=1;page<=4;page++){const body=await (await request(`/factor-catalog?page=${page}&pageSize=4`)).json();assert.equal(body.total,15);all.push(...body.items);}
  assert.equal(all.length,15);assert.equal(new Set(all.map(f=>f.id)).size,15);
