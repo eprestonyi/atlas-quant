@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import {build} from 'esbuild';
 import {JSDOM} from 'jsdom';
 import {defaultStrategy, normalizeStrategy, validateStrategy} from '../quant-workspace/defaults.js';
-import {firstIncompleteStep, pairTarget, stepErrors} from '../quant-workspace/research-steps.js';
+import {firstIncompleteStep, pairTarget, stepErrors, easyTargetScopeMismatch, canUseIndividualTarget} from '../quant-workspace/research-steps.js';
 import contextRegistry from '../../engine/atlas_quant/context_sources.json' with {type:'json'};
 
 const symbols=['600000.SH','600036.SH','601318.SH'];
@@ -22,6 +22,13 @@ assert.deepEqual(pairTarget(unit).basket.symbols,symbols.slice(0,2));
 unit.universe.symbols=[symbols[1],symbols[2]];
 assert.equal(firstIncompleteStep(unit,'settings',{easy:true,dataSource:'demo'}).step,'model');
 assert.deepEqual(unit.target.basket.symbols,symbols.slice(0,2),'filter changes cannot redefine an existing target');
+const oldCombination=structuredClone(unit);oldCombination.model.family='mean_reversion';
+assert(easyTargetScopeMismatch(oldCombination));
+assert(canUseIndividualTarget(oldCombination));
+assert(stepErrors(oldCombination,'model',{easy:true}).some(message=>message.includes('原研究组合与当前筛选结果不一致')));
+assert(!stepErrors(oldCombination,'model',{easy:true}).some(message=>message.includes('篮子腿')));
+assert(stepErrors(oldCombination,'model',{easy:false}).some(message=>message.includes('篮子腿')),'Studio retains the precise constraint');
+oldCombination.factors=[{id:'hedge-input',expression:'close',direction:1,role:'hedge'}];assert(!canUseIndividualTarget(oldCombination),'repair cannot silently change a hedge role');
 const invalid=defaultStrategy();invalid.model.trainWindow=null;
 assert(validateStrategy(invalid,{step:'universe'}).every(message=>!message.includes('训练窗口')));
 assert(validateStrategy(invalid,{step:'settings'}).some(message=>message.includes('训练窗口')));
@@ -117,6 +124,45 @@ assert(w.document.querySelector('a[href="#quant/studio/model"]'));
 await route('studio/model');assert(w.document.querySelector('[data-sq-config="target.basket.method"]'));
 assert(w.document.querySelector('[data-sq-config="target.basket.formationDays"]'));
 await route('easy/model');assert.equal(JSON.stringify(s.strategy.target),exact);
+
+// A legacy combination can disagree with the new screening scope. Opening it
+// must offer an explicit repair without changing the saved prediction target.
+s.strategy.universe.symbols=[symbols[1],symbols[2]];s.strategy.model.estimator='ridge';
+const savedCombination=JSON.stringify(s.strategy),savedRecord={id:'legacy-combination',version:7,spec:structuredClone(s.strategy)};
+q.workspace.ui.activeId=savedRecord.id;q.workspace.ui.activeVersion=savedRecord.version;
+q.workspace.ui.viewedExperiment={experiment:savedRecord};q.studio.flow.reset();q.render();
+assert(w.document.querySelector('.sq-target-repair')?.textContent.includes('原研究组合与当前筛选结果不一致'),'show the issue before Next');
+assert(w.document.querySelector('[data-sq="repair-asset-target"]'));
+assert(!w.document.querySelector('[data-sq-config="target.basket.method"]'));
+assert.equal(JSON.stringify(s.strategy),savedCombination,'rendering does not repair or redefine saved semantics');
+await expectBlocked(next);assert(error().includes('原研究组合与当前筛选结果不一致'));assert(!error().includes('篮子腿'));
+await route('easy/report','model');assert(error().includes('原研究组合与当前筛选结果不一致'));
+assert.equal(JSON.stringify(s.strategy),savedCombination,'direct navigation cannot alter or bypass the invalid target');
+await click('.sq-target-repair a[href="#quant/easy/universe"]',()=>s.quantStep==='universe');
+assert.equal(JSON.stringify(s.strategy),savedCombination,'returning to screening preserves the combination');
+await route('easy/model');await route('studio/model');
+assert(w.document.querySelector('[data-sq-config="target.basket.method"]'));
+assert(!w.document.querySelector('[data-sq="repair-asset-target"]'),'Easy repair is not a hidden Studio target override');
+await route('easy/model');assert.equal(JSON.stringify(s.strategy),savedCombination);
+await click('[data-sq="repair-asset-target"]',()=>s.strategy.target.kind==='asset_price');
+const repaired=JSON.parse(savedCombination);repaired.target.kind='asset_price';delete repaired.target.basket;
+assert.equal(JSON.stringify(s.strategy),JSON.stringify(repaired),'explicit repair changes only the declared target');
+assert.equal(error(),'');assert(!w.document.querySelector('.sq-target-repair'));
+assert.equal(JSON.stringify(savedRecord.spec),savedCombination,'the saved version is not edited');
+assert.equal(q.workspace.ui.activeVersion,7);
+const repairedDraft=JSON.parse(w.localStorage.getItem('atlas-quant-statistical-draft-v2'));
+assert.equal(repairedDraft.experimentVersion,7);assert.equal(repairedDraft.dirty,true);
+assert.equal(repairedDraft.strategy.target.kind,'asset_price','only the local draft is updated until explicit save');
+await click(next,()=>s.quantStep==='settings');await route('easy/model');
+// A combination with explicit hedge inputs keeps its semantics; fixing its
+// scope is available through screening or Studio, not an automatic role change.
+s.strategy=JSON.parse(savedCombination);s.strategy.target.basket={method:'pca_residual',symbols:[...symbols],components:1,formationDays:126};
+s.strategy.factors=[{id:'hedge-input',expression:'close',direction:1,role:'hedge'}];q.render();const hedgeCombination=JSON.stringify(s.strategy);
+assert(w.document.querySelector('.sq-target-repair'));
+assert(!w.document.querySelector('[data-sq="repair-asset-target"]'));
+assert(w.document.querySelector('a[href="#quant/studio/model"]'));
+await expectBlocked(next);assert(!/篮子腿|PCA/.test(error()));assert.equal(JSON.stringify(s.strategy),hedgeCombination);
+q.workspace.ui.activeId=null;q.workspace.ui.activeVersion=null;q.workspace.ui.viewedExperiment=null;
 
 s.strategy=defaultStrategy();s.strategy.universe.symbols=[...symbols];q.studio.flow.reset();q.render();
 await click('[data-sq="family"][data-id="pair_reversion"]',()=>s.strategy.model.family==='pair_reversion');
@@ -215,5 +261,5 @@ for(const wrap of [dataset=>dataset,dataset=>({dataset})]){
   assert.equal(s.dataset.rows[0].ext_ctx_000300_sh_close,4000);
 }
 assert(!requests.some(path=>/\/run|\/acquisition|\/executions/.test(path)));
-console.log(JSON.stringify({easyHidesTechnicalTargets:true,explicitPairObjects:true,noImplicitSubset:true,savedTargetPreserved:true,explicitPairExitRestoresTarget:true,sourceAndImportClearStaleErrors:true,explicitEstimatorPreserved:true,invalidMembersCaughtOnMechanism:true,nextSidebarMobileHashGuarded:true,runRechecksStepAdmission:true,windowsCheckedEarly:true,fundamentalInputCheckedEarly:true,rolesStudioOnly:true,noImplicitEvent:true,automaticOnlyForNewEasy:true,exactRunnerCapabilityGate:true,contextInputsCheckedEarly:true,uploadedSourcePackageRequired:true,realJsonImportPreservesContext:true,fixtureOnly:true}));
+console.log(JSON.stringify({easyHidesTechnicalTargets:true,legacyCombinationRepairExplicit:true,savedVersionUntouched:true,hedgeRolesPreserved:true,legacyScopeCheckedBeforeNext:true,explicitPairObjects:true,noImplicitSubset:true,savedTargetPreserved:true,explicitPairExitRestoresTarget:true,sourceAndImportClearStaleErrors:true,explicitEstimatorPreserved:true,invalidMembersCaughtOnMechanism:true,nextSidebarMobileHashGuarded:true,runRechecksStepAdmission:true,windowsCheckedEarly:true,fundamentalInputCheckedEarly:true,rolesStudioOnly:true,noImplicitEvent:true,automaticOnlyForNewEasy:true,exactRunnerCapabilityGate:true,contextInputsCheckedEarly:true,uploadedSourcePackageRequired:true,realJsonImportPreservesContext:true,fixtureOnly:true}));
 dom.window.close();

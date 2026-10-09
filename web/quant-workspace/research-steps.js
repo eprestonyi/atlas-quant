@@ -17,6 +17,18 @@ function hasUploadedContext(dataset, fields) {
 
 export const isPairTarget = strategy => strategy.target?.kind === 'frozen_basket' && strategy.target.basket?.method === 'pair_ols';
 
+// A saved combination can outlive a changed filter. Describe it without
+// changing its members, quantities, construction method, or prediction target.
+export function easyTargetScopeMismatch(strategy) {
+  if (strategy.target?.kind !== 'frozen_basket' || strategy.model.family === 'pair_reversion') return false;
+  const symbols = strategy.target.basket?.symbols || [];
+  return new Set(symbols).size !== symbols.length || symbols.some(code => !strategy.universe.symbols.includes(code));
+}
+export const canUseIndividualTarget = strategy => easyTargetScopeMismatch(strategy) && !strategy.factors.some(factor => factor.role === 'hedge');
+export const easyTargetScopeMessage = strategy => canUseIndividualTarget(strategy)
+  ? '原研究组合与当前筛选结果不一致。请调整筛选，或改为逐只研究当前股票。'
+  : '原研究组合与当前筛选结果不一致。请调整筛选，或在 Studio 修改原组合。';
+
 // Called only when the user chooses the pair mechanism. Loading a study or
 // changing its filter never redefines a saved prediction target.
 export function pairTarget(strategy, { automatic = true } = {}) {
@@ -54,7 +66,10 @@ export function stepErrors(strategy, step, options = {}) {
       errors.push('此冻结数据来源暂不支持自动因子处理。');
   }
   if (step === 'model' && options.easy)
-    errors = errors.map(error => /形成窗口|共同主成分数量|固定数量|冻结篮子的构造方法/.test(error) ? '当前目标的高级设置不完整，请在 Studio 调整。' : error);
+    errors = errors.map(error =>
+      error === '篮子腿需为已选择研究成员的唯一子集。' && strategy.model.family !== 'pair_reversion'
+        ? easyTargetScopeMessage(strategy)
+        : /形成窗口|共同主成分数量|固定数量|冻结篮子的构造方法|PCA 状态篮子/.test(error) ? '当前组合的设置不完整，请在 Studio 调整。' : error);
   if (step === 'model' && options.easy && strategy.model.family === 'pair_reversion') {
     errors = errors.filter(error => !/配对篮子|篮子腿|两腿 OLS/.test(error));
     const pair = strategy.target?.basket?.symbols || [];

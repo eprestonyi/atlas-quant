@@ -4,7 +4,7 @@ import { SOURCE_LABELS, scopeKey, activeBinding, bindingFields, restoreBindings,
 import { createMarketPreparation } from './market/preparation.js';
 import { mechanismAdmission } from './mechanism-admission.js';
 import { createModuleHub } from './module-hub.js';
-import { firstIncompleteStep, stepErrors, isPairTarget, pairTarget } from './research-steps.js';
+import { firstIncompleteStep, stepErrors, isPairTarget, pairTarget, easyTargetScopeMismatch, canUseIndividualTarget, easyTargetScopeMessage } from './research-steps.js';
 import { createDatasetWorkspace } from './datasets/workspace.js';
 // Statistical research routes and private-workspace orchestration; numerical work stays in the engine.
 import {
@@ -327,7 +327,7 @@ window.AtlasQuantV4 = {
       ].map(([id, name]) => `<button class="sq-choice ${t.kind === id ? 'selected' : ''}" data-sq="target-kind" data-id="${id}" aria-pressed="${t.kind === id}">${i(id === 'asset_price' ? 'chart' : 'layers')}<strong>${name}</strong></button>`).join('')}</div>`;
       const objects = !isStudio() && !boundDataset()
         ? s.strategy.model.family === 'pair_reversion' ? pairObjects()
-          : t.kind === 'frozen_basket' ? `<div class="sq-data-binding"><span>研究对象：${e((t.basket?.symbols || []).join('、') || '尚未设置')}</span><a class="sq-button small" href="#${route('model', true)}">在 Studio 调整</a></div>` : ''
+          : t.kind === 'frozen_basket' ? `<div class="sq-data-binding"><span>研究对象：${e((t.basket?.symbols || []).join('、') || '尚未设置')}</span><a class="sq-button small" href="#${route('model', true)}">在 Studio 调整</a></div>${easyTargetScopeMismatch(s.strategy) ? `<div class="sq-target-repair" role="status">${note(easyTargetScopeMessage(s.strategy), 'warning')}<div class="sq-actions">${canUseIndividualTarget(s.strategy) ? button('repair-asset-target', '改为逐只研究当前股票', { small: true }) : ''}<a class="sq-button small" href="#${route('universe')}">调整筛选，保留原组合</a></div></div>` : ''}` : ''
         : '';
       return panel(isStudio() ? '研究目标' : '研究设置', `${choices}${objects}<div class="sq-form-grid">${input('预测期限', 'target.horizonSessions', { min: 1, max: 60, unit: '交易日' })}${input('观察间隔', 'research.observationDays', { min: 1, max: 60, unit: '交易日' })}</div>`) +
         (isStudio() && t.kind === 'frozen_basket' ? basketDefinition() : '');
@@ -1058,6 +1058,16 @@ window.AtlasQuantV4 = {
         if (id === 'asset_price') delete s.strategy.target.basket;
         persistDraft();
         render();
+      }
+      if (action === 'repair-asset-target') {
+        if (isStudio() || boundDataset() || !canUseIndividualTarget(s.strategy)) return;
+        s.strategy.target.kind = 'asset_price';
+        delete s.strategy.target.basket;
+        ui.pageErrors = [];
+        ui.pageErrorInputs = null;
+        persistDraft();
+        render();
+        toast('已改为逐只研究当前股票；保存后才会生成新版本。');
       }
       if (action === 'family') {
         const admission = mechanismStatus(id);
