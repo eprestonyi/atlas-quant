@@ -1,4 +1,4 @@
-"""Explicit experimental profile; same pooled fitter, never fifty-stock submodels."""
+"""Explicit experimental profile with declared shared or independent fit budgets."""
 
 import copy
 import os
@@ -147,13 +147,15 @@ def run_capacity_research(
             last = index
     baseline = any(name.startswith("factor:") for name in samples.X)
     engine_root = Path(__file__).resolve().parents[1]
-    candidate_set = candidates(s["model"]["estimator"])
+    candidate_set = candidates(s["model"]["estimator"], s["model"].get("search"))
     candidate_count = len(candidate_set)
     inner, outer = s["validation"]["innerFolds"], s["validation"]["outerFolds"]
-    nested_fits = (outer+1)*inner*candidate_count+outer
+    groups = len(store.symbols) if s["model"].get("parameterSharing") == "per_target" else 1
+    nested_fits = groups*((outer+1)*inner*candidate_count+outer)
+    export_fits = groups*candidate_count if s["model"].get("search") else 0
     plan = {
         "profile": profile.to_dict(),
-        "modelScope": "pooled_all_symbols",
+        "modelScope": "independent_per_target" if s["model"].get("parameterSharing") == "per_target" else "pooled_all_symbols",
         "targetKind": "asset_price",
         "implementationRoot": implementation_root(engine_root),
         "numericalRuntime": {
@@ -180,8 +182,8 @@ def run_capacity_research(
         "innerFolds": inner,
         "outerFolds": outer,
         "scheduledTerminalFits": refits,
-        "scheduledFits": (2 if baseline else 1) * (nested_fits + refits),
-        "fitAttemptsUpperBound": (2 if baseline else 1) * (nested_fits + len(origin_dates)),
+        "scheduledFits": (2 if baseline else 1) * (nested_fits + groups*refits) + export_fits,
+        "fitAttemptsUpperBound": (2 if baseline else 1) * (nested_fits + groups*len(origin_dates)) + export_fits,
         "terminalFailureRetryPolicy": "existing_model_unavailable_retries_each_observation",
         "featureNodes": len(graph.nodes),
         "estimatedCacheBytes": estimate,

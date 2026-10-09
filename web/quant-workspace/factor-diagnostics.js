@@ -1,5 +1,6 @@
-import { reportFeatureLabeler } from './feature-labels.js';
+import { reportFeatureLabeler, constructedFeatureLabel } from './feature-labels.js';
 import { jointFrequencyViews } from './joint-table.js';
+import { factorDistributionCharts, coefficientChart } from './report-charts.js';
 // Descriptive factor evidence from frozen artifacts; never estimates missing statistics in the browser.
 export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
   const { esc: e, fmt, pct } = C;
@@ -10,7 +11,8 @@ export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
     fewer_than_three_finite_targets_or_constant_cross_section: '少于三个有效标的，或横截面取值不变',
     insufficient_or_constant_pairs: '有效配对不足，或取值不变',
     no_development_values_for_bins: '开发期没有可用数值，无法固定分箱',
-    unavailable: '不可计算'
+    unavailable: '不可计算',
+    global_factor_identical_within_date: '全局因子在同一日对所有股票相同，横截面 IC 不适用'
   })[reason] || '未提供可计算的统计值';
   const status = x => x?.status === 'available' || x?.status === 'ok' ? '已计算' : unavailable(x?.unavailableReason || x?.status);
   let label = key => key;
@@ -24,9 +26,9 @@ export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
       F.advanced('原始统计记录', raw(x)));
   }
   function features(rows) {
-    return table(['输入因子', '有效 / 缺失', '均值 / 标准差', '中位数 / IQR', '横截面 IC / Rank IC', '描述性 R²'], rows.map(x => {
+    return factorDistributionCharts(rows,label,e) + table(['输入因子', '有效 / 缺失', '均值 / 标准差', '中位数 / IQR', '横截面 IC / Rank IC', '未来变化 R²', '同期变化 R²'], rows.map(x => {
       const d = x.distribution || {};
-      return `<tr><td>${e(label(x.name, x.definition))}<small>${x.kind === 'factor' ? '研究因子' : '派生状态'}</small></td><td>${fmt(d.count, 0)} / ${fmt(x.missing?.count, 0)}</td><td>${value(d.mean)}<small>${value(d.std)}</small></td><td>${value(d.median)}<small>${value(d.q25)} — ${value(d.q75)}</small></td><td>${value(x.ic?.mean)} / ${value(x.rankIc?.mean)}<small>${fmt(x.ic?.dates, 0)} 个有效横截面</small></td>${cell(x.descriptiveFit?.rSquared)}</tr>`;
+      return `<tr><td>${e(label(x.name, x.definition))}<small>${x.kind === 'factor' ? '研究因子' : '派生状态'}</small></td><td>${fmt(d.count, 0)} / ${fmt(x.missing?.count, 0)}</td><td><span class="sq-stat-value">${value(d.mean)}</span><small>标准差 ${value(d.std)}</small></td><td><span class="sq-stat-value">${value(d.median)}</span><small>Q1 ${value(d.q25)}<br>Q3 ${value(d.q75)}</small></td><td>${x.ic?.unavailableReason==='global_factor_identical_within_date'?'全局因子 · 不适用':`<span class="sq-stat-value">${value(x.ic?.mean)} / ${value(x.rankIc?.mean)}</span><small>${fmt(x.ic?.dates, 0)} 个有效横截面</small>`}</td>${cell(x.descriptiveFit?.rSquared)}${cell(x.contemporaneousFit?.pooled?.rSquared)}</tr>`;
     })) + rows.map(featureDetail).join('');
   }
   function interval(edges, index) {
@@ -54,12 +56,15 @@ export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
     return F.advanced(title, table(['输入', ...names.map(name => label(name))], values.map((row, ri) => `<tr><th scope="row">${e(label(names[ri]))}</th>${row.map(n => `<td class="numeric ${integer || !Number.isFinite(n) ? '' : 'sq-report-stat-heat' + (n < 0 ? ' negative' : '')}" style="--heat:${integer || !Number.isFinite(n) ? 0 : Math.min(.55, Math.abs(n) * .55)}">${fmt(n, integer ? 0 : 4)}</td>`).join('')}</tr>`)), true);
   }
   function render(r, view = 'all') {
-    label = reportFeatureLabeler(r, C.state?.catalog?.factors || []);
+    const rawLabel = reportFeatureLabeler(r, C.state?.catalog?.factors || []);
+    let featureDefinitions = [];
+    label = (name, definition) => constructedFeatureLabel(rawLabel(name, definition), featureDefinitions.find(x=>x.name===name)?.inputConstruction);
     const meta = r.forecasts?.factorResearch, d = meta?.diagnostics;
     if (!d) return F.panel('因子诊断', F.note('此产物没有因子研究诊断记录。旧结果不会补造 IC、拟合度或联合分布。'));
-    const featurePage = remote.enabled() && ['all', 'features'].includes(view) ? remote.page('factorFeatures') : null;
+    const featurePage = remote.enabled() && ['all', 'features', 'exposures'].includes(view) ? remote.page('factorFeatures') : null;
     const jointPage = remote.enabled() && ['all', 'joints'].includes(view) ? remote.page('factorJointDistributions') : null;
     const featureRows = featurePage ? featurePage.items : d.features || [];
+    featureDefinitions = featureRows;
     const pairs = jointPage ? jointPage.items : d.dependence?.jointDistributions || [];
     const dep = d.dependence || {};
     const significance = d.significance?.reason === 'overlapping_labels_and_cross_sectional_temporal_dependence_not_adjusted_for_factor_tests'
@@ -70,9 +75,10 @@ export function createFactorDiagnostics(C, F, { remote, remoteState, table }) {
       : dep.jointPairSelection || '未提供';
     const sample = F.advanced('样本与统计口径', `<dl class="sq-key-values"><dt>诊断区间</dt><dd>${e(C.dateText(d.firstDate))} — ${e(C.dateText(d.lastDate))}</dd><dt>成熟有效观察</dt><dd>${fmt(d.maturedValidOrigins, 0)} / ${fmt(d.origins, 0)}</dd><dt>标签定义</dt><dd>${e(d.targetDefinition || d.target || '未提供')}</dd><dt>用途</dt><dd>模型选择后计算的报告诊断，未用于本次候选选择</dd></dl>${F.note(significance)}${F.advanced('显著性口径原始记录', raw(d.significance))}`);
     const featureView = () => F.panel('因子分布与关联', featurePage ? remoteState(featurePage, features(featureRows), '没有因子统计记录') : features(featureRows), { description: '' });
+    const exposureView = () => F.panel('同期关联与未来预测', table(['输入因子', '同期变化 R²', '未来变化 R²', '同期样本'], featureRows.map(x=>`<tr><td>${e(label(x.name,x.definition))}</td>${cell(x.contemporaneousFit?.pooled?.rSquared)}${cell(x.descriptiveFit?.rSquared)}<td>${fmt(x.contemporaneousFit?.pooled?.n,0)}</td></tr>`)) + featureRows.map(x=>{const c=x.contemporaneousFit;if(!c)return '';return F.advanced(label(x.name,x.definition),coefficientChart({esc:e,labels:(c.perTarget||[]).map(v=>v.targetId),values:(c.perTarget||[]).map(v=>v.rSquared),title:'逐标的同期单变量 R²'})+table(['目标','同期斜率','同期截距','同期 R²','样本'],(c.perTarget||[]).map(t=>`<tr><td>${e(t.targetId)}</td>${cell(t.slope)}${cell(t.intercept)}${cell(t.rSquared)}<td>${fmt(t.n,0)}</td></tr>`))+F.advanced('定义',raw(c)));}).join('')+F.note('同期列比较因子与当期已观测变化；未来列比较因子与声明期限后的变化。两者的标签和用途不同，均不是因果结论。'));
     const correlationView = () => F.panel('输入间相关与协方差', matrix('相关矩阵', dep.featureNames || [], dep.correlation) + matrix('协方差矩阵', dep.featureNames || [], dep.covariance) + matrix('每对有效观测数', dep.featureNames || [], dep.pairCounts, true) + F.advanced('矩阵口径', F.note('矩阵按每对共同有效观测计算。缺失样本不一致时，协方差矩阵不保证半正定。')));
     const jointView = () => F.panel('联合分布表', (jointPage ? remoteState(jointPage, pairs.map(joint).join(''), '没有联合分布记录') : pairs.map(joint).join('')) + `<p class="sq-subtle">共 ${fmt(dep.totalPossiblePairs, 0)} 对可组合输入；本报告计算预算 ${fmt(dep.jointPairBudget, 0)} 对，省略 ${fmt(dep.omittedPairs, 0)} 对。选择规则：${e(pairSelection)}。</p>` + F.advanced('联合分布选择口径原始记录', raw({ jointPairSelection: dep.jointPairSelection })));
-    return (view === 'all' ? featureView() + correlationView() + jointView() : ({ features: featureView, correlations: correlationView, joints: jointView }[view] || featureView)()) + sample;
+    return (view === 'all' ? featureView() + correlationView() + jointView() : ({ features: featureView, exposures: exposureView, correlations: correlationView, joints: jointView }[view] || featureView)()) + sample;
   }
   return { render };
 }

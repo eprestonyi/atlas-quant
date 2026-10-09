@@ -20,6 +20,8 @@ import {
 import { createForms, setPath } from './forms.js';
 import { createModuleCatalog } from './catalog.js';
 import { createForecastReports } from './reports.js';
+import { createIndustryBrowser } from './industry-browser.js';
+import { automaticFactorLabel } from './feature-labels.js';
 import { createFinancialWorkspace } from './financial/workspace.js';
 
 window.AtlasQuantV4 = {
@@ -119,6 +121,7 @@ window.AtlasQuantV4 = {
       ui.boundSource = saved?.boundSource || null;
     } catch {}
     const reports = createForecastReports(C, F);
+    const industryBrowser = createIndustryBrowser(C, F);
     const isStudio = () => s.quantMode === 'studio';
     const step = () =>
       s.view === 'runs'
@@ -297,10 +300,10 @@ window.AtlasQuantV4 = {
     function statePage() {
       if (boundDataset()) return panel('因子库', `<div class="ds-members">${s.datasetBinding.selectedStateIds.map((id) => `<label class="fin-checkbox"><input type="checkbox" data-sq-dataset-state="${e(id)}" ${s.strategy.factors.some((f) => f.expression === id) ? 'checked' : ''}>${e(s.datasetBinding.stateDefinitions?.find((x) => x.id === id)?.name || s.strategy.factors.find((f) => f.id === id)?.name || id)}</label>`).join('')}</div>`);
       const factors = s.strategy.factors;
-      const selected = `<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>已选因子 <span>${factors.length} / 32</span></h2></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(C.findFactor(f.id)?.name || f.name || f.id)}</strong>${isStudio() ? `<code>${e(f.expression)}</code>` : ''}</div>${isStudio() ? `<label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option><option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>对冲暴露</option><option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入</option></select></label>` : ''}${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('')}<div class="sq-drop-caption">${i('plus')}拖入因子</div></div>`;
-      const tabs = [['catalog', '因子库'], ['builder', '构建因子'], ...(isStudio() ? [['modules', '状态模块'], ['fields', '数据库字段']] : [])];
+      const selected = `<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>已选因子 <span>${factors.length} / 32</span></h2></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(automaticFactorLabel({...f,name:C.findFactor(f.id)?.name||f.name||f.id},s.strategy.preprocess?.automatic?.schema==='auto-factor-preprocess/1'))}</strong>${isStudio() ? `<code>${e(f.expression)}</code>` : ''}</div>${isStudio() ? `<label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option><option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>对冲暴露</option><option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入</option></select></label>` : ''}${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('')}<div class="sq-drop-caption">${i('plus')}拖入因子</div></div>`;
+      const tabs = [['catalog', '因子库'], ['industries', '行业 / ETF'], ['builder', '构建因子'], ...(isStudio() ? [['modules', '状态模块'], ['fields', '数据库字段']] : [])];
       const active = tabs.some(([id]) => id === ui.featureTab) ? ui.featureTab : 'catalog';
-      const library = active === 'modules' ? catalog.view('state') : `<div class="sq-legacy sq-factor-library">${active === 'builder' ? C.legacy.builder({ compact: true }) : active === 'fields' ? C.legacy.fieldBrowser() : C.legacy.catalogBrowser({ compact: true })}</div>`;
+      const library = active === 'industries' ? industryBrowser.view() : active === 'modules' ? catalog.view('state') : `<div class="sq-legacy sq-factor-library">${active === 'builder' ? C.legacy.builder({ compact: true }) : active === 'fields' ? C.legacy.fieldBrowser() : C.legacy.catalogBrowser({ compact: true })}</div>`;
       return `<div class="sq-factor-workbench"><div class="sq-factor-source"><div class="sq-tabs" role="group" aria-label="因子来源">${tabs.map(([id, label]) => button('feature-tab', label, { id, primary: active === id, pressed: active === id, small: true })).join('')}</div>${library}</div>${selected}</div>` +
         (isStudio() ? advanced('预处理与输入冗余', `<div class="sq-form-grid">${toggle('训练期截尾', 'preprocess.winsorize')}${toggle('训练期标准化', 'preprocess.standardize')}${select('冗余处理', 'preprocess.decorrelation', { none: '保留全部输入', drop_correlated: '剔除高度相关输入' })}${input('绝对相关阈值', 'preprocess.correlationThreshold', { min: 0.5, max: 1, step: 0.01 })}</div>`) : '');
     }
@@ -951,6 +954,7 @@ window.AtlasQuantV4 = {
       if (element.dataset.sq?.startsWith('market-')) return market.handle(element);
       if (await reports.handle(element)) return;
       if (await catalog.handle(element)) return;
+      if (industryBrowser.handle(element)) return;
       const action = element.dataset.sq,
         id = element.dataset.id;
       if (action === 'select-mode') {
@@ -1150,6 +1154,7 @@ window.AtlasQuantV4 = {
         clearTimeout(recipeTimer);
         recipeTimer = setTimeout(() => loadRecipes(), 250);
       }
+      industryBrowser.onInput(element);
       reports.onInput(element);
       catalog.onInput(element);
       if (element.id === 'sq-research-name') {
@@ -1165,6 +1170,7 @@ window.AtlasQuantV4 = {
       }
     }
     function onChange(element) {
+      if (industryBrowser.onChange(element)) return;
       if (market.onChange(element)) return;
       if (element.id === 'sq-compare-kind') {
         ui.compareKind = element.value;

@@ -6,7 +6,7 @@ import {JSDOM} from 'jsdom';
 import {compileUniverseCatalog, universeOptions, resolveUniverseSelection, universeResolutionHash} from '../../edge/universe.mjs';
 const securities = Array.from({length:1000}, (_,n) => ({
   ts_code: `${String(n + 1).padStart(6,'0')}.${n % 2 ? 'SZ' : 'SH'}`,
-  name:'股票'+n, area:n < 80 ? '北京' : '上海', industry:'材料', exchange:n % 2 ? 'SZSE' : 'SSE',
+  name:'股票'+n, area:n < 80 ? '北京' : '上海', industry:n < 20 ? '白酒' : n < 60 ? '半导体' : '材料', exchange:n % 2 ? 'SZSE' : 'SSE',
 }));
 const pool={id:'csi1000',name:'中证1000',category:'index',curated:true,availability:{status:'ready'},symbols:securities.map(x=>x.ts_code),symbolCount:1000};
 const catalog=compileUniverseCatalog({securities,items:[pool],hash:'a'.repeat(64),asOf:'2026-10-09'});
@@ -49,7 +49,11 @@ assert.equal(s.strategy.universe.selection.includeGroups.length,1,'same recommen
 assert.equal(resolutions,1);
 await click('[data-v2="pool-add-filter"]');
 const group=s.strategy.universe.selection.includeGroups[0].id;
-await change(`[data-rq-value="${group}"][data-index="1"]`,'北京');
+assert(!w.document.querySelector('select[multiple]'),'inclusion uses searchable explicit choices');
+const areaSearch=w.document.querySelector(`[data-rq-search="${group}"][data-index="1"]`);
+assert(areaSearch);areaSearch.value='北京';areaSearch.dispatchEvent(new w.Event('input',{bubbles:true}));
+assert.equal(areaSearch.closest('.uf-value-picker').querySelectorAll('.uf-value-options button').length,1);
+assert.equal(s.strategy.universe.selection.includeGroups[0].filters[1].value,'北京','search itself does not mutate the selected condition');
 await resolveClick('[data-v2="pool-resolve"]');
 assert.equal(s.strategy.universe.symbols.length,80);
 const beijingResolutions=resolutions;
@@ -80,5 +84,18 @@ assert(!w.document.querySelector('[data-rq-member]'));
 assert(!w.document.querySelector('[data-v2="pool-take"]'));
 assert(!w.document.querySelector('input[type="date"]'));
 assert(!w.document.querySelector('.uf-workbench').textContent.includes('尚未验证历史'));
-console.log(JSON.stringify({singleFilter:true,completeCounts:[1000,80,40,39],realSetResolver:true,noProviderOrModelCalls:true,responseDelayMs,waitsForResolution:true}));
+await click('[data-v2="pool-add-filter"]');
+await change(`[data-rq-field="${group}"][data-index="2"]`,'industry');
+for(const button of [...w.document.querySelectorAll(`[data-v2="pool-toggle-value"][data-id="${group}"][data-index="2"]`)]) {
+  if(button.closest('.uf-value-selected')){await click(`[data-v2="pool-toggle-value"][data-id="${group}"][data-index="2"][data-value="${button.dataset.value}"]`);}
+}
+const industrySearch=w.document.querySelector(`[data-rq-search="${group}"][data-index="2"]`);
+industrySearch.value='半导体';industrySearch.dispatchEvent(new w.Event('input',{bubbles:true}));
+assert.equal(industrySearch.closest('.uf-value-picker').querySelectorAll('.uf-value-options button').length,1);
+await click(`[data-v2="pool-toggle-value"][data-id="${group}"][data-index="2"][data-value="半导体"]`);
+assert.deepEqual([...s.strategy.universe.selection.includeGroups[0].filters[2].value],['半导体']);
+await resolveClick('[data-v2="pool-resolve"]');
+assert.equal(s.strategy.universe.symbols.length,20,'industry intersects existing pool/area and respects exclusion');
+assert(w.document.querySelector(`[data-rq-search="${group}"][data-index="2"]`).value==='半导体','query persists through explicit membership update');
+console.log(JSON.stringify({searchableInclusion:true,singleFilter:true,completeCounts:[1000,80,40,39],realSetResolver:true,noProviderOrModelCalls:true,responseDelayMs,waitsForResolution:true}));
 dom.window.close();

@@ -31,6 +31,9 @@ export function reportSummary(parsed) {
     if (collection.document === 'report') removePath(report, collection.path);
   }
   forecast.artifactId = parsed.manifest.forecastArtifactId;
+  if (forecast.diagnostics?.modelSearch) {
+    forecast.diagnostics.modelSearch.candidateCount = parsed.collections.get('modelSearchCandidates')?.rowCount ?? 0;
+  }
   forecast.diagnostics = diagnosticSummary(forecast.diagnostics);
   // The original sourceStrategy remains immutable in the full forecast document.
   // A copy here would repeat the already present research configuration.
@@ -86,7 +89,7 @@ export async function completeBundle(
   ];
   if (link.kind === 'forecast') {
     const metadata = {
-      diagnostics: diagnosticSummary(forecast.diagnostics),
+      diagnostics: report.forecasts.diagnostics,
       validation: diagnosticSummary(report.validation),
       target: forecast.sourceStrategy.target,
       universe: universeSummary(forecast.sourceStrategy.universe),

@@ -55,11 +55,19 @@ def _train(samples, spec, train_dates, cutoff, strategy, runtime=None):
     audit = {"trainStart": actual_dates[0], "trainEnd": actual_dates[-1],
              "informationCutoff": cutoff, "labelEndMax": samples.meta.loc[mask, "targetDate"].max(),
              "trainDates": len(actual_dates), **model.audit}
+    if strategy["model"].get("parameterSharing") == "per_target":
+        targets = samples.meta.loc[mask, "targetId"].unique()
+        if len(targets) != 1:
+            fail("INVALID_MODEL_SCOPE", "逐标的模型不能混用其他标的训练记录")
+        audit["targetId"] = str(targets[0])
+        audit["targetSymbol"] = samples.definitions[str(targets[0])]["symbols"][0]
     return model, audit
 
 
 def _complexity(spec):
-    rank = {"no_change": 0, "historical_drift": 1, "ridge": 2, "elastic_net": 3, "hist_gradient_boosting": 4}
+    rank = {"no_change": 0, "historical_drift": 1, "ridge": 2, "elastic_net": 3,
+            "polynomial_ridge": 4, "polynomial_elastic_net": 5, "transformed_ridge": 6,
+            "factorwise_basis": 7, "hist_gradient_boosting": 4}
     p = spec["params"]
     # A deterministic, predeclared preference, not an estimated degrees of freedom.
     if spec["estimator"] == "hist_gradient_boosting":
@@ -69,11 +77,59 @@ def _complexity(spec):
     return (rank[spec["estimator"]], *within, spec["id"])
 
 
-def select(samples, specs, dates, strategy, runtime=None):
+def _selection(trials):
+    valid = [trial for trial in trials if trial["status"] == "valid" and np.isfinite(trial["score"])]
+    if not valid:
+        try:
+            fail("INSUFFICIENT_FORECAST_DATA", "没有候选完成全部时间验证折")
+        except ValueError as exc:
+            exc.selection_trials = trials
+            raise
+    best = min(valid, key=lambda trial: (trial["score"], _complexity(trial)))
+    tolerance = best["foldScoreHeuristicSE"] or 0.
+    admissible = [trial for trial in valid if trial["score"] <= best["score"]+tolerance]
+    return min(admissible, key=_complexity), best, tolerance, admissible
+
+
+def _review_selection(reviewer, trials, specs, dates, staged):
+    winner, _, _, admissible = _selection(trials)
+    reserve = [spec for spec in specs if models.is_reserve(spec)]
+    packet = {"schema": "factor-model-review-input/1", "developmentStart": dates[0],
+        "developmentEnd": dates[-1], "candidateSetHash": digest(specs),
+        "admissibleCandidateIds": [trial["id"] for trial in admissible],
+        "reserveCandidates": reserve, "reserveEvaluationPending": staged,
+        "defaultCandidateId": winner["id"], "target": "equal_date_joint_normalized_mse",
+        "trials": [{key: trial[key] for key in ("id", "estimator", "params", "status", "score", "foldScoreHeuristicSE", "folds")}
+                   for trial in trials], "outerOrTerminalDataIncluded": False}
+    try:
+        review = reviewer(packet)
+    except Exception as exc:
+        exc.selection_trials = trials
+        raise
+    refinements = review.get("refinementCandidateIds", []) if isinstance(review, dict) else None
+    if (not isinstance(review, dict) or review.get("candidateId") not in packet["admissibleCandidateIds"]
+            or not isinstance(refinements, list) or any(not isinstance(value, str) for value in refinements)
+            or len(set(refinements)) != len(refinements)
+            or any(value not in {spec["id"] for spec in reserve} for value in refinements)):
+        fail("INVALID_MODEL_REVIEW", "模型审阅只能选择已验证候选与预先声明的追加候选")
+    return {"inputHash": digest(packet), "candidateId": review["candidateId"],
+            "refinementCandidateIds": refinements, "receipt": review.get("receipt"),
+            "reserveEvaluationPendingAtReview": staged, "outerOrTerminalDataIncluded": False}
+
+
+def select(samples, specs, dates, strategy, runtime=None, review=False):
     runtime_args = {} if runtime is None else {"runtime": runtime}
     schedule = folds(dates, strategy["validation"]["innerFolds"], strategy["validation"]["minTrainDates"], strategy["target"]["horizonSessions"]+1)
     trials = []
-    for spec in specs:
+    reviewer = getattr(runtime, "review_candidates", None)
+    review_enabled = review and strategy["model"].get("search") and callable(reviewer)
+    staged_review = review_enabled and getattr(runtime, "enabled", True) and any(models.is_reserve(spec) for spec in specs)
+    review_result = None
+    first_reserve = (next((i for i, spec in enumerate(specs) if models.is_reserve(spec)), len(specs))
+                     if staged_review else len(specs))
+    for candidate_index, spec in enumerate(specs):
+        if staged_review and candidate_index == first_reserve and any(trial["status"] == "valid" for trial in trials):
+            review_result = _review_selection(reviewer, trials, specs, dates, True)
         scores = []
         audits = []
         reason = None
@@ -118,24 +174,30 @@ def select(samples, specs, dates, strategy, runtime=None):
                        "foldScoreStd": float(np.std(scores, ddof=1)) if reason is None and len(scores)>1 else None,
                        "foldScoreHeuristicSE": float(np.std(scores, ddof=1)/np.sqrt(len(scores))) if reason is None and len(scores)>1 else None,
                        "complexityPreference": list(_complexity(spec)), "heuristicIsConfidenceInterval": False})
-    valid = [x for x in trials if x["status"] == "valid" and np.isfinite(x["score"])]
-    if not valid:
-        try:
-            fail("INSUFFICIENT_FORECAST_DATA", "没有候选完成全部时间验证折")
-        except ValueError as exc:
-            # Diagnostics only: preserve the original code/message and algorithm.
-            # A local caller may retain this evidence without treating it as a
-            # successful selection or retrying a different candidate universe.
-            exc.selection_trials = trials
-            raise
-    best = min(valid, key=lambda x: (x["score"], _complexity(x)))
-    tolerance = best["foldScoreHeuristicSE"] or 0.0
-    admissible = [x for x in valid if x["score"] <= best["score"]+tolerance]
-    winner = min(admissible, key=_complexity)
+        if strategy["model"].get("search"):
+            trials[-1]["searchStage"] = "predeclared_refinement" if models.is_reserve(spec) else "initial"
+    winner, best, tolerance, admissible = _selection(trials)
+    if review_enabled and review_result is None:
+        review_result = _review_selection(reviewer, trials, specs, dates, False)
+    if review_result is not None:
+        # Fresh reserve scores can overturn the preliminary recommendation.
+        # Use the complete fixed-budget selector after refinement, not a stale
+        # recommendation that never saw the reserve's validation outcomes.
+        can_apply = (not review_result["reserveEvaluationPendingAtReview"]
+                     and (review_result.get("receipt") or {}).get("status") == "reviewed")
+        if can_apply:
+            winner = next(trial for trial in admissible if trial["id"] == review_result["candidateId"])
+        review_result.update(finalSelectedCandidateId=winner["id"],
+            finalChoice="complete_fixed_dictionary_complexity_rule_after_refinement" if staged_review else "full_dictionary_review_or_default",
+            evaluatedReserveCandidateIds=[trial["id"] for trial in trials if models.is_reserve(trial)])
     for trial in trials:
         trial.update(selected=trial["id"] == winner["id"], selectionRule="one_standard_error_complexity_heuristic",
                      minimumMeanScore=best["score"], admissibleScoreCeiling=best["score"]+tolerance,
                      withinHeuristicTolerance=trial in admissible)
+        if review_result is not None:
+            trial["reviewInputHash"] = review_result["inputHash"]
+            if trial["selected"]:
+                trial["review"] = review_result
     return {k: winner[k] for k in ("id", "estimator", "params")}, trials
 
 
@@ -210,10 +272,17 @@ def forecast(samples, strategy, *, max_forecasts=None, runtime=None, export_func
         "phase": "planning", "outerFolds": [], "finalTrials": [],
         "selectedModel": None, "currentOuter": None, "currentTerminal": None}}
     try:
+        if strategy["model"].get("parameterSharing") == "per_target":
+            from .per_target import forecast_separately
+            return forecast_separately(samples, strategy, _forecast, max_forecasts=max_forecasts,
+                runtime=runtime, export_functions=export_functions, evidence=evidence)
         return _forecast(samples, strategy, max_forecasts=max_forecasts, runtime=runtime,
                          export_functions=export_functions, evidence=evidence)
     except Exception as exc:
         diagnostics = evidence["diagnostics"]
+        if getattr(exc, "candidate_functions", None) is not None:
+            diagnostics["modelSearch"] = {"schema": "factor-model-search-report/1", "complete": False,
+                                          "candidates": exc.candidate_functions}
         trials = getattr(exc, "selection_trials", None)
         if trials is not None:
             if diagnostics["phase"] == "outer_selection":
@@ -242,7 +311,7 @@ def _forecast(samples, strategy, *, max_forecasts, runtime, export_functions, ev
     partial = evidence["diagnostics"]
     partial.update(holdoutStart=holdout, holdoutEnd=dates[-1], expectedForecastRows=len(indices))
     development = sorted(samples.meta.loc[mature_mask(samples, holdout), "date"].unique())
-    specs = models.candidates(strategy["model"]["estimator"])
+    specs = models.candidates(strategy["model"]["estimator"], strategy["model"].get("search"))
     gap = strategy["target"]["horizonSessions"]+1
     outer_schedule = folds(development, strategy["validation"]["outerFolds"],
                            strategy["validation"]["minTrainDates"]+2*(gap+10), gap)
@@ -264,8 +333,15 @@ def _forecast(samples, strategy, *, max_forecasts, runtime, export_functions, ev
                       "trials": trials, "fit": audit, "metrics": scores})
         partial["currentOuter"] = None
     partial["phase"] = "final_selection"
-    winner, trials = select(samples, specs, development, strategy, **runtime_args)
+    winner, trials = select(samples, specs, development, strategy, review=export_functions, **runtime_args)
     partial.update(finalTrials=trials, selectedModel=winner)
+    model_search = None
+    if strategy["model"].get("search") and export_functions:
+        from .model_search import freeze_candidates
+        partial["phase"] = "candidate_functions"
+        model_search = freeze_candidates(samples, strategy, trials, winner, development, holdout,
+                                         _train, mature_mask, runtime)
+        partial["modelSearch"] = model_search
     records, fitted_models = evidence["rows"], evidence["fits"]
     current_model, fit_id, last_fit = None, None, -100000
     for date, group in samples.meta.loc[indices].groupby("date", sort=True):
@@ -286,6 +362,9 @@ def _forecast(samples, strategy, *, max_forecasts, runtime, export_functions, ev
                          "labelEndMax": None, "trainStart": None, "trainEnd": None,
                          "estimator": winner["estimator"], "params": winner["params"], "featureNames": []}
             partial["currentTerminal"]["fitAudit"] = audit
+            if strategy["model"].get("parameterSharing") == "per_target":
+                audit["targetId"] = str(samples.meta.targetId.iloc[0])
+                audit["targetSymbol"] = samples.definitions[audit["targetId"]]["symbols"][0]
             fit_id = "fit_"+digest({"date": date, "winner": winner, "audit": audit})[:24]
             fit_record = {"id": fit_id, "fitDate": date, "sequentialMaturedLabelsOnly": True, **audit}
             partial["currentTerminal"].update(modelFitId=fit_id, fit=fit_record)
@@ -337,6 +416,12 @@ def _forecast(samples, strategy, *, max_forecasts, runtime, export_functions, ev
                        "dependentFoldHeuristicNotConfidenceInterval": True, "eliminatesBiasOrOverfitting": False,
                        "penalty": "predeclared_estimator_regularization_and_simpler_within_tolerance",
                        "reinforcementLearningIncluded": False}}
+    if model_search is not None:
+        diagnostics["modelSearch"] = model_search
+        diagnostics["selectionAudit"]["reviewScope"] = "final_development_selection_only_no_outer_or_baseline_review"
+        diagnostics["selectionAudit"]["outerFoldsEvaluateAIReviewer"] = False
+        diagnostics["selectionAudit"]["predeclaredReserveCandidateIds"] = [spec["id"] for spec in specs if models.is_reserve(spec)]
+        diagnostics["selectionAudit"]["allReserveCandidatesEvaluated"] = True
     from .inference import evaluate_forecast_uncertainty
     partial.update(diagnostics)
     partial["phase"] = "terminal_uncertainty"

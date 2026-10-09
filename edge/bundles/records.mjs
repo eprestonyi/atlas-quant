@@ -155,6 +155,15 @@ export async function recordIndex(
       status: row.status ?? null
     };
     status = identifier(row.status, '拟合状态', true);
+  } else if (collection === 'modelSearchCandidates') {
+    rowId = identifier(row.id, '候选函数');
+    status = identifier(row.status, '候选状态');
+    targetId = identifier(row.targetId, '候选目标', true);
+    metadata = {id:row.id,estimator:row.estimator,params:row.params,status:row.status,
+      invalidReason:row.invalidReason ?? null,validationScore:row.validationScore,
+      selected:row.selected,baseline:row.baseline,withinHeuristicTolerance:row.withinHeuristicTolerance,
+      targetId,symbols:row.symbols ?? null,functionArtifactId:row.functionArtifact?.artifactId ?? null,
+      trainingMetrics:row.trainingMetrics};
   } else if (collection === 'snapshotColumns') {
     rowId = identifier(row.name, '冻结数据列');
     metadata = { kind: row.kind };

@@ -39,7 +39,8 @@ export const COLLECTION_PATHS = Object.freeze({
   plannedOrigins: ['coverage', '/origins']
 });
 export const OPTIONAL_CONTEXT_PATHS = Object.freeze({
-  snapshotContextSources: ['snapshot', '/provenance/contextSources']
+  snapshotContextSources: ['snapshot', '/provenance/contextSources'],
+  modelSearchCandidates: ['forecast', '/diagnostics/modelSearch/candidates']
 });
 export const HASH = /^[a-f0-9]{64}$/;
 export const DATE = /^\d{8}$/;

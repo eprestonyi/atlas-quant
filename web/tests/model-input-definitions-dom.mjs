@@ -13,17 +13,19 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&
 const C={state:{catalog:{factors:[{id:'size',name:'总市值',expression:'total_mv'}]}},esc,api:()=>{throw Error('NO_NETWORK');},fmt:String,icon:()=>''};
 const F=createForms(C),a=await v2Fixture(),frozen=JSON.stringify(a);
 main.innerHTML=renderSavedModel(C,F,{functionArtifact:a});
-assert(main.querySelector('[data-saved-function]').textContent.includes('Fₕ(X) = V̂future = P + scale × (0.2 + 3 × X₁)'));
+assert(main.querySelector('[data-saved-function]').textContent.includes('fₕ(X) = 0.2 + 3 × X₁'));
+assert(main.querySelector('[data-saved-function]').textContent.includes('fₕ(X) = V̂future / P − 1'));
+assert(main.querySelector('[data-saved-function]').textContent.includes('Fₕ(X) = V̂future = P × (1 + fₕ(X))'));
 assert.equal(modelFormula(a),'0.2 + 3 × X₁');
 const input=main.querySelector('[data-model-input="factor:size"]');
 assert.equal(input.open,false);
 assert(input.querySelector('summary').textContent.includes('总市值（反向）'));
-assert(input.querySelector('summary').textContent.includes('对数 → 篮子聚合'));
+assert(input.querySelector('summary').textContent.includes('对数 → 个股输入'));
 assert(input.querySelector('summary').textContent.includes('median / IQR'));
 const construction=input.querySelector('[data-input-construction]').textContent;
 assert(construction.includes('dⱼ,ₜ = total_mv'));
 assert(construction.includes('gⱼ,ₜ = ln(dⱼ,ₜ)'));
-assert(construction.includes('R₁ = Σⱼ(qⱼ pⱼ,ₜ / scale) × -1 × gⱼ,ₜ'));
+assert(construction.includes('R₁ = -1 × gⱼ,ₜ'));assert(!construction.includes('Σⱼ'));
 const transform=input.querySelector('[data-input-transform]').textContent;
 assert(transform.includes('R₁ = input["factor:size"]'));
 assert(transform.includes('R₁ = null ? 4 : clip(R₁, 1, 9)'));
@@ -32,6 +34,8 @@ assert(!transform.includes('ln('),'economic log is not repeated in the portable 
 input.querySelector('summary').click();assert.equal(input.open,true);
 assert.equal(JSON.stringify(a),frozen);
 
+const basket=structuredClone(a);basket.scope.targetKind='frozen_basket';main.innerHTML=renderSavedModel(C,F,{functionArtifact:basket});assert(main.textContent.includes('scale = Σ |qⱼ pⱼ,ₜ|'));assert(main.textContent.includes('Fₕ(X) = V̂future = P + scale × fₕ(X)'));
+assert(main.querySelector('[data-input-construction]').textContent.includes('R₁ = Σⱼ(qⱼ pⱼ,ₜ / scale) × -1 × gⱼ,ₜ'));
 const global=structuredClone(a);global.featureConstruction.automatic.factors[0].scope='global';global.featureConstruction.automatic.factors[0].aggregation='global_once';
 main.innerHTML=renderSavedModel(C,F,{functionArtifact:global});
 assert(main.querySelector('[data-input-construction]').textContent.includes('R₁ = -1 × gₜ'));
@@ -55,7 +59,7 @@ main.innerHTML=renderSavedModel(C,F,{functionArtifact:escaped});assert(!main.que
 const editor=createModelFunctionEditor({...C,openModal(){},download(){},toast(){}},F);
 main.innerHTML=editor.render({functionArtifact:a},{});
 assert(main.querySelector('[data-mfe-input="rows"]').closest('label').textContent.includes('R 行数组'));
-assert(main.textContent.includes('输入 R 已完成每腿经济变换与聚合'));
+assert(main.textContent.includes('输入 R 已完成经济变换与目标对齐'));
 assert(main.textContent.includes('试算不会再次执行 log'));
 assert(main.querySelector('[data-mfe-param="/estimator/coefficients/1/0"]').closest('label').textContent.includes('X₁'));
 assert(main.querySelector('[data-input-transform]').textContent.includes('X₁ = (u₁ − 4) / 2'));

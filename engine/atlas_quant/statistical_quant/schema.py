@@ -9,7 +9,8 @@ from datetime import datetime
 
 from .. import __version__ as VERSION
 FAMILIES = ("mean_reversion", "pair_reversion", "trend", "fundamental", "event")
-ESTIMATORS = ("auto", "no_change", "historical_drift", "ridge", "elastic_net", "hist_gradient_boosting")
+ESTIMATORS = ("auto", "no_change", "historical_drift", "ridge", "elastic_net", "hist_gradient_boosting",
+              "polynomial_ridge", "polynomial_elastic_net", "transformed_ridge", "factorwise_basis")
 MAX_FORECASTS = 25000
 MAX_SAMPLES = 110000
 
@@ -162,9 +163,17 @@ def validate(strategy, *, capacity_profile=None):
                 fail("INCOMPATIBLE_TARGET", "冻结数量不可全零")
         elif "quantities" in b:
             fail("INCOMPATIBLE_TARGET", "估计篮子不接受手工数量覆盖")
-    model = section(s, "model", {"family", "estimator", "trainWindow", "refitDays"}, {"family": "mean_reversion", "estimator": "auto", "trainWindow": 504, "refitDays": 20})
+    model = section(s, "model", {"family", "estimator", "trainWindow", "refitDays", "search", "parameterSharing"}, {"family": "mean_reversion", "estimator": "auto", "trainWindow": 504, "refitDays": 20})
     if model["family"] not in FAMILIES or model["estimator"] not in ESTIMATORS:
         fail("INVALID_STATISTICAL_QUANT", "模型族或估计器无效")
+    if "search" in model and model["search"] != {"schema": "factor-model-search/1"}:
+        fail("INVALID_STATISTICAL_QUANT", "模型搜索协议无效")
+    if "parameterSharing" in model and model["parameterSharing"] not in ("pooled", "per_target"):
+        fail("INVALID_STATISTICAL_QUANT", "模型参数作用域无效")
+    if model.get("parameterSharing") == "per_target" and target["kind"] != "asset_price":
+        fail("INVALID_STATISTICAL_QUANT", "逐标的模型需要逐只股票目标")
+    if model.get("parameterSharing") == "per_target" and len(symbols) > 50:
+        fail("MODEL_SCOPE_CAPACITY", "逐标的独立搜索当前支持最多50只；请继续筛选或使用共享模型")
     for key, lo, hi in (("trainWindow", 120, 1260), ("refitDays", 1, 126)):
         model[key] = number(model[key], key, lo, hi, True)
     if model["family"] == "pair_reversion" and target.get("basket", {}).get("method") != "pair_ols":

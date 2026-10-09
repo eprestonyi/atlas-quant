@@ -131,6 +131,17 @@ def factor_diagnostics(samples, holdout_start, factor_definitions=None):
     target = samples.y.loc[terminal, "exit"].where(mature)
     development = samples.X.loc[samples.meta.date < holdout_start]
     definitions = {"factor:"+f["id"]: f for f in (factor_definitions or [])}
+    automatic = getattr(samples, "automatic_preprocessing", None)
+    construction = {item["feature"]: item for item in (automatic or {}).get("factors", [])}
+    change_column = next((name for name in ("change1", "trend1") if name in X), None)
+    contemporary = X[change_column].copy() if change_column else None
+    target_definitions = getattr(samples, "definitions", {})
+    asset_returns = bool(target_definitions) and all(item["kind"] == "asset_price" for item in target_definitions.values())
+    if contemporary is not None and asset_returns:
+        # State change1 divides by P_t. Recover the usual P_t/P_{t-1}-1,
+        # rather than labeling the existing state-change convention a return.
+        contemporary = (contemporary/(1-contemporary)).where(contemporary < 1)
+    contemporary_target = "current_session_asset_return" if asset_returns else "current_session_change_over_origin_gross"
     features = []
     dates = sorted(meta.date.unique())
     for name in X:
@@ -148,7 +159,7 @@ def factor_diagnostics(samples, holdout_start, factor_definitions=None):
             groups.append({"targetId": str(target_id), "n": int(ok.sum()), "pearson": _correlation(xx, yy),
                            "spearman": _correlation(xx, yy, True), "pValue": None})
         definition = definitions.get(name)
-        features.append({"name": name, "kind": "factor" if definition else "derived_state",
+        feature = {"name": name, "kind": "factor" if definition else "derived_state",
                          "definition": definition, "missing": {"count": int(X[name].isna().sum()), "total": len(X),
                              "fraction": float(X[name].isna().mean()) if len(X) else None},
                          "distribution": _distribution(X[name]), "ic": _summary(daily_ic, len(dates)),
@@ -157,7 +168,27 @@ def factor_diagnostics(samples, holdout_start, factor_definitions=None):
                              "perTarget": groups, "totalTargets": int(meta.targetId.nunique()),
                              "omittedTargets": max(0, int(meta.targetId.nunique())-MAX_TIME_SERIES_TARGETS),
                              "targetSelection": "target_id_order_not_outcome_ranking", "interpretation": "within_target_temporal_association_not_cross_sectional_IC"},
-                         "descriptiveFit": _descriptive_fit(X[name], target)})
+                         "descriptiveFit": _descriptive_fit(X[name], target)}
+        if name in construction:
+            feature["inputConstruction"] = construction[name]
+            if construction[name]["scope"] == "global":
+                feature["ic"]["unavailableReason"] = "global_factor_identical_within_date"
+                feature["rankIc"]["unavailableReason"] = "global_factor_identical_within_date"
+        if contemporary is not None:
+            def contemporary_fit(xx, yy):
+                fit = _descriptive_fit(xx, yy)
+                if "unit" in fit:
+                    fit["unit"] = contemporary_target+"_per_feature_unit"
+                return fit
+            feature["contemporaneousFit"] = {"target": contemporary_target,
+                "targetDefinition": "P_t/P_previous_session-1" if asset_returns else "(P_t-P_previous_session)/origin_gross",
+                "pooled": contemporary_fit(X[name], contemporary),
+                "perTarget": [{"targetId": str(target_id), **contemporary_fit(X.loc[group.index, name], contemporary.loc[group.index])}
+                              for target_id, group in list(meta.groupby("targetId", sort=True))[:MAX_TIME_SERIES_TARGETS]],
+                "totalTargets": int(meta.targetId.nunique()),
+                "omittedTargets": max(0, int(meta.targetId.nunique())-MAX_TIME_SERIES_TARGETS),
+                "selectionUse": False, "predictiveEvidence": False}
+        features.append(feature)
     columns = list(X)
     pair_counts = [[int((X[a].notna() & X[b].notna()).sum()) for b in columns] for a in columns]
     correlation = [[_correlation(X[a], X[b]) for b in columns] for a in columns]

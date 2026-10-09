@@ -40,6 +40,9 @@ jobs:
       - run: node web/tests/factor-diagnostics-dom.mjs
       - run: node web/tests/model-function-editor-dom.mjs
       - run: node web/tests/model-report-first-dom.mjs
+      - run: node web/tests/model-search-report-dom.mjs
+      - run: node web/tests/industry-browser-dom.mjs
+      - run: node web/tests/context-source-view-dom.mjs
       - run: node web/tests/financial-workspace-dom.mjs
       - run: node web/tests/financial-acquisition-dom.mjs
       - run: node web/tests/dataset-workspace-dom.mjs

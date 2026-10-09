@@ -1,9 +1,9 @@
 /** Numeric-only portable F(X). Shared by the browser and private Worker API. */
 import { validateMetadata } from './model-function-metadata.js';
 export const FUNCTION_SCHEMA = 'atlas-model-function/1';
-export const FUNCTION_SCHEMAS = Object.freeze([FUNCTION_SCHEMA, 'atlas-model-function/2']);
+export const FUNCTION_SCHEMAS = Object.freeze([FUNCTION_SCHEMA, 'atlas-model-function/2', 'atlas-model-function/3']);
 export const FUNCTION_HASH = 'sha256-canonical-f64-json/1';
-export const FUNCTION_LIMITS = Object.freeze({ bytes: 2 * 1024 * 1024, features: 128, rows: 256, trees: 256, nodes: 255, operations: 2000000 });
+export const FUNCTION_LIMITS = Object.freeze({ bytes: 2 * 1024 * 1024, features: 128, terms: 1024, rows: 256, trees: 256, nodes: 255, operations: 2000000 });
 const OUTPUTS = ['entry_level_change_over_known_gross', 'exit_level_change_over_known_gross'];
 const TRANSFORMS = ['imputeMedian', 'winsorLower', 'winsorUpper', 'scaleMean', 'scaleScale'];
 const NODE_FIELDS = ['value', 'feature', 'threshold', 'left', 'right', 'leaf', 'missingLeft'];
@@ -107,6 +107,29 @@ export async function validateFunction(artifact) {
     vector(e.intercepts, 2, '截距');
     require(Array.isArray(e.coefficients) && e.coefficients.length === 2, '系数形状无效');
     e.coefficients.forEach(x => vector(x, n, '系数'));
+  } else if (e.kind === 'basis_linear') {
+    keys(e, ['kind','coefficients','intercepts','terms','termCenter','termScale','signedExpm1AbsoluteInputCap'], '基函数模型');
+    require(artifact.schema === 'atlas-model-function/3' && Array.isArray(e.terms) && e.terms.length > 0 && e.terms.length <= FUNCTION_LIMITS.terms && e.signedExpm1AbsoluteInputCap === 3, '基函数字典无效');
+    const index = x => Number.isInteger(x) && x >= 0 && x < n;
+    const seen = new Set();
+    for (const term of e.terms) {
+      require(object(term), '基函数项无效');
+      if (term.kind === 'interaction') {
+        keys(term,['kind','features'],'交互项');
+        require(Array.isArray(term.features) && term.features.length === 2 && term.features.every(index) && term.features[0] < term.features[1], '交互项索引无效');
+      } else if (term.kind === 'power') {
+        keys(term,['kind','feature','degree'],'多项式项');
+        require(index(term.feature) && Number.isInteger(term.degree) && term.degree >= 1 && term.degree <= 3, '多项式项无效');
+      } else {
+        keys(term,['kind','feature'],'非线性项');
+        require(['signed_log1p','signed_expm1'].includes(term.kind) && index(term.feature), '非线性项无效');
+      }
+      const identity = canonicalFunctionText(term);
+      require(!seen.has(identity), '基函数项重复'); seen.add(identity);
+    }
+    vector(e.intercepts,2,'截距'); vector(e.termCenter,e.terms.length,'基函数中心'); vector(e.termScale,e.terms.length,'基函数尺度');
+    require(e.termScale.every(x => x > 0) && Array.isArray(e.coefficients) && e.coefficients.length === 2, '基函数尺度或系数无效');
+    e.coefficients.forEach(x => vector(x,e.terms.length,'基函数系数'));
   } else if (e.kind === 'histogram_trees') {
     keys(e, ['kind', 'nodeFields', 'thresholdRule', 'leafValuesIncludeLearningRate', 'outputs'], '树模型');
     require(equal(e.nodeFields, NODE_FIELDS) && e.thresholdRule === 'left_if_less_equal' && e.leafValuesIncludeLearningRate === true && Array.isArray(e.outputs) && e.outputs.length === 2, '树模型编码不兼容');
@@ -118,8 +141,9 @@ export async function validateFunction(artifact) {
   } else require(false, '不支持的估计器');
   require(e.kind === 'constant' || t.imputeMedian !== null, '非恒定模型必须保留训练中位数');
   validateMetadata(artifact, {require, keys, number, equal});
-  const kinds = {no_change:'constant',historical_drift:'constant',ridge:'linear',elastic_net:'linear',hist_gradient_boosting:'histogram_trees'};
+  const kinds = {no_change:'constant',historical_drift:'constant',ridge:'linear',elastic_net:'linear',hist_gradient_boosting:'histogram_trees',polynomial_ridge:'basis_linear',polynomial_elastic_net:'basis_linear',transformed_ridge:'basis_linear',factorwise_basis:'basis_linear'};
   require(e.kind === kinds[artifact.provenance.estimator], '估计器编码与来源不一致');
+  require((artifact.schema === 'atlas-model-function/3') === (e.kind === 'basis_linear'), '基函数版本与估计器不匹配');
   require(e.kind !== 'constant' || Object.values(t).every(x => x === null), '常量函数不能带有被忽略的变换');
   return artifact;
 }
@@ -147,6 +171,26 @@ export async function evaluateFunction(artifact, {rows, currentState, scale}) {
       for (let j = 0; j < x.length; j++) { count(); value += coefficients[j] * x[j]; }
       return value + estimator.intercepts[i];
     });
+    if (estimator.kind === 'basis_linear') {
+      const basis = estimator.terms.map((term, i) => {
+        count();
+        let value;
+        if (term.kind === 'interaction') value = x[term.features[0]] * x[term.features[1]];
+        else {
+          const input = x[term.feature];
+          value = term.kind === 'power' ? input ** term.degree : term.kind === 'signed_log1p'
+            ? Math.sign(input) * Math.log1p(Math.abs(input))
+            : Math.sign(input) * Math.expm1(Math.min(Math.abs(input), estimator.signedExpm1AbsoluteInputCap));
+        }
+        return (value-estimator.termCenter[i])/estimator.termScale[i];
+      });
+      require(basis.every(number),'基函数超出有限数值范围');
+      return estimator.coefficients.map((coefficients,i) => {
+        let value = 0;
+        for (let j=0;j<basis.length;j++) { count(); value += coefficients[j]*basis[j]; }
+        return value+estimator.intercepts[i];
+      });
+    }
     return estimator.outputs.map(out => {
       let value = out.baseline;
       for (const tree of out.trees) {
@@ -180,7 +224,7 @@ export async function deriveFunction(artifact, edits) {
   for (const edit of edits) {
     keys(edit, ['path', 'value'], '参数修改');
     require(typeof edit.path === 'string' && number(edit.value), '修改须指定路径和有限数值');
-    const permitted = kind === 'constant' ? /^\/estimator\/value\/[01]$/ : kind === 'linear' ? /^\/estimator\/(?:intercepts\/[01]|coefficients\/[01]\/(?:0|[1-9]\d*))$/ : /^\/estimator\/outputs\/[01]\/(?:baseline|trees\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/0)$/;
+    const permitted = kind === 'constant' ? /^\/estimator\/value\/[01]$/ : ['linear','basis_linear'].includes(kind) ? /^\/estimator\/(?:intercepts\/[01]|coefficients\/[01]\/(?:0|[1-9]\d*))$/ : /^\/estimator\/outputs\/[01]\/(?:baseline|trees\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/0)$/;
     require(permitted.test(edit.path), '只允许修改常量、系数、截距、森林基准或叶子值');
     const parts = edit.path.slice(1).split('/'); let target = value;
     for (const part of parts.slice(0, -1)) { require(target !== null && typeof target === 'object' && Object.hasOwn(target, part), '参数路径超出函数范围'); target = target[part]; }

@@ -23,3 +23,35 @@ export function contextBundleFixture({sourceCount=2,dateCount=30,mutate=null}={}
     if(mutate) mutate(inputs);
   }});
 }
+
+/** Explicit foreign-source archive fixture; no provider or model is called. */
+export function foreignContextBundleFixture({mutate=null}={}) {
+  return contextBundleFixture({sourceCount:1,dateCount:3,mutate(inputs) {
+    const source=inputs.snapshot.provenance.contextSources[0];
+    source.api='us_daily_adj';source.params.ts_code='XSD';
+    source.fields=['ts_code','trade_date','adj_factor','amount','close','vol'];
+    source.records=source.records.map((row,i)=>({...row,ts_code:'XSD',adj_factor:i===0?0.5:1}));
+    source.sha256=hash(canonical(source.records));
+    const sources=[source],root=hash(canonical(sources));
+    const clock={contextSourceRoot:root,contextScope:'named_market_series_asof_broadcast_by_date',contextObservationClock:'source_session_publication_before_cn_origin'};
+    Object.assign(inputs.snapshot.provenance,clock,{contextSources:sources});
+    Object.assign(inputs.report.provenance,clock,{contextSources:sources.map(({api,params,fields,sha256,records})=>({api,params,fields,sha256,rowCount:records.length}))});
+    if(mutate) mutate(inputs);
+  }});
+}
+
+/** Synthetic Yahoo transport contract, not downloaded market data. */
+export function yahooContextBundleFixture({mutate=null}={}) {
+  return contextBundleFixture({sourceCount:1,dateCount:3,mutate(inputs){
+    const source=inputs.snapshot.provenance.contextSources[0];
+    source.api='yfinance_history';source.params.ts_code='XSD';
+    source.fields=['ts_code','trade_date','adj_close','close','dividends','stock_splits','vol'];
+    source.records=source.records.map(({amount,...row})=>({...row,ts_code:'XSD',adj_close:row.close*0.9,dividends:0,stock_splits:0}));
+    source.sha256=hash(canonical(source.records));
+    source.providerDetails={provider:'YAHOO_YFINANCE',libraryVersion:'1.7.0',retrievedAt:'2026-10-10T00:00:00Z',currency:'USD',exchangeTimezoneName:'America/New_York',instrumentType:'ETF',libraryCalls:1,httpReceipts:[{host:'query2.finance.yahoo.com',path:'/v8/finance/chart/XSD',status:200,bytes:123,sha256:'a'.repeat(64)}]};
+    const sources=[source],clock={contextSourceRoot:hash(canonical(sources)),contextScope:'named_market_series_asof_broadcast_by_date',contextObservationClock:'source_session_publication_before_cn_origin'};
+    Object.assign(inputs.snapshot.provenance,clock,{contextSources:sources});
+    Object.assign(inputs.report.provenance,clock,{contextSources:sources.map(({api,params,fields,sha256,records,providerDetails})=>({api,params,fields,sha256,rowCount:records.length,providerDetails,historicalRevisionVerified:false,observedRange:{start:records[0].trade_date,end:records.at(-1).trade_date}}))});
+    if(mutate)mutate(inputs);
+  }});
+}

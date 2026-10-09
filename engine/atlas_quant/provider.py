@@ -488,6 +488,11 @@ def _load(strategy, client, cache_dir, cache_identity, *, deferred_fields=None):
         provenance.update(context_provenance)
         provenance['externalFields'] = mappings
         provenance['datasets'].extend(sorted({context_field(f)['api'] for f in context_required}))
+        yahoo = [source['providerDetails'] for source in context_provenance['contextSources'] if source['api'] == 'yfinance_history']
+        if yahoo:
+            provenance['providerCallsByProvider'] = {'TUSHARE_PRO': {'httpRequests': client.calls},
+                'YAHOO_YFINANCE': {'libraryCalls': sum(source['libraryCalls'] for source in yahoo),
+                                  'httpRequests': sum(len(source['httpReceipts']) for source in yahoo)}}
         provenance['observedColumns'].extend(context_required)
         provenance.setdefault('externalFieldCoverage', {}).update({f:float(frame[f].notna().mean()) for f in context_required})
         provenance['externalAvailabilityFingerprint'] = canonical_hash(_records(frame[['ts_code','trade_date']+[f+'__available_date' for f in mappings]]))

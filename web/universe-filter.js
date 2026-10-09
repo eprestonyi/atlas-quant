@@ -15,6 +15,9 @@ export function universeFilter({ esc: e, icon: i, action, fmt, selection, state,
       ${g.filters.map((f, index) => filterEditor(g, f, index, scope)).join('')}
       ${action('pool-add-filter', '且满足', 'plus', 'ghost small', `data-id="${e(g.id)}" data-scope="${scope}"`)}</article>`;
   };
+  const directoryQuery=(directory.query||'').trim().toLowerCase();
+  const industries=(fields.find(x=>x.field==='industry')?.values||[]).filter(x=>!directoryQuery||`${x.label} ${x.value}`.toLowerCase().includes(directoryQuery));
+  const shownIndustries=industries.slice(0,directoryQuery?24:6);
   const query = state.query.trim().toLowerCase();
   const rows = members.filter(x => !query || `${x.ts_code} ${x.name || ''} ${x.area || ''} ${x.industry || ''}`.toLowerCase().includes(query));
   const pageCount = Math.max(1, Math.ceil(rows.length / 40));
@@ -24,9 +27,10 @@ export function universeFilter({ esc: e, icon: i, action, fmt, selection, state,
   const resultCount = state.dirty ? null : state.resolution?.symbolCount ?? state.savedSymbols?.length ?? null;
   return `<section class="uf-workbench" aria-label="股票筛选工作台">
     <div class="uf-presets"><span>快捷条件</span>${recommendations.map(p => action('pool-preset', e(p.label), selectedPools.has(p.value) ? 'check' : 'plus', 'ghost small', `data-id="${e(p.value)}" aria-pressed="${selectedPools.has(p.value)}"`)).join('')}</div>
-    <details class="uf-directory"><summary>票池目录 <span>${fmt(directory.total || pools.length, 0)}</span></summary>
+    <details class="uf-directory" ${state.directoryOpen?'open':''}><summary>票池目录 <span>${fmt(directory.total || pools.length, 0)}</span></summary>
       <label class="v2-search">${i('search')}<input id="v2-universe-search" aria-label="搜索股票池" placeholder="搜索指数、行业、主题" value="${e(directory.query || '')}"></label>
       <div class="uf-pool-list">${directory.loading ? '<span role="status">读取中…</span>' : directory.items.map(p => `<div><strong>${e(p.name || p.id)}</strong><span>${fmt(p.symbolCount || p.symbols?.length || 0, 0)} 只</span>${action('pool-preset', '加入', 'plus', 'ghost small', `data-id="${e(p.id)}" ${directory.ready(p) ? '' : 'disabled'}`)}</div>`).join('') || '<span>没有匹配票池</span>'}</div>
+      ${shownIndustries.length?`<h4 class="uf-directory-heading">行业 <span>${industries.length}</span></h4><div class="uf-pool-list">${shownIndustries.map(x=>`<div><strong>${e(x.label)}</strong><span>${fmt(x.count||0,0)} 只</span>${action('pool-directory-industry','加入','plus','ghost small',`data-value="${e(x.value)}"`)}</div>`).join('')}</div>`:''}
       <div class="uf-pagination"><span>${directory.page} / ${Math.max(1, Math.ceil(directory.total / 12))}</span>${action('universe-page', '上一页', '', 'ghost small', `data-page="${directory.page - 1}" ${directory.page <= 1 ? 'disabled' : ''}`)}${action('universe-page', '下一页', '', 'ghost small', `data-page="${directory.page + 1}" ${directory.page * 12 >= directory.total ? 'disabled' : ''}`)}</div>
     </details>
     <div class="uf-rules">

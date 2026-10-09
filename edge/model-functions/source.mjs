@@ -19,11 +19,16 @@ export function assertFunctionSource(artifact, fit, strategy) {
   requireSame(object(artifact) && ['scope', 'training', 'featureConstruction', 'provenance', 'estimator', 'transforms']
     .every(key => object(artifact[key])) && Array.isArray(artifact.inputSchema) && artifact.inputSchema.every(object), true, '函数结构');
   requireSame(fit?.status, 'valid', '拟合状态');
+  if (strategy?.model?.parameterSharing === 'per_target') requireSame(
+    typeof fit.targetSymbol === 'string' && typeof fit.targetId === 'string', true, '逐标的函数身份');
+  if (fit.targetSymbol) requireSame(strategy?.model?.parameterSharing === 'per_target' &&
+    strategy.universe.symbols.includes(fit.targetSymbol), true, '逐标的函数成员');
   requireSame(artifact.scope, {
     family: strategy?.model?.family,
     targetKind: strategy?.target?.kind,
     horizonSessions: strategy?.target?.horizonSessions,
-    symbols: strategy?.universe?.symbols,
+    symbols: fit.targetSymbol && strategy?.model?.parameterSharing === 'per_target'
+      ? [fit.targetSymbol] : strategy?.universe?.symbols,
     observationDays: strategy?.research?.observationDays,
     researchStart: strategy?.universe?.start,
     researchEnd: strategy?.universe?.end,
@@ -37,12 +42,12 @@ export function assertFunctionSource(artifact, fit, strategy) {
   requireSame(artifact.featureConstruction.factors, strategy?.factors, '因子定义');
   requireSame(artifact.featureConstruction.preprocess, strategy?.preprocess, '预处理声明');
   if (strategy?.preprocess?.automatic) {
-    requireSame(artifact.schema, 'atlas-model-function/2', '自动因子函数版本');
+    requireSame(artifact.schema, artifact.estimator.kind === 'basis_linear' ? 'atlas-model-function/3' : 'atlas-model-function/2', '自动因子函数版本');
     requireSame(artifact.featureConstruction.automatic, fit.automaticPreprocessing, '因子经济变换与作用域');
     if (!['no_change', 'historical_drift'].includes(fit.estimator) && strategy.preprocess.standardize)
       requireSame(fit.scalerMethod, 'median_iqr', '训练集稳健尺度');
   } else {
-    requireSame(artifact.schema, 'atlas-model-function/1', '传统函数版本');
+    requireSame(artifact.schema, artifact.estimator.kind === 'basis_linear' ? 'atlas-model-function/3' : 'atlas-model-function/1', '传统函数版本');
     requireSame(artifact.featureConstruction.automatic === undefined, true, '传统因子构造');
   }
   requireSame(artifact.featureConstruction.targetSpecification, strategy?.target, '目标定义');
@@ -52,16 +57,21 @@ export function assertFunctionSource(artifact, fit, strategy) {
   if (strategy?.model?.estimator !== 'auto')
     requireSame(fit.estimator, strategy?.model?.estimator, '估计器声明');
   const kind = {no_change: 'constant', historical_drift: 'constant', ridge: 'linear',
-    elastic_net: 'linear', hist_gradient_boosting: 'histogram_trees'}[fit.estimator];
+    elastic_net: 'linear', hist_gradient_boosting: 'histogram_trees', polynomial_ridge:'basis_linear',
+    polynomial_elastic_net:'basis_linear', transformed_ridge:'basis_linear',factorwise_basis:'basis_linear'}[fit.estimator];
   requireSame(artifact.estimator.kind, kind, '估计器类型');
   if (kind === 'constant') requireSame(artifact.estimator.value, fit.constantPrediction, '拟合常量');
   else {
     for (const [parameter, audit] of Object.entries({imputeMedian: 'imputerMedian', winsorLower: 'winsorLower',
       winsorUpper: 'winsorUpper', scaleMean: 'scalerMean', scaleScale: 'scalerScale'}))
       requireSame(artifact.transforms[parameter], fit[audit] ?? null, '训练变换');
-    if (kind === 'linear') {
+    if (kind === 'linear' || kind === 'basis_linear') {
       requireSame(artifact.estimator.coefficients, fit.coefficients, '拟合系数');
       requireSame(artifact.estimator.intercepts, fit.intercepts, '拟合截距');
+      if (kind === 'basis_linear') {
+        for (const field of ['terms','termCenter','termScale','signedExpm1AbsoluteInputCap'])
+          requireSame(artifact.estimator[field], fit.basisFit?.[field], '拟合基函数');
+      }
     }
   }
 }

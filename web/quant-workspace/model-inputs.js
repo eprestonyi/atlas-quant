@@ -1,4 +1,4 @@
-import { createFeatureLabeler } from './feature-labels.js';
+import { createFeatureLabeler, constructedFeatureLabel } from './feature-labels.js';
 
 const SUBSCRIPT = '₀₁₂₃₄₅₆₇₈₉';
 const subscript = index => String(index + 1).replace(/\d/g, digit => SUBSCRIPT[Number(digit)]);
@@ -14,10 +14,11 @@ const BUILTIN_DEFINITION = Object.freeze({
 });
 
 function constructionDefinition(artifact, input, factor, symbol) {
+  const asset = artifact.scope?.targetKind === 'asset_price' && artifact.identity?.scale === 'origin_known_gross_absolute_leg_value';
   const descriptor = artifact.featureConstruction?.automatic?.factors?.find(item => item.feature === input.name);
   if (!factor) return { equations: Object.hasOwn(BUILTIN_DEFINITION, input.name) ? [`${symbol} = ${BUILTIN_DEFINITION[input.name]}`] : [], operations: [], descriptor: null };
-  if (!descriptor && artifact.schema === 'atlas-model-function/2') return { equations: [], operations: ['构建定义缺失'], descriptor: null };
-  if (!descriptor) return { equations: [`dⱼ,ₜ = ${factor.expression}`, `${symbol} = Σⱼ(qⱼ pⱼ,ₜ / scale) × ${factor.direction} × dⱼ,ₜ`], operations: ['篮子聚合'], descriptor: null };
+  if (!descriptor && artifact.featureConstruction?.schema === 'origin-state-features/2') return { equations: [], operations: ['构建定义缺失'], descriptor: null };
+  if (!descriptor) return { equations: [`dⱼ,ₜ = ${factor.expression}`, `${symbol} = ${asset ? '' : 'Σⱼ(qⱼ pⱼ,ₜ / scale) × '}${factor.direction} × dⱼ,ₜ`], operations: [asset ? '个股输入' : '篮子聚合'], descriptor: null };
   const { transform: t, scope, direction } = descriptor;
   const raw = scope === 'global' ? 'dₜ' : 'dⱼ,ₜ', out = scope === 'global' ? 'gₜ' : 'gⱼ,ₜ';
   const member = scope === 'global' ? '' : 'ⱼ,';
@@ -31,8 +32,8 @@ function constructionDefinition(artifact, input, factor, symbol) {
   };
   const labels = {identity:'原值',log_positive:'对数',log1p_nonnegative:'log1p',reciprocal_nonzero:'倒数',percent_to_fraction:'百分比转小数',return_over_trailing_volatility:'收益 / 历史波动'};
   return { descriptor, equations: [`${raw} = ${descriptor.expression}`, ...(formulas[t.kind] || ['未识别的经济变换']), `${out} 非有限 → null`,
-    `${symbol} = ${scope === 'global' ? `${direction} × ${out}` : `Σⱼ(qⱼ pⱼ,ₜ / scale) × ${direction} × ${out}`}`],
-    operations: [labels[t.kind] || t.kind, scope === 'global' ? '全局一次' : '篮子聚合'] };
+    `${symbol} = ${scope === 'global' || asset ? `${direction} × ${out}` : `Σⱼ(qⱼ pⱼ,ₜ / scale) × ${direction} × ${out}`}`],
+    operations: [labels[t.kind] || t.kind, scope === 'global' ? '全局一次' : asset ? '个股输入' : '篮子聚合'] };
 }
 
 // These are the portable function's actual numerical inputs. A factor expression
@@ -49,7 +50,7 @@ export function inputDefinition(artifact, index) {
   const equations = [`${r} = input[${JSON.stringify(input.name)}]`, `${u} = ${filled}`,
     `${symbol} = ${t.scaleMean ? `(${u} − ${t.scaleMean[index]}) / ${t.scaleScale[index]}` : u}`];
   return { input, factor, symbol, equations, construction,
-    operations: [...construction.operations, t.winsorLower && '截尾', t.imputeMedian && '缺失填充', t.scaleMean && (artifact.schema === 'atlas-model-function/2' ? 'median / IQR' : '标准化')].filter(Boolean) };
+    operations: [...construction.operations, t.winsorLower && '截尾', t.imputeMedian && '缺失填充', t.scaleMean && (artifact.featureConstruction?.schema === 'origin-state-features/2' ? 'median / IQR' : '标准化')].filter(Boolean) };
 }
 
 export function renderFunctionInputs(C, F, artifact) {
@@ -65,6 +66,6 @@ export function renderFunctionInputs(C, F, artifact) {
     const population = artifact.featureConstruction?.automatic?.fitPopulation === 'asset_rows_global_dates'
       ? d.construction.descriptor?.scope === 'global' ? '每训练日期一次' : '训练样本行' : null;
     if (population) source.fitPopulation = artifact.featureConstruction.automatic.fitPopulation;
-    return `<details class="sq-model-input" data-model-input="${e(d.input.name)}"><summary><strong>${d.symbol}</strong><span>${e(label(d.input.name))}</span><small>${e(d.operations.join(' → ') || '原值')}</small></summary><div class="sq-model-input-body">${d.construction.equations.length ? `<h4>输入构建 R${subscript(index)}</h4><pre class="sq-model-equation" data-input-construction>${e(d.construction.equations.join('\n'))}</pre>` : ''}<h4>训练变换 ${d.symbol}</h4><pre class="sq-model-equation" data-input-transform>${e(d.equations.join('\n'))}</pre><dl class="sq-model-input-source"><dt>输入键</dt><dd><code>${e(d.input.name)}</code></dd>${factor ? `<dt>因子表达式</dt><dd><code>${e(factor.expression)}</code></dd><dt>方向 / 角色</dt><dd>${e(factor.direction)} / ${e(factor.role)}</dd>` : ''}${d.construction.descriptor ? `<dt>作用域</dt><dd>${e(d.construction.descriptor.scope)}</dd>` : ''}${population ? `<dt>拟合样本</dt><dd>${e(population)}</dd>` : ''}<dt>构建协议</dt><dd>${e(artifact.featureConstruction?.schema || '未保存')}</dd></dl>${F.advanced('原始定义', `<pre class="sq-report-code">${e(JSON.stringify(source, null, 2))}</pre>`)}</div></details>`;
+    return `<details class="sq-model-input" data-model-input="${e(d.input.name)}"><summary><strong>${d.symbol}</strong><span>${e(constructedFeatureLabel(label(d.input.name),d.construction.descriptor))}</span><small>${e(d.operations.join(' → ') || '原值')}</small></summary><div class="sq-model-input-body">${d.construction.equations.length ? `<h4>输入构建 R${subscript(index)}</h4><pre class="sq-model-equation" data-input-construction>${e(d.construction.equations.join('\n'))}</pre>` : ''}<h4>训练变换 ${d.symbol}</h4><pre class="sq-model-equation" data-input-transform>${e(d.equations.join('\n'))}</pre><dl class="sq-model-input-source"><dt>输入键</dt><dd><code>${e(d.input.name)}</code></dd>${factor ? `<dt>因子表达式</dt><dd><code>${e(factor.expression)}</code></dd><dt>方向 / 角色</dt><dd>${e(factor.direction)} / ${e(factor.role)}</dd>` : ''}${d.construction.descriptor ? `<dt>作用域</dt><dd>${e(d.construction.descriptor.scope)}</dd>` : ''}${population ? `<dt>拟合样本</dt><dd>${e(population)}</dd>` : ''}<dt>构建协议</dt><dd>${e(artifact.featureConstruction?.schema || '未保存')}</dd></dl>${F.advanced('原始定义', `<pre class="sq-report-code">${e(JSON.stringify(source, null, 2))}</pre>`)}</div></details>`;
   }).join('')}</div>`;
 }

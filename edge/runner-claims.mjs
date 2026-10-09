@@ -1,4 +1,4 @@
-import {supportsAutomaticFactors, supportsContextSources, assertFactorCapabilities} from './factor-capabilities.mjs';
+import {supportsAutomaticFactors, supportsContextSources, supportsForeignContextSources, supportsYahooContextSources, supportsModelSearch, assertFactorCapabilities} from './factor-capabilities.mjs';
 import {
   assertRunMarket,
   MARKET_RESEARCH_PROFILES,
@@ -88,7 +88,10 @@ export async function claimRunnerJob(env, input, now) {
   );
   const supportsAutomatic = Number(supportsAutomaticFactors(input));
   const supportsContext = Number(supportsContextSources(input));
-  const factorGuard = `(?=1 OR json_type(spec,'$.preprocess.automatic') IS NULL) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE instr(json_extract(f.value,'$.expression'),'ext_ctx_')>0))`;
+  const supportsForeignContext = Number(supportsForeignContextSources(input));
+  const supportsYahooContext = Number(supportsYahooContextSources(input));
+  const supportsSearch = Number(supportsModelSearch(input));
+  const factorGuard = `(?=1 OR json_type(spec,'$.model.search') IS NULL) AND (?=1 OR json_type(spec,'$.preprocess.automatic') IS NULL) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE instr(json_extract(f.value,'$.expression'),'ext_ctx_')>0)) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE json_extract(f.value,'$.expression') GLOB '*ext_ctx_[a-z]*')) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE instr(json_extract(f.value,'$.expression'),'ext_ctx_yf_')>0))`;
   const acceptedFinancial = acceptedFinancialProfiles(env, input);
   const acceptedMarket = MARKET_RESEARCH_PROFILES.filter(
     (p) => marketEnabled(env, p) && supportsMarket(input, p)
@@ -121,8 +124,11 @@ export async function claimRunnerJob(env, input, now) {
         supportsBundle,
         JSON.stringify(acceptedFinancial),
         JSON.stringify(acceptedMarket),
+        supportsSearch,
         supportsAutomatic,
-        supportsContext
+        supportsContext,
+        supportsForeignContext,
+        supportsYahooContext
       )
       .first();
     return { job: row ? await jobPayload(env, row, supportsBundle) : null };
@@ -149,8 +155,11 @@ export async function claimRunnerJob(env, input, now) {
       supportsBundle,
       JSON.stringify(acceptedFinancial),
       JSON.stringify(acceptedMarket),
+        supportsSearch,
         supportsAutomatic,
-        supportsContext
+        supportsContext,
+        supportsForeignContext,
+        supportsYahooContext
     ),
     env.DB.prepare(
       `UPDATE jobs SET status='running',lease_token=?,lease_until=?,updated_at=?

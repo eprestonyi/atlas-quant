@@ -55,6 +55,28 @@ for(const missing of Object.keys(contextProvenance)){
 }
 for(const contextSources of [[],[{params:{ts_code:'000300.SH'},rowCount:100}],[{params:{ts_code:'000905.SH'},records:[{}]}]])
   assert(stepErrors(contextStudy,'state',{...uploadedContextOptions,dataset:{provenance:{...contextProvenance,contextSources}}}).some(message=>message.includes('完整来源包')));
+// The same ETF symbol from another provider cannot satisfy a Yahoo alias.
+const yahooStudy=structuredClone(contextStudy);yahooStudy.factors[0].expression='ext_ctx_yf_xsd_close';
+assert(contextRegistry.items.some(source=>source.aliasKey==='yf_xsd'&&source.api==='yfinance_history'));
+assert(stepErrors(yahooStudy,'state',contextOptions).some(message=>message.includes('Yahoo ETF')));
+const yahooOptions={...contextOptions,session:{runner:{factorPreprocessFormats:['auto-factor-preprocess/1'],contextSourceFormats:['named-index-history/1','named-market-history/3']}}};
+assert.deepEqual(stepErrors(yahooStudy,'state',yahooOptions),[]);
+const yahooProvenance={contextSourceRoot:'d'.repeat(64),contextScope:'named_market_series_asof_broadcast_by_date',contextObservationClock:'source_session_publication_before_cn_origin',contextSources:[{api:'yfinance_history',params:{ts_code:'XSD'},records:[{ts_code:'XSD',trade_date:'20240903',close:200}]}]};
+const yahooUpload={...yahooOptions,dataSource:'upload',dataset:{provenance:yahooProvenance}};
+assert.deepEqual(stepErrors(yahooStudy,'state',yahooUpload),[]);
+const wrongProvider=structuredClone(yahooUpload);wrongProvider.dataset.provenance.contextSources[0].api='us_daily_adj';
+assert(stepErrors(yahooStudy,'state',wrongProvider).some(message=>message.includes('完整来源包')));
+const wrongClock=structuredClone(yahooUpload);wrongClock.dataset.provenance.contextObservationClock='after_daily_publication_before_next_open';
+assert(stepErrors(yahooStudy,'state',wrongClock).some(message=>message.includes('完整来源包')));
+const unsupportedYahooField=structuredClone(yahooStudy);unsupportedYahooField.factors[0].expression='ext_ctx_yf_xsd_amount';
+assert(stepErrors(unsupportedYahooField,'state',yahooOptions).some(message=>message.includes('来源未登记')));
+const oldUsStudy=structuredClone(contextStudy);oldUsStudy.factors[0].expression='ext_ctx_xsd_close';
+assert(stepErrors(oldUsStudy,'state',yahooOptions).some(message=>message.includes('跨市场 ETF')));
+const mixedStudy=structuredClone(yahooStudy);mixedStudy.factors.push({id:'old-tushare',expression:'ext_ctx_xsd_close',direction:1,role:'predictor'});
+const bothProviders=structuredClone(yahooUpload);bothProviders.session.runner.contextSourceFormats.push('named-market-history/2');
+assert(stepErrors(mixedStudy,'state',bothProviders).some(message=>message.includes('完整来源包')));
+bothProviders.dataset.provenance.contextSources.push({api:'us_daily_adj',params:{ts_code:'XSD'},records:[{ts_code:'XSD',trade_date:'20240903',close:100,adj_factor:2}]});
+assert.deepEqual(stepErrors(mixedStudy,'state',bothProviders),[]);
 for(const automatic of [null,{},true,{schema:'auto-factor-preprocess/2'},{schema:'auto-factor-preprocess/1',guess:true}]){
   const malformed=defaultStrategy();malformed.preprocess.automatic=automatic;
   assert(stepErrors(malformed,'state').some(message=>message.includes('自动因子处理版本无效')));

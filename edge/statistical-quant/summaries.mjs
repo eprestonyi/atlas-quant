@@ -33,6 +33,15 @@ export function diagnosticSummary(value) {
     outerFolds: value.detailCounts?.outerFolds ?? count(value.outerFolds),
     finalTrials: value.detailCounts?.finalTrials ?? count(value.finalTrials)
   };
+  if (object(value.modelSearch)) {
+    summary.modelSearch = pick(value.modelSearch, [
+      'schema', 'parameterSharing', 'selectedCandidateId', 'researchCandidateId',
+      'freezeCutoff', 'usesTerminalOutcomes', 'trainingPlotIsOutOfSample',
+      'researchCandidateIsDeploymentQualified', 'target', 'assetReturnIdentity',
+      'selectionMeaning'
+    ]);
+    summary.modelSearch.candidateCount = value.modelSearch.candidateCount ?? count(value.modelSearch.candidates);
+  }
   if (object(value.inputCoverage))
     summary.inputCoverage = pick(value.inputCoverage, [
       'totalOrigins',

@@ -1,5 +1,5 @@
 import contextRegistry from '../../engine/atlas_quant/context_sources.json' with {type:'json'};
-const contextAliases = new Set(contextRegistry.items.flatMap(s => (s.api === 'sw_daily' ? ['close','vol','amount','pe','pb','total_mv','float_mv'] : ['close','vol','amount']).map(f => 'ext_ctx_'+s.ts_code.toLowerCase().replace('.', '_')+'_'+f)));
+const contextAliases = new Set(contextRegistry.items.flatMap(s => (s.api === 'yfinance_history' ? ['close','vol'] : s.api === 'sw_daily' ? ['close','vol','amount','pe','pb','total_mv','float_mv'] : ['close','vol','amount']).map(f => 'ext_ctx_'+(s.aliasKey || s.ts_code.toLowerCase().replace('.', '_'))+'_'+f)));
 import financialDefinitions from '../financial/definitions.json' with { type: 'json' };
 const financialStateIds = new Set(financialDefinitions.items.map(x => x.id));
 import { ApiError } from '../errors.mjs';
@@ -277,7 +277,7 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
     } else if (b.quantities !== undefined) fail('估计篮子不接受人工quantities');
     target.basket = basket;
   }
-  const m = keys(input.model, ['family', 'estimator', 'trainWindow', 'refitDays'], '预测模型');
+  const m = keys(input.model, ['family', 'estimator', 'trainWindow', 'refitDays', 'search', 'parameterSharing'], '预测模型');
   const model = {
     family: choice(
       m.family,
@@ -286,12 +286,22 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
     ),
     estimator: choice(
       m.estimator ?? 'auto',
-      ['auto', 'no_change', 'historical_drift', 'ridge', 'elastic_net', 'hist_gradient_boosting'],
+      ['auto', 'no_change', 'historical_drift', 'ridge', 'elastic_net', 'hist_gradient_boosting', 'polynomial_ridge', 'polynomial_elastic_net', 'transformed_ridge', 'factorwise_basis'],
       '预测估计器'
     ),
     trainWindow: number(m.trainWindow ?? 504, '训练窗口', 120, 1260, true),
     refitDays: number(m.refitDays ?? 20, '重新拟合间隔', 1, 126, true)
   };
+  if ('search' in m) {
+    keys(m.search, ['schema'], '函数搜索');
+    if (m.search.schema !== 'factor-model-search/1') fail('模型搜索协议无效');
+    model.search = {schema:'factor-model-search/1'};
+  }
+  if ('parameterSharing' in m) {
+    model.parameterSharing = choice(m.parameterSharing,['pooled','per_target'],'模型参数作用域');
+    if (model.parameterSharing === 'per_target' && target.kind !== 'asset_price') fail('逐标的模型需要逐只股票目标');
+    if (model.parameterSharing === 'per_target' && universe.symbols.length > 50) fail('逐标的模型本次最多 50 个成员');
+  }
   if (model.family === 'pair_reversion' && target.basket?.method !== 'pair_ols')
     fail('配对模型需要pair_ols冻结篮子');
   if (cleanFactors.some((f) => f.role === 'hedge') && target.basket?.method !== 'pca_residual')

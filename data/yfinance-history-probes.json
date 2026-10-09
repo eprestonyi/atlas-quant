@@ -1,0 +1,573 @@
+{
+  "schema": "provider-history-probes/1",
+  "probes": [
+    {
+      "api": "yfinance_history",
+      "symbol": "XSD",
+      "params": {
+        "ts_code": "XSD",
+        "start_date": "20240903",
+        "end_date": "20240913"
+      },
+      "observedAt": "2026-10-09T20:30:02.580799+00:00",
+      "rowCount": 9,
+      "observedStart": "20240903",
+      "observedEnd": "20240913",
+      "recordSha256": "794d1db0062afc0dd29d992f4d3fceec72387e67e0c631b643294e6c3c7be7ef",
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete_offline_recovery"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLK",
+      "params": {
+        "ts_code": "XLK",
+        "start_date": "20240903",
+        "end_date": "20240913"
+      },
+      "observedAt": "2026-10-09T20:30:19.595907+00:00",
+      "rowCount": 9,
+      "observedStart": "20240903",
+      "observedEnd": "20240913",
+      "recordSha256": "42dffb6511b51d003b3e934bcc2a24eca47c65deca2c2634a2b07fcf73785152",
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "KBE",
+      "params": {
+        "ts_code": "KBE",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:39:21.525086+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "14c480e2e344e5e07b53ceb30438c51ab9c8c2c5d7fd400bd6400f69e6439079",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "KCE",
+      "params": {
+        "ts_code": "KCE",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:39:26.046661+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "bda4f8ff8891f05fe283767d04a0c2709ba4d31ca1080a812928bd5f5dfc48a3",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "KIE",
+      "params": {
+        "ts_code": "KIE",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:39:30.046141+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "6f2244a4553650fd03f5dd01efec6d5c5670dbbf46bf5ef1845e7b32a7c8408f",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "KRE",
+      "params": {
+        "ts_code": "KRE",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:39:34.346526+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "72de784a51f3fd8a41b82a9fedfd0cd13a8c56c8862bcbbf6fd74b092acd04c8",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XAR",
+      "params": {
+        "ts_code": "XAR",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:39:38.240410+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "5259784b6018cfe93d86231acf91b17e79137c4146109e2bd9f82a93cd83860e",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XBI",
+      "params": {
+        "ts_code": "XBI",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:39:42.529764+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "5c582bcad19eea9bbbd0e6bf073a65611cf749be6e654b5a5ce14507a0c2810c",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XES",
+      "params": {
+        "ts_code": "XES",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:39:45.666088+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "5d458975ad04401099776c7e654e44d84aab6aabde513517e9af6e82a5343011",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XHB",
+      "params": {
+        "ts_code": "XHB",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:39:52.230110+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "e980ecc3f309489b36bb4b1c1cf95370e65eb6eddc7cfb2286dab434fa619f65",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XHE",
+      "params": {
+        "ts_code": "XHE",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:39:59.285032+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "f0fbec28ce6426681edffe439d5eba41510ce1fe986baaf0cb79d99051615b6c",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XHS",
+      "params": {
+        "ts_code": "XHS",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:02.339547+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "44968eab3d9bafff12a3033d7300419509fa77008fccd929a94715ecf727e76d",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLB",
+      "params": {
+        "ts_code": "XLB",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:05.529849+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "329f50a346c635e1c03cfdfe816d594a09df0edbbb96f38d335dc7cc333c16e6",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLC",
+      "params": {
+        "ts_code": "XLC",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:08.508359+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "36a8f9978dd8fddb89615d0f24bfa800f9ace8d39bfffc359d2d090bb82fe109",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLE",
+      "params": {
+        "ts_code": "XLE",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:12.781001+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "891166e7c07d6ba58b0afba398299d436cab661c3a2f21140940e5759eac8f09",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLF",
+      "params": {
+        "ts_code": "XLF",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:16.033400+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "7ab0dce447dd8f600bfbe3a3012e9f4facd9a6b75f96706621d0a6f3551a384a",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLI",
+      "params": {
+        "ts_code": "XLI",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:19.831571+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "786401d06183f7e1f6ee97fbf4aace1c866ccfc9172f4c3e67b9d3c95d5ea694",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLP",
+      "params": {
+        "ts_code": "XLP",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:23.750558+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "3fbe9d9bcdbeda5531908e7eaaeea9ddd01783a650c8a21f36fa1d9ff0b0d4c5",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLRE",
+      "params": {
+        "ts_code": "XLRE",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:26.871409+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "c16128d03bcf30c0ef4b0c0376b151bb693acff1697872d7d93517ebb4e9ddb3",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLU",
+      "params": {
+        "ts_code": "XLU",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:30.745272+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "03e29d3cade9a552f82868c9191f02150ef994fcb9509874de8cb9cb1187e33b",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLV",
+      "params": {
+        "ts_code": "XLV",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:38.427060+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "0a6b9c21ad6dc6572887118a92dfd49e92f1a07ab5cd4aeedb685828fea448b4",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLY",
+      "params": {
+        "ts_code": "XLY",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:42.756893+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "61963338167a29726483b847bd9da38e44e51395a324b16070cfa909459a6741",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XME",
+      "params": {
+        "ts_code": "XME",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:45.884195+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "d53083aee96d5d1d68bcfb849e468a6112636b4350ea48a4807f83c484105d1c",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XOP",
+      "params": {
+        "ts_code": "XOP",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:49.514681+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "5fc7ba0dfcd83a56ced0bfdad75a359d63c351c2a04c03144a41e26166fe1e83",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XPH",
+      "params": {
+        "ts_code": "XPH",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:52.916003+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "4f9cbb5d69b262d3db3f209c32e04e841918f9248e462fdd86fe777184cc52b2",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XRT",
+      "params": {
+        "ts_code": "XRT",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:40:57.617119+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "2cd886af935cefce0cb9adc900254d5b56a7cde7d6c8c5c36e2ca1c1d3adf02d",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XSW",
+      "params": {
+        "ts_code": "XSW",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:41:00.738931+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "2030727bcaefff37f316b200c225e12edf7993928f2e1af08efeae2697b24326",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XTH",
+      "params": {
+        "ts_code": "XTH",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:41:03.020172+00:00",
+      "rowCount": 0,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "failed",
+      "providerCode": "YAHOO_NO_REPLAY",
+      "chartHttpStatuses": [
+        404
+      ]
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XTL",
+      "params": {
+        "ts_code": "XTL",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:41:08.614803+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "c664933f429a148b96aa1c02c83fb161ef1db67e1da578249a84a5a65cd9a3e5",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XTN",
+      "params": {
+        "ts_code": "XTN",
+        "start_date": "20240903",
+        "end_date": "20241015"
+      },
+      "observedAt": "2026-10-09T20:41:11.838559+00:00",
+      "rowCount": 31,
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete",
+      "observedStart": "20240903",
+      "observedEnd": "20241015",
+      "recordSha256": "907f44290b6652dd6f102ec8dedabc8522e9c9ff200b57f8b72dfa5c8fd9afa1",
+      "recordHashAlgorithm": "sha256-canonical-f64-json"
+    }
+  ]
+}

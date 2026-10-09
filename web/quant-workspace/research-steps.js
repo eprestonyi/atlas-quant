@@ -2,16 +2,17 @@ import { STEPS, validateStrategy } from './defaults.js';
 import contextRegistry from '../../engine/atlas_quant/context_sources.json' with { type: 'json' };
 
 const contextSources = new Map(contextRegistry.items.flatMap(source =>
-  (source.api === 'sw_daily' ? ['close', 'vol', 'amount', 'pe', 'pb', 'total_mv', 'float_mv'] : ['close', 'vol', 'amount'])
-    .map(field => ['ext_ctx_' + source.ts_code.toLowerCase().replace('.', '_') + '_' + field, source.ts_code])));
+  (source.api === 'sw_daily' ? ['close', 'vol', 'amount', 'pe', 'pb', 'total_mv', 'float_mv'] : source.api === 'yfinance_history' ? ['close', 'vol'] : ['close', 'vol', 'amount'])
+    .map(field => ['ext_ctx_' + (source.aliasKey || source.ts_code.toLowerCase().replace('.', '_')) + '_' + field, source])));
 const supports = (runner, field, format) => Array.isArray(runner?.[field]) && runner[field].includes(format);
 function hasUploadedContext(dataset, fields) {
   const provenance = dataset?.provenance;
+  const foreign = provenance?.contextSources?.some(source => ['us_daily_adj', 'yfinance_history'].includes(source?.api));
   return /^[a-f0-9]{64}$/.test(provenance?.contextSourceRoot || '') &&
-    provenance?.contextScope === 'named_index_series_broadcast_by_date' &&
-    provenance?.contextObservationClock === 'after_daily_publication_before_next_open' &&
+    provenance?.contextScope === (foreign ? 'named_market_series_asof_broadcast_by_date' : 'named_index_series_broadcast_by_date') &&
+    provenance?.contextObservationClock === (foreign ? 'source_session_publication_before_cn_origin' : 'after_daily_publication_before_next_open') &&
     Array.isArray(provenance?.contextSources) && provenance.contextSources.length > 0 &&
-    fields.every(field => contextSources.has(field) && provenance.contextSources.some(source => source?.params?.ts_code === contextSources.get(field) &&
+    fields.every(field => contextSources.has(field) && provenance.contextSources.some(source => source?.api === contextSources.get(field).api && source?.params?.ts_code === contextSources.get(field).ts_code &&
       Array.isArray(source?.records) && source.records.length > 0));
 }
 
@@ -50,7 +51,7 @@ export function stepErrors(strategy, step, options = {}) {
     const fields = strategy.factors.flatMap(factor => typeof factor.expression === 'string' ? factor.expression.match(/\bext_ctx_[A-Za-z0-9_]*\b/g) || [] : []);
     if (fields.some(field => !contextSources.has(field)))
       errors.push('指数因子来源未登记，请更换因子。');
-    if (new Set(fields.map(field => contextSources.get(field)).filter(Boolean)).size > 16)
+    if (new Set(fields.map(field => contextSources.get(field)).filter(Boolean).map(source => source.api + '/' + source.ts_code)).size > 16)
       errors.push('一次研究最多使用 16 个不同指数来源。');
     if (fields.length && !automatic)
       errors.push('大盘与行业输入需要自动处理，请新建轻松研究后添加。');
@@ -58,8 +59,12 @@ export function stepErrors(strategy, step, options = {}) {
       errors.push('计算节点暂不支持自动因子处理，请稍后重试。');
     if (fields.length && options.session?.runner && !supports(options.session.runner, 'contextSourceFormats', 'named-index-history/1'))
       errors.push('计算节点暂不支持指数数据，请稍后重试。');
+    if (fields.some(field => contextSources.get(field)?.api === 'us_daily_adj') && options.session?.runner && !supports(options.session.runner, 'contextSourceFormats', 'named-market-history/2'))
+      errors.push('计算节点暂不支持此跨市场 ETF 数据，请稍后重试。');
+    if (fields.some(field => contextSources.get(field)?.api === 'yfinance_history') && options.session?.runner && !supports(options.session.runner, 'contextSourceFormats', 'named-market-history/3'))
+      errors.push('计算节点暂不支持 Yahoo ETF 数据，请稍后重试。');
     if (fields.length && options.dataSource === 'demo')
-      errors.push('指数因子请选择 Tushare 或导入对应指数数据。');
+      errors.push('市场因子请选择真实数据，或导入对应指数数据与来源包。');
     if (fields.length && options.dataSource === 'upload' && !hasUploadedContext(options.dataset, fields))
       errors.push('导入文件缺少所选指数的完整来源包，请重新导入。');
     if (automatic && ['ready_dataset', 'ready_market'].includes(options.dataSource))

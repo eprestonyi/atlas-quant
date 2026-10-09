@@ -71,9 +71,16 @@ def build_catalog():
         datasets = sorted({fields[f]["dataset"] for f in meta["fields"]})
         external = any(field.startswith('fd_') for field in meta["fields"])
         factors.append({"id": ident, "name": name, "category": category, "description": description, "expression": expression, "direction": direction, "lookback": meta["lookback"], "family": family, "window": window, "requiredFields": meta["fields"], "sourceDatasets": datasets, "dataRequirement": "financial_pit" if external else "daily_basic" if "daily_basic" in datasets else "ohlcv", "availability": "first_trading_session_after_disclosure_date" if external else "after_required_daily_fields_are_published", "minimumLagSessions": 1 if external else 0, "lagAppliedBy": "point_in_time_data_join" if external else "factor_expression", "recipeVersion": 1, "license": "Apache-2.0", "status": "definition_only_requires_data", "researchStatus": "UNVALIDATED_HYPOTHESIS", "pitRevisionHistoryVerified": False})
-        if any(dataset in {'index_daily', 'sw_daily'} for dataset in datasets):
+        if any(dataset in {'index_daily', 'sw_daily', 'us_daily_adj', 'yfinance_history'} for dataset in datasets):
             factors[-1].update(dataRequirement='named_index_history', scope='global' if all(field.startswith('ext_ctx_') for field in factors[-1]['requiredFields']) else 'asset',
                                automaticPreprocessingRequired=True, database='MKT')
+        if 'yfinance_history' in datasets:
+            context = next(fields[field] for field in meta['fields'] if fields[field]['dataset'] == 'yfinance_history')
+            factors[-1].update(source='Yahoo Finance / yfinance', provider='YAHOO_YFINANCE', providerApi='yfinance_history',
+                               historyStatus=context['historyStatus'], historyAvailabilityReason='该 ETF 的 Yahoo 历史尚未验证。')
+        if 'us_daily_adj' in datasets:
+            factors[-1].update(historyStatus='adapter_supported_history_unverified',
+                               historyAvailabilityReason='ETF 历史待验；XSD、XLK 的已检样本未返回记录。')
 
     # Easy users choose a familiar raw concept; the versioned automatic
     # preprocessing policy chooses its economic transform before fold fitting.
@@ -85,15 +92,15 @@ def build_catalog():
 
     from .context_sources import REGISTRY as CONTEXT_REGISTRY
     for source in CONTEXT_REGISTRY['items']:
-        key = source['ts_code'].lower().replace('.', '_')
-        close, amount = 'ext_ctx_'+key+'_close', 'ext_ctx_'+key+'_amount'
+        key = source.get('aliasKey', source['ts_code'].lower().replace('.', '_'))
+        close, amount = 'ext_ctx_'+key+'_close', 'ext_ctx_'+key+('_vol' if source['api'] == 'yfinance_history' else '_amount')
         for suffix, label, expression in [
             ('price','价格',close),
             ('momentum20','20日动量',f'returns({close},20)'),
             ('momentum60','60日动量',f'returns({close},60)'),
             ('volatility20','20日波动',f'ts_std(returns({close},1),20)'),
             ('drawdown60','60日回撤',f'{close}/ts_max({close},60)-1'),
-            ('amount20','20日相对成交额',f'{amount}/ts_mean({amount},20)-1')]:
+            ('volume20' if source['api'] == 'yfinance_history' else 'amount20','20日相对成交量' if source['api'] == 'yfinance_history' else '20日相对成交额',f'{amount}/ts_mean({amount},20)-1')]:
             add('context_'+key+'_'+suffix, source['name']+' · '+label, source['category'], expression, 1,
                 '来自指定指数自身历史；与研究股票池独立，不代表当时行业成员归属。', 'named_index_'+suffix)
         beta = f'(ts_mean(returns(close,1)*returns({close},1),60)-ts_mean(returns(close,1),60)*ts_mean(returns({close},1),60))/(ts_std(returns({close},1),60)*ts_std(returns({close},1),60))'
@@ -106,7 +113,7 @@ def build_catalog():
         if source['api'] == 'sw_daily':
             for field, label in [('pe','市盈率'),('pb','市净率'),('total_mv','总市值')]:
                 add('context_'+key+'_'+field, source['name']+' · '+label, source['category'], 'ext_ctx_'+key+'_'+field, 1,
-                    '指定申万一级行业指数的已发布指标；原单位及自动处理随函数保存。', 'named_industry_level')
+                    '指定申万行业指数的已发布指标；原单位及自动处理随函数保存。', 'named_industry_level')
 
     # Separate parameter windows are named recipes, not statistically
     # independent discoveries. Each formula has an explicit interpretation.
@@ -187,11 +194,11 @@ def build_catalog():
         add(field + "_price_yield", name, "财务价值", f"{field}/raw_close", 1, "已披露每股指标除以当日原价；非自动年化/TTM，拆股口径可能不一致，需研究者核验。", "financial_price_ratio")
 
     models = [{"id": ident, **{k: v for k, v in spec.items() if k != "grid"}, "parameterConfigurations": len(spec["grid"]), "parameters": spec["grid"]} for ident, spec in MODEL_REGISTRY.items()]
-    return {"schemaVersion": 2, "recipeLibraryVersion": "0.2.0", "factors": factors, "models": models, "targets": list(TARGETS.values()), "fieldRegistry": list(fields.values()), "externalRecipeTemplates": [{**recipe, "dataType": "number", "requiresPointInTimeObservations": True, "providesData": False, "researchStatus": "UNVALIDATED_HYPOTHESIS"} for recipe in EXTERNAL_RECIPE_TEMPLATES], "externalFieldContract": {"aliasPattern": "^(pcd|fd|ext|model)_[a-z0-9_]{1,60}$", "requiredCompanion": "<alias>__available_date", "provenanceMap": "externalFields", "availabilityPolicy": "point_in_time_asof", "inventoryIsNotCoverage": True, "numericOnly": True}, "summary": {"recipes": len(factors), "families": len(set(f["family"] for f in factors)), "ohlcvRecipes": sum(f["dataRequirement"] == "ohlcv" for f in factors), "dailyBasicRecipes": sum(f["dataRequirement"] == "daily_basic" for f in factors), "financialPITRecipes": sum(f["dataRequirement"] == "financial_pit" for f in factors), "namedIndexRecipes": sum(f["dataRequirement"] == "named_index_history" for f in factors), "modelFamilies": len(models), "parameterConfigurations": sum(len(m["grid"]) for m in MODEL_REGISTRY.values()), "rawFieldsAreNotFactors": True}}
+    return {"schemaVersion": 2, "recipeLibraryVersion": "0.2.0", "factors": factors, "models": models, "targets": list(TARGETS.values()), "fieldRegistry": list(fields.values()), "industrySources": json.loads(Path(__file__).with_name("industry_sources.json").read_text()), "externalRecipeTemplates": [{**recipe, "dataType": "number", "requiresPointInTimeObservations": True, "providesData": False, "researchStatus": "UNVALIDATED_HYPOTHESIS"} for recipe in EXTERNAL_RECIPE_TEMPLATES], "externalFieldContract": {"aliasPattern": "^(pcd|fd|ext|model)_[a-z0-9_]{1,60}$", "requiredCompanion": "<alias>__available_date", "provenanceMap": "externalFields", "availabilityPolicy": "point_in_time_asof", "inventoryIsNotCoverage": True, "numericOnly": True}, "summary": {"recipes": len(factors), "families": len(set(f["family"] for f in factors)), "ohlcvRecipes": sum(f["dataRequirement"] == "ohlcv" for f in factors), "dailyBasicRecipes": sum(f["dataRequirement"] == "daily_basic" for f in factors), "financialPITRecipes": sum(f["dataRequirement"] == "financial_pit" for f in factors), "namedIndexRecipes": sum(f["dataRequirement"] == "named_index_history" for f in factors), "modelFamilies": len(models), "parameterConfigurations": sum(len(m["grid"]) for m in MODEL_REGISTRY.values()), "rawFieldsAreNotFactors": True}}
 
 
 if __name__ == "__main__":
     destination = Path(__file__).with_name("catalog.json")
     catalog = build_catalog()
-    destination.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n")
+    destination.write_text(json.dumps(catalog, ensure_ascii=False, separators=(",", ":")) + "\n")
     print(json.dumps(catalog["summary"], ensure_ascii=False))

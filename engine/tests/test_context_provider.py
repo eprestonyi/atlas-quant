@@ -48,7 +48,30 @@ def test_reject_unregistered_index_request_before_network(api,params):
     assert not session.calls
 
 def test_catalog_has_named_identity_and_no_constituent_backfill():
-    assert len(REGISTRY['items'])==37
-    assert len({x['ts_code'] for x in REGISTRY['items']})==37
+    assert len(REGISTRY['items'])==480
+    assert len({(x['api'],x['ts_code']) for x in REGISTRY['items']})==480
+    assert len({x['ts_code'] for x in REGISTRY['items']})==450
     assert all(x['scope']=='global' for x in FIELDS.values())
     assert not any(x.get('historicalMembershipVerified') for x in FIELDS.values())
+
+@pytest.mark.parametrize('code', ['801125.SI', '851251.SI', '801081.SI', '850818.SI'])
+def test_detailed_industry_is_a_real_independent_request_not_a_pool_average(tmp_path, code):
+    s = strategy()
+    alias = 'ext_ctx_'+code.lower().replace('.', '_')+'_close'
+    s['factors'] = [{'expression': alias}]
+    session = ContextSession()
+    frame, provenance = _load(s, TushareClient('offline', session=session), tmp_path, 'offline')
+    calls = [request[1]['json'] for request in session.calls if request[1]['json']['api_name'] == 'sw_daily']
+    assert len(calls) == 1 and calls[0]['params']['ts_code'] == code
+    assert len(provenance['contextSources']) == 1
+    assert provenance['contextSources'][0]['params']['ts_code'] == code
+    assert frame[alias].iloc[0] == 3000.1234567890123
+    assert code not in s['universe']['symbols']
+
+@pytest.mark.parametrize('code', ['850112.SI', '850816.SI', 'XSD'])
+def test_unpublished_industry_or_us_proxy_cannot_silently_request_cn_history(code):
+    session = Session()
+    with pytest.raises(ProviderError):
+        TushareClient('offline', session=session).call('sw_daily', {
+            'ts_code': code, 'start_date': '20230102', 'end_date': '20230106'})
+    assert not session.calls
