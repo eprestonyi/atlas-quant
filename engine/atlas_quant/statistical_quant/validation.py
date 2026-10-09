@@ -125,7 +125,8 @@ def select(samples, specs, dates, strategy, runtime=None, review=False):
     review_enabled = review and strategy["model"].get("search") and callable(reviewer)
     staged_review = review_enabled and getattr(runtime, "enabled", True) and any(models.is_reserve(spec) for spec in specs)
     review_result = None
-    first_reserve = next((i for i, spec in enumerate(specs) if models.is_reserve(spec)), len(specs))
+    first_reserve = (next((i for i, spec in enumerate(specs) if models.is_reserve(spec)), len(specs))
+                     if staged_review else len(specs))
     for candidate_index, spec in enumerate(specs):
         if staged_review and candidate_index == first_reserve and any(trial["status"] == "valid" for trial in trials):
             review_result = _review_selection(reviewer, trials, specs, dates, True)
