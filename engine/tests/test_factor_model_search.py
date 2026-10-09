@@ -275,3 +275,26 @@ def test_ai_refinement_really_fits_all_predeclared_reserve_after_review():
     assert len(events)-1 <= declared_fit_budget(s, samples)["maximumFitAttempts"]
     receipt = next(trial["review"] for trial in report["finalTrials"] if trial["selected"])
     assert receipt["refinementCandidateIds"] == ["ridge:3"] and len(receipt["evaluatedReserveCandidateIds"]) == 6
+
+
+def test_interrupted_candidate_export_retains_completed_functions_without_retry():
+    from atlas_quant.engine import ResearchError
+    s = config("ridge")
+    candidate_count = len(candidates("ridge", s["model"]["search"]))
+    before_exports = (s["validation"]["outerFolds"]+1)*s["validation"]["innerFolds"]*candidate_count+s["validation"]["outerFolds"]
+    class Runtime:
+        calls = 0
+        def before_fit(self, *args):
+            self.calls += 1
+            if self.calls > before_exports+1:
+                raise ResearchError("CAPACITY_FITS", "test fit budget")
+        def after_fit(self): pass
+    runtime = Runtime()
+    with threadpool_limits(limits=1), pytest.raises(ResearchError) as failure:
+        forecast(source(), s, runtime=runtime)
+    partial = failure.value.forecast_partial
+    kept = partial["diagnostics"]["modelSearch"]["candidates"]
+    assert len(kept) == 2 and kept[0]["functionArtifact"] is not None
+    assert kept[1]["status"] == "interrupted"
+    assert not partial["complete"] and not partial["diagnostics"]["publishable"]
+    assert runtime.calls == before_exports+2
