@@ -5,9 +5,9 @@ import { candidateScoreChart, trainingFitChart } from './report-charts.js';
 // Bounded pages carry summaries; only the selected immutable function is fetched.
 export function createModelCandidates(C, F, { remote, remotePages, table, functionEditor }) {
   const { esc: e, render, fmt, openModal } = C;
-  const state = { id: '', item: null, request: 0, loading: false, error: '', report: null, output: 1, tree: 0 };
+  const state = { id: '', item: null, request: 0, loading: false, error: '', report: null, output: 1, tree: 0, page: 1 };
   const metadata = r => (r.forecasts?.diagnostics || r.validation)?.modelSearch;
-  function reset() { state.request++; Object.assign(state, { id: '', item: null, loading: false, error: '', report: null, output: 1, tree: 0 }); }
+  function reset() { state.request++; Object.assign(state, { id: '', item: null, loading: false, error: '', report: null, output: 1, tree: 0, page: 1 }); }
   function load(id) {
     const request = ++state.request;
     Object.assign(state, { id, item: null, loading: true, error: '' });
@@ -27,7 +27,9 @@ export function createModelCandidates(C, F, { remote, remotePages, table, functi
     if (!meta) return '';
     state.report = r;
     const page = remote.enabled() ? remote.page('modelSearchCandidates') : null;
-    const candidates = page ? page.items : meta.candidates || [];
+    const all = meta.candidates || [], localPages = Math.max(1,Math.ceil(all.length/25));
+    state.page = Math.min(state.page,localPages);
+    const candidates = page ? page.items : all.slice((state.page-1)*25,state.page*25);
     if (!state.id) state.id = meta.researchCandidateId || (meta.selectedCandidateId === 'per_target' ? meta.selectedCandidateIds?.[0] : meta.selectedCandidateId) || candidates.find(x => x.functionArtifact)?.id || '';
     if (page && !page.unavailable && state.id && state.item?.id !== state.id && !state.loading && !state.error) load(state.id);
     const item = selected(), fit = item && { ...item.fit, id: item.id, estimator: item.estimator, params: item.params, status: item.status, functionArtifact: item.functionArtifact };
@@ -39,11 +41,12 @@ export function createModelCandidates(C, F, { remote, remotePages, table, functi
     const scores = table(columns, candidates.map(x => `<tr><td>${F.button('forecast-candidate-select', x.id, { id: x.id, small: true })}</td><td class="numeric">${fmt(x.validationScore, 7)}</td><td class="numeric">${fmt(x.trainingMetrics?.mse, 7)}</td><td class="numeric">${fmt(x.trainingMetrics?.rSquared ?? x.trainingMetrics?.r2, 5)}</td><td>${e((x.id === meta.selectedCandidateId || meta.selectedCandidateIds?.includes(x.id)) ? '已采用' : x.id === meta.researchCandidateId ? '最佳非基线候选' : x.status || '—')}</td></tr>`));
     return F.panel('研究方程', primary + badges + (item?.functionArtifact ? `<div class="sq-actions">${F.button('forecast-candidate-edit', '修改与试算这个 F', { id: item.id, primary: true })}</div>` : ''), { actions: picker, className: 'sq-model-primary sq-candidate-primary' }) +
       (item?.trainingPlot ? F.panel('训练拟合数据', trainingFitChart(item.trainingPlot,e)) : '') +
-      F.panel('模型比较', candidateScoreChart(candidates, e) + scores + (page ? remotePages(page) : '') + F.advanced('固定开发期与逐次预测', F.note('候选方程只使用最终测试集之前的成熟样本拟合。实际测试预测使用下方“已采用的滚动模型”，研究候选不会替换已冻结预测。')));
+      F.panel('模型比较', candidateScoreChart(candidates, e) + scores + (page ? remotePages(page) : localPages > 1 ? `<div class="sq-catalog-pagination"><span>${all.length} 个候选 · ${state.page} / ${localPages}</span><div>${F.button('forecast-candidate-page','上一页',{page:state.page-1,small:true,disabled:state.page<=1})}${F.button('forecast-candidate-page','下一页',{page:state.page+1,small:true,disabled:state.page>=localPages})}</div></div>` : '') + F.advanced('固定开发期与逐次预测', F.note('候选方程只使用最终测试集之前的成熟样本拟合。实际测试预测使用下方“已采用的滚动模型”，研究候选不会替换已冻结预测。')));
   }
   function choose(id) { Object.assign(state, { id, item: null, error: '', loading: false, output: 1, tree: 0 }); state.request++; render(); }
   async function handle(el) {
     const action = el.dataset.sq;
+    if (action === 'forecast-candidate-page') { state.page=Number(el.dataset.page);render();return true; }
     if (action === 'forecast-candidate-select') { choose(el.dataset.id); return true; }
     if (action === 'forecast-candidate-retry') { load(state.id); render(); return true; }
     if (action === 'forecast-candidate-edit') {

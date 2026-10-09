@@ -26,7 +26,9 @@ export function coefficientChart({ labels, values, esc: e, title = '未来输出
 }
 
 export function forecastCharts(rows, { esc: e, scope = '当前记录' }) {
-  const pairs = rows.filter(r => r.status === 'valid' && r.labelMaturedAt && finite(r.scale) && r.scale > 0 && [r.currentState, r.expectedFuture, r.realizedFuture].every(finite)).map(r => ({
+  const eligible = rows.filter(r => r.status === 'valid' && r.labelMaturedAt && finite(r.scale) && r.scale > 0 && [r.currentState, r.expectedFuture, r.realizedFuture].every(finite));
+  const sample = eligible.length > 1000 ? Array.from({ length:1000 }, (_,i)=>eligible[Math.round(i*(eligible.length-1)/999)]) : eligible;
+  const pairs = sample.map(r => ({
     actual: (r.realizedFuture - r.currentState) / r.scale,
     predicted: (r.expectedFuture - r.currentState) / r.scale,
     error: (r.realizedFuture - r.expectedFuture) / r.scale,
@@ -35,7 +37,7 @@ export function forecastCharts(rows, { esc: e, scope = '当前记录' }) {
   })).filter(r => [r.actual, r.predicted, r.error, r.gap].every(finite));
   if (!pairs.length) return '';
   const domain = extent(pairs.flatMap(p => [p.actual, p.predicted])), x = scaled(domain, [65, 590]), y = scaled(domain, [225, 25]);
-  const caption = `${scope} · ${pairs.length} 条成熟观测；按当前已知总名义值归一化。`;
+  const caption = `${scope} · ${pairs.length} ${eligible.length > 1000 ? `/ ${eligible.length} 条成熟观测，按原行序均匀预览` : '条成熟观测'}；按当前已知总名义值归一化。`;
   const scatter = frame('预测变化 × 实际变化', svg('归一化预测与实现变化散点图', axes(domain, domain, e, '实际变化 / scale', '预测变化 / scale', percent) + `<line class="reference" x1="${x(domain[0])}" x2="${x(domain[1])}" y1="${y(domain[0])}" y2="${y(domain[1])}"/>` + pairs.map(p => `<circle class="point" cx="${x(p.actual)}" cy="${y(p.predicted)}" r="3"><title>${e(p.label)} · 预测 ${percent(p.predicted)} · 实际 ${percent(p.actual)}</title></circle>`).join(''), e), e, caption);
   const hist = (key, title) => {
     const values = pairs.map(p => p[key]), domain = extent(values), bins = Math.min(20, Math.max(5, Math.ceil(Math.sqrt(values.length)))), counts = Array(bins).fill(0);

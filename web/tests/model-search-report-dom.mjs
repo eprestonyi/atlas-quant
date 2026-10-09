@@ -69,5 +69,14 @@ assert.equal(main.querySelectorAll('svg').length,3);assert(main.textContent.incl
 assert(!main.innerHTML.includes('NaN'));
 assert.equal(forecastCharts([{status:'valid',scale:0}],{esc:e}),'');
 main.innerHTML=factorDistributionCharts([{name:'raw',distribution:{q01:-2,q25:-1,median:0,q75:1,q99:2}}],x=>x,e);assert.equal(main.querySelectorAll('svg').length,1);
+const manyRows=Array.from({length:100001},(_,i)=>({status:'valid',labelMaturedAt:'20240105',scale:100,currentState:100,expectedFuture:101,realizedFuture:100+i/10000,date:'20240101',targetId:'t'}));
+main.innerHTML=forecastCharts(manyRows,{esc:e,scope:'全部记录'});
+assert.equal(main.querySelectorAll('circle').length,1000);assert(main.textContent.includes('/ 100001 条成熟观测，按原行序均匀预览'));
+remoteEnabled=false;view.reset();
+const manyCandidates=Array.from({length:61},(_,i)=>({...items[1],id:'candidate:'+i}));
+const manyReport={forecasts:{diagnostics:{modelSearch:{selectedCandidateId:'candidate:0',researchCandidateId:'candidate:60',candidates:manyCandidates}}}};
+main.innerHTML=view.view(manyReport);assert.equal(main.querySelectorAll('[data-sq="forecast-candidate-select"]').length,25);
+assert.equal(main.querySelector('#sq-model-candidate').value,'candidate:60','exact chosen candidate remains visible outside the current summary page');
+assert(main.querySelector('[data-sq="forecast-candidate-page"][data-page="2"]'));
 console.log(JSON.stringify({baselineDoesNotEraseCandidate:true,exactExpandedBasis:true,candidateOwnerEditing:true,boundedSelectedDetail:true,staleIsolation:true,explicitRetry:true,trainingSeparateFromForecast:true,chartsUseSavedDataOnly:true}));
 dom.window.close();
