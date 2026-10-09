@@ -1,0 +1,73 @@
+/** Frozen synthetic functions: candidate provenance, display algebra and no provider/F calls. */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { JSDOM } from 'jsdom';
+import { createForms } from '../quant-workspace/forms.js';
+import { createModelCandidates } from '../quant-workspace/model-candidates.js';
+import { createModelFunctionEditor } from '../quant-workspace/model-function-editor.js';
+import { expandedBasis, modelFormula } from '../quant-workspace/report-model.js';
+import { functionDigest } from '../model-function-runtime.js';
+import { forecastCharts, factorDistributionCharts } from '../quant-workspace/report-charts.js';
+const dom = new JSDOM('<main></main><div id="modal"></div>', { url:'http://localhost/quant/' });
+globalThis.document = dom.window.document;
+const e = x => String(x ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const golden = JSON.parse(fs.readFileSync('engine/tests/fixtures/model-function-v3-golden.json','utf8'));
+const artifact = golden.cases.find(x=>x.name.includes('polynomial_ridge')).artifact;
+const baseline = JSON.parse(fs.readFileSync('engine/tests/fixtures/model-function-golden-v1.json','utf8')).cases.find(x=>x.name==='historical_drift').artifact;
+baseline.estimator.value=[0,0];baseline.provenance.estimator='no_change';delete baseline.artifactId;baseline.artifactId=await functionDigest(baseline);
+const items = [
+  {id:'no_change:0',estimator:'no_change',selected:true,status:'valid',functionArtifact:baseline,validationScore:.01,trainingMetrics:{mse:.012},fit:{id:'fit-base',trainRows:100}},
+  {id:'polynomial_ridge:0',estimator:'polynomial_ridge',selected:false,status:'valid',functionArtifact:artifact,validationScore:.011,trainingMetrics:{mse:.008},fit:{id:'fit-poly',trainRows:100},trainingPlot:{sample:'training_in_sample',selection:'uniform_row_index',totalRows:100,points:[{date:'20240101',targetId:'stock',actualFuture:.01,fittedFuture:.011},{date:'20240102',targetId:'stock',actualFuture:-.01,fittedFuture:-.012}]}},
+];
+const report = {forecasts:{diagnostics:{modelSearch:{schema:'factor-model-search-report/1',parameterSharing:'pooled',selectedCandidateId:items[0].id,researchCandidateId:items[1].id,candidates:items}}}};
+const frozen = JSON.stringify(report);
+const C = {state:{runId:'00000000-0000-0000-0000-000000000001'},esc:e,icon:()=>'',fmt:(x,n=2)=>x==null?'—':Number(x).toFixed(n),api:()=>{throw Error('No API expected');},download(){},toast(){},openModal:(_,html)=>{document.getElementById('modal').innerHTML=html;},render:()=>{document.querySelector('main').innerHTML=view.view(report);}};
+let remoteEnabled=false,wrongId=false,reject=false,gate=null,reads=[];
+const remote={transport:{bundleId:'a'.repeat(64)},enabled:()=>remoteEnabled,page:()=>({items:items.map(({functionArtifact,...x})=>x),loaded:true}),detail:async(collection,id)=>{reads.push({collection,id});if(gate)await gate;if(reject)throw Error('interrupted candidate read');return {item:wrongId?items[0]:items.find(x=>x.id===id)};}};
+const F=createForms(C), editor=createModelFunctionEditor(C,F), view=createModelCandidates(C,F,{remote,remotePages:()=>'',table:(head,rows)=>`<table><thead><tr>${head.map(x=>`<th>${e(x)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`,functionEditor:editor});
+C.render();
+const main=document.querySelector('main');
+assert.equal(main.querySelector('[data-saved-function]').dataset.savedFunction,artifact.artifactId,'research candidate remains inspectable when baseline wins');
+assert(main.textContent.includes('采用：no_change:0'));
+assert(main.textContent.includes('当前查看研究候选'));
+assert(main.textContent.includes('X₁²'));
+assert(main.textContent.includes('X₁ × X₂'));
+assert(main.textContent.includes('训练拟合 · 样本内'));
+assert(main.textContent.includes('不是测试集预测表现'));
+assert(main.querySelectorAll('svg').length>=3);
+const expression=modelFormula(artifact),expanded=expandedBasis(artifact.estimator);
+assert(expression.includes(String(expanded.intercept)));
+const X=[.42,-.77,.13],terms=artifact.estimator.terms.map(t=>t.kind==='power'?X[t.feature]**t.degree:X[t.features[0]]*X[t.features[1]]);
+const original=artifact.estimator.intercepts[1]+terms.reduce((sum,t,i)=>sum+artifact.estimator.coefficients[1][i]*(t-artifact.estimator.termCenter[i])/artifact.estimator.termScale[i],0);
+const shown=expanded.intercept+terms.reduce((sum,t,i)=>sum+expanded.coefficients[i]*t,0);
+assert(Math.abs(original-shown)<1e-14,'displayed expanded equation remains algebraically equivalent');
+await view.handle(main.querySelector('[data-sq="forecast-candidate-edit"]'));
+assert(document.querySelector('[data-mfe-param="/estimator/coefficients/1/0"]'),'basis function parameters editable');
+assert(!document.querySelector('[data-sq="mfe-resolve"]').disabled,'candidate owner ref recognized');
+assert.equal(reads.length,0);
+const select=main.querySelector('#sq-model-candidate');select.value=items[0].id;view.onChange(select);
+assert.equal(main.querySelector('[data-saved-function]').dataset.savedFunction,baseline.artifactId);
+assert(main.textContent.includes('当前查看已采用模型'));
+
+// Only the selected candidate detail is read; stale and wrong-identity results cannot populate it.
+remoteEnabled=true;view.reset();C.render();await new Promise(r=>setTimeout(r,20));
+assert.deepEqual(reads,[{collection:'modelSearchCandidates',id:items[1].id}]);
+assert.equal(main.querySelector('[data-saved-function]').dataset.savedFunction,artifact.artifactId);
+let release;gate=new Promise(r=>{release=r;});view.reset();C.render();await Promise.resolve();view.reset();remoteEnabled=false;C.render();release();gate=null;await new Promise(r=>setTimeout(r,20));
+assert.equal(main.querySelector('[data-saved-function]').dataset.savedFunction,artifact.artifactId);
+remoteEnabled=true;reject=true;view.reset();C.render();await new Promise(r=>setTimeout(r,20));
+assert(main.textContent.includes('interrupted candidate read'));const calls=reads.length;C.render();await Promise.resolve();assert.equal(reads.length,calls,'failure does not retry silently');
+reject=false;wrongId=true;await view.handle(main.querySelector('[data-sq="forecast-candidate-retry"]'));await new Promise(r=>setTimeout(r,20));
+assert(main.textContent.includes('候选函数身份不一致'));
+assert(!main.querySelector('[data-saved-function]'));
+wrongId=false;await view.handle(main.querySelector('[data-sq="forecast-candidate-retry"]'));await new Promise(r=>setTimeout(r,20));
+assert.equal(main.querySelector('[data-saved-function]').dataset.savedFunction,artifact.artifactId);
+assert.equal(JSON.stringify(report),frozen);
+
+main.innerHTML=forecastCharts([{status:'valid',labelMaturedAt:'20240105',scale:100,currentState:100,expectedFuture:101,realizedFuture:102,date:'<img src=x>',targetId:'t'}],{esc:e,scope:'当前页 1 / 400 条记录的预览'});
+assert.equal(main.querySelectorAll('svg').length,3);assert(main.textContent.includes('当前页 1 / 400'));assert(!main.querySelector('img'));
+assert(!main.innerHTML.includes('NaN'));
+assert.equal(forecastCharts([{status:'valid',scale:0}],{esc:e}),'');
+main.innerHTML=factorDistributionCharts([{name:'raw',distribution:{q01:-2,q25:-1,median:0,q75:1,q99:2}}],x=>x,e);assert.equal(main.querySelectorAll('svg').length,1);
+console.log(JSON.stringify({baselineDoesNotEraseCandidate:true,exactExpandedBasis:true,candidateOwnerEditing:true,boundedSelectedDetail:true,staleIsolation:true,explicitRetry:true,trainingSeparateFromForecast:true,chartsUseSavedDataOnly:true}));
+dom.window.close();

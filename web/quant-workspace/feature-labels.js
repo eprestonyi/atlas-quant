@@ -41,3 +41,12 @@ export function createFeatureLabeler({factors = [], catalog = []} = {}) {
 export const reportFeatureLabeler = (report, catalog = []) => createFeatureLabeler({
   factors: report?.forecasts?.sourceStrategy?.factors || report?.strategy?.factors || [], catalog
 });
+
+export function constructedFeatureLabel(name, construction) {
+  const kind = construction?.transform?.kind;
+  if (kind === 'return_over_trailing_volatility') return /价格/.test(name) ? name.replace(/价格/g, '波动率标准化收益') : `${name} · 波动率标准化收益`;
+  if (kind === 'log_positive') return `${name} · ln`;
+  if (kind === 'log1p_nonnegative') return `${name} · ln(1+x)`;
+  if (kind === 'reciprocal_nonzero') return `${name} · 倒数`;
+  return name;
+}

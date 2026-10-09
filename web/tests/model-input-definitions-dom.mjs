@@ -13,7 +13,9 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&
 const C={state:{catalog:{factors:[{id:'size',name:'总市值',expression:'total_mv'}]}},esc,api:()=>{throw Error('NO_NETWORK');},fmt:String,icon:()=>''};
 const F=createForms(C),a=await v2Fixture(),frozen=JSON.stringify(a);
 main.innerHTML=renderSavedModel(C,F,{functionArtifact:a});
-assert(main.querySelector('[data-saved-function]').textContent.includes('Fₕ(X) = V̂future = P + scale × (0.2 + 3 × X₁)'));
+assert(main.querySelector('[data-saved-function]').textContent.includes('fₕ(X) = 0.2 + 3 × X₁'));
+assert(main.querySelector('[data-saved-function]').textContent.includes('fₕ(X) = (V̂future − P) / scale'));
+assert(main.querySelector('[data-saved-function]').textContent.includes('Fₕ(X) = V̂future = P + scale × fₕ(X)'));
 assert.equal(modelFormula(a),'0.2 + 3 × X₁');
 const input=main.querySelector('[data-model-input="factor:size"]');
 assert.equal(input.open,false);

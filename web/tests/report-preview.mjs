@@ -20,6 +20,7 @@ const collections = {
   forecasts: source.rows,
   targets: source.targetDefinitions,
   modelFits: source.modelFits,
+  modelSearchCandidates: source.diagnostics.modelSearch?.candidates,
   factorFeatures: source.factorResearch?.diagnostics?.features,
   factorJointDistributions: source.factorResearch?.diagnostics?.dependence?.jointDistributions,
   perTarget: source.diagnostics.perTarget,
@@ -191,7 +192,7 @@ const server = http.createServer(async (request, response) => {
         const offset = Number(p.get('offset') || 0),
           limit = Number(p.get('limit') || 25),
           items = rows.slice(offset, offset + Math.min(25, limit)).map(item => {
-            if (collection !== 'modelFits') return item;
+            if (!['modelFits','modelSearchCandidates'].includes(collection)) return item;
             const { functionArtifact, ...brief } = item;
             return brief;
           });

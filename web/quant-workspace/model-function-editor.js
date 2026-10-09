@@ -1,5 +1,5 @@
 import { createFeatureLabeler } from './feature-labels.js';
-import { modelFormula } from './report-model.js';
+import { modelFormula, basisTerm } from './report-model.js';
 import { featureSymbol, renderFunctionInputs } from './model-inputs.js';
 import { FUNCTION_SCHEMAS } from '../model-function-runtime.js';
 // Edits derive new immutable functions. Server resolves the owner-bound source and performs numeric inference.
@@ -8,7 +8,7 @@ export function createModelFunctionEditor(C, F) {
   let current = null, sequence = 0, libraryRequest = 0;
   const hash = x => /^[a-f0-9]{64}$/.test(x || '');
   const id = x => /^[a-f0-9-]{36}$/.test(x || '');
-  const sourceReady = x => x && (id(x.functionId) && hash(x.artifactId) || id(x.runId) && hash(x.bundleId) && /^[A-Za-z0-9_.:-]{1,160}$/.test(x.modelFitId || ''));
+  const sourceReady = x => x && (id(x.functionId) && hash(x.artifactId) || id(x.runId) && hash(x.bundleId) && (!!x.modelFitId !== !!x.modelSearchCandidateId) && /^[A-Za-z0-9_.:-]{1,160}$/.test(x.modelFitId || x.modelSearchCandidateId || ''));
   const raw = x => `<pre class="sq-report-code">${e(JSON.stringify(x, null, 2))}</pre>`;
   const table = (head, rows) => `<div class="sq-table-scroll"><table class="sq-table"><thead><tr>${head.map(x => `<th>${e(x)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
   const at = (a, path) => path.slice(1).split('/').reduce((v, k) => v?.[k], a);
@@ -30,6 +30,7 @@ export function createModelFunctionEditor(C, F) {
     let body;
     if (k === 'constant') body = `<div class="sq-form-grid">${[0,1].map(n => parameter(state, `/estimator/value/${n}`, n ? '未来状态常量' : '入场状态常量')).join('')}</div>`;
     else if (k === 'linear') body = `<div class="sq-form-grid">${[0,1].map(n => parameter(state, `/estimator/intercepts/${n}`, n ? '未来状态截距' : '入场状态截距')).join('')}</div>` + table(['输入（训练变换后）', '入场输出系数', '未来输出系数'], a.inputSchema.map((x, n) => `<tr><th scope="row">${featureSymbol(n)} · ${e(label(x.name))}</th>${[0,1].map(o => `<td>${parameter(state, `/estimator/coefficients/${o}/${n}`, `${featureSymbol(n)} · ${o ? '未来' : '入场'}`)}</td>`).join('')}</tr>`));
+    else if (k === 'basis_linear') body = `<div class="sq-form-grid">${[0,1].map(n => parameter(state, `/estimator/intercepts/${n}`, n ? '未来状态截距' : '入场状态截距')).join('')}</div>` + table(['训练尺度后的基函数', '入场输出系数', '未来输出系数'], a.estimator.terms.map((term, n) => `<tr><th scope="row">${e(basisTerm(term))}<small>(φ − ${e(a.estimator.termCenter[n])}) / ${e(a.estimator.termScale[n])}</small></th>${[0,1].map(o => `<td>${parameter(state, `/estimator/coefficients/${o}/${n}`, `${basisTerm(term)} · ${o ? '未来' : '入场'}`)}</td>`).join('')}</tr>`));
     else body = treeControls(state);
     return F.advanced('修改 F 的数值参数', body + '<span class="sq-status warning">修改后另存 · 未验证</span>' + F.advanced('参数修改状态', F.note('修改后是未验证的新函数；原函数、预测与统计结果保持冻结。修改值不继承原模型的 IC、误差或拟合结论。')), true);
   }
@@ -85,7 +86,7 @@ export function createModelFunctionEditor(C, F) {
   function view(state) {
     const a = state.artifact, k = a.estimator.kind, eligible = sourceReady(state.source);
     const formula = 'V̂future = P + scale × (' + modelFormula(a, 1) + ')';
-    const transformNote = k === 'constant' ? '常量模型忽略 X，不使用训练输入变换。' : 'T 使用本次训练冻结的截尾、缺失填充和标准化。' + (a.schema === 'atlas-model-function/2' ? '输入 R 已完成每腿经济变换与聚合，试算不会再次执行 log 等经济变换。' : '');
+    const transformNote = k === 'constant' ? '常量模型忽略 X，不使用训练输入变换。' : 'T 使用本次训练冻结的截尾、缺失填充和标准化。' + (['atlas-model-function/2','atlas-model-function/3'].includes(a.schema) ? '输入 R 已完成每腿经济变换与聚合，试算不会再次执行 log 等经济变换。' : '');
     const inputHelp = '初始 null 只是待填结构，不是市场数据。' + (k === 'constant' ? '常量模型忽略 X 的值；保留输入行结构以逐行对应 P 与 scale，不进行缺失填充。' : 'null 会使用训练时冻结的缺失处理。') + '最多 256 行。';
     const pending = [...state.edits].filter(([p,v]) => String(at(a,p)) !== String(v));
     return `<section class="mfe-editor" data-mfe-key="${state.key}"><h3>修改与试算 F</h3><pre class="sq-model-equation">${e(formula)}</pre>${F.advanced('函数口径', `<p>${e(transformNote)}两个输出分别描述入场与未来状态相对当前已知尺度的变化。</p><p>观察收盘后，入场为下一官方交易日开盘，未来为其后 h 个交易日开盘。</p>`)}<dl class="sq-key-values"><dt>函数身份</dt><dd><code>${e(a.artifactId)}</code></dd><dt>当前版本来源</dt><dd>${e(a.lineage?.status || '未返回')}</dd><dt>训练截止</dt><dd>${e(a.training?.informationCutoff)}</dd><dt>期限 / 观察间隔</dt><dd>${e(a.scope?.horizonSessions)} / ${e(a.scope?.observationDays)} 交易日</dd><dt>证券范围</dt><dd>${scopeView(a)}</dd></dl>${F.advanced('输出与期限口径', '<p>output[0] 估计下一开盘，output[1] 估计该开盘之后 h 个交易日的开盘。h=1 对应第二个后续交易日开盘，不是下一日收盘。</p><p>观察间隔默认 1 表示每天观察一次，与预测期限 h 分开。具体观察、入场和目标日期见原报告逐条预测；训练截止不是试算输入的观察日期，本页不会推算或补造交易日历。</p>')}${F.advanced('适用范围', F.note('原研究范围以外的适用性尚未验证。输入须按原特征定义构建，不能把任意股票或任意单位直接代入。'))}${state.error ? F.note(state.error, 'error') : ''}${state.notice ? F.note(state.notice) : ''}${renderFunctionInputs(C, F, a)}${parameters(state)}${pending.length ? F.advanced(`待派生参数 · ${pending.length} 项`, table(['路径', '新值', '操作'], pending.map(([path,value]) => `<tr><td><code>${e(path)}</code></td><td>${e(value)}</td><td>${F.button('mfe-remove', '撤销', { id: path, small: true })}</td></tr>`)), true) : ''}<div class="sq-actions">${F.button('mfe-download', '下载当前版本 JSON', { small: true })}${F.button('mfe-resolve', '核验函数来源', { small: true, disabled: !eligible || state.busy })}${F.button('mfe-library', '已保存的函数版本', { small: true })}</div>${F.advanced('下载版本', '<p>下载的是当前已保存版本；未保存的参数修改不包含在 JSON 中。</p>')}${!eligible ? F.note('当前报告没有完整的私有来源引用；可以读取原函数，在线试算和派生保存尚不可用。') : ''}${F.panel('给 F 提供试算输入', field(state, 'rows', 'R 行数组 · 待填示例', '', true) + F.advanced('输入格式', `<p>${e(inputHelp)}</p>`) + `<div class="sq-form-grid">${field(state, 'currentState', '当前状态 P', '单行填数字；多行填等长数组。')}${field(state, 'scale', '当前已知尺度 scale', '原目标的总绝对腿价值，必须为正；须与 P 和模型保持同一单位。')}</div>${F.button('mfe-evaluate', state.busy === 'evaluate' ? '正在试算…' : '运行 F(X) 试算', { primary: true, disabled: !eligible || !!state.busy })}`)}${resultView(state)}${F.panel('保存独立的派生函数', field(state, 'name', '新函数名称') + F.button('mfe-derive', state.busy === 'derive' ? '正在保存…' : '保存新的函数版本', { primary: true, disabled: !eligible || !!state.busy }) + '<span class="sq-status warning">新版本 · 未验证</span>')}${state.saved ? F.panel('已保存派生版本', `<code>${e(state.saved.ref.artifactId)}</code><p>UNVALIDATED_USER_EDIT · 未继承父模型统计检验</p>${F.button('mfe-open-saved', '打开这个函数版本', { id: state.saved.ref.functionId, artifact: state.saved.ref.artifactId, small: true })}`) : ''}${F.advanced('完整输入变换与函数来源', raw({ transforms: a.transforms, featureConstruction: a.featureConstruction, training: a.training, scope: a.scope, provenance: a.provenance, lineage: a.lineage }))}</section>`;
@@ -93,7 +94,7 @@ export function createModelFunctionEditor(C, F) {
   function render(fit, source) {
     const a = fit?.functionArtifact;
     if (!a) return F.note('此拟合记录未保存可移植的 F 函数。不能从旧报告的摘要重建系数或假装导出函数。');
-    if (!FUNCTION_SCHEMAS.includes(a.schema) || !hash(a.artifactId) || !Array.isArray(a.inputSchema) || !['constant','linear','histogram_trees'].includes(a.estimator?.kind)) return F.note('函数格式不受支持，未启用编辑。', 'error');
+    if (!FUNCTION_SCHEMAS.includes(a.schema) || !hash(a.artifactId) || !Array.isArray(a.inputSchema) || !['constant','linear','basis_linear','histogram_trees'].includes(a.estimator?.kind)) return F.note('函数格式不受支持，未启用编辑。', 'error');
     const identity = JSON.stringify([a.artifactId, source]);
     if (current?.identity !== identity) current = { identity, key: ++sequence, source: structuredClone(source || {}), artifact: structuredClone(a), edits: new Map(), fields: { rows: JSON.stringify([Object.fromEntries(a.inputSchema.map(x => [x.name, null]))], null, 2), currentState: '', scale: '', name: '派生 F · ' + a.artifactId.slice(0, 10), output: '1', tree: '0', leaf: '', leafValue: '' }, inferenceRevision: 0, saveRevision: 0, busy: '', error: '', notice: '', result: null, saved: null, request: null };
     return view(current);

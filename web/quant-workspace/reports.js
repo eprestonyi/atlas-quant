@@ -4,6 +4,8 @@ import { financialTransportSource, datasetLocation } from './datasets/protocol.j
 import { createModelFunctionEditor } from './model-function-editor.js';
 import { createFactorDiagnostics } from './factor-diagnostics.js';
 import { renderSavedModel } from './report-model.js';
+import { createModelCandidates } from './model-candidates.js';
+import { forecastCharts } from './report-charts.js';
 // Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
 import { ESTIMATORS } from './defaults.js';
 import { createReportSource } from './report-source.js';
@@ -76,6 +78,7 @@ export function createForecastReports(C, F) {
     validation: '检验',
     factorDiagnostics: '因子统计',
     correlations: '相关矩阵',
+    exposures: '同期关联',
     joints: '联合分布',
     targets: '研究目标',
     execution: '独立执行',
@@ -144,6 +147,7 @@ export function createForecastReports(C, F) {
   const pages = (page, total, action) =>
     `<div class="sq-catalog-pagination"><span>匹配 ${total.toLocaleString()} 条 · 第 ${page} / ${Math.max(1, Math.ceil(total / 25))} 页 · 每页 25 条</span><div>${F.button(action, '上一页', { page: page - 1, small: true, disabled: page <= 1 })}${F.button(action, '下一页', { page: page + 1, small: true, disabled: page * 25 >= total })}</div></div>`;
   const factorDiagnostics = createFactorDiagnostics(C, F, { remote, remoteState, table });
+  const modelCandidates = createModelCandidates(C, F, { remote, remotePages, table, functionEditor });
   function renderReport(r) {
     remote.bind(C.state.reportTransport, C.state.runId);
     const f = r.forecasts;
@@ -165,6 +169,7 @@ export function createForecastReports(C, F) {
     const transportIdentity = JSON.stringify([remote.transport?.format, remote.transport?.version, remote.transport?.bundleId]);
     if (ui.artifactId !== f.artifactId || ui.runIdentity !== runIdentity || ui.transportIdentity !== transportIdentity) {
       selectedFit = null;
+      modelCandidates.reset();
       fitRequest++;
       Object.assign(ui, {
         artifactId: f.artifactId,
@@ -176,7 +181,7 @@ export function createForecastReports(C, F) {
         target: '',
         targetLabel: '',
         status: 'all',
-        scope: 'latest',
+        scope: r.forecasts.factorResearch || factorOnlyReport(r) ? 'all' : 'latest',
         tradePage: 1,
         riskPage: 1,
         riskFilter: 'events',
@@ -220,6 +225,7 @@ export function createForecastReports(C, F) {
       validation: result => `<div class="sq-report-stats">${stat('成熟预测观测', fmt(m.observations, 0), '')}${stat('联合 RMSE', fmt(m.rmse, 6), '')}${stat('相对无变化 MSE 改善', pct(m.relativeMseImprovement), '')}${stat('剩余变化 RMSE', fmt(m.remainingChangeRmse, 6), '')}</div>` + validation(result),
       factorDiagnostics: result => factorDiagnostics.render(result, 'features'),
       correlations: result => factorDiagnostics.render(result, 'correlations'),
+      exposures: result => factorDiagnostics.render(result, 'exposures'),
       joints: result => factorDiagnostics.render(result, 'joints'),
       targets, execution, provenance
     };
@@ -262,7 +268,7 @@ export function createForecastReports(C, F) {
       names = [...new Set(r.forecasts.targetDefinitions.map((x) => targetName(x.id, r)))];
     return F.panel(
       '每一条预测都可核对',
-      `<div class="sq-report-controls"><label class="sq-search">${C.icon('search')}<input id="sq-forecast-search" aria-label="搜索预测记录" value="${e(ui.query)}" placeholder="日期、标的、forecastId"></label><select id="sq-forecast-scope" aria-label="预测时间范围"><option value="latest" ${ui.scope === 'latest' ? 'selected' : ''}>每组目标最新记录</option><option value="all" ${ui.scope === 'all' ? 'selected' : ''}>全部历史记录</option></select><select id="sq-forecast-status" aria-label="预测状态">${Object.entries(
+      forecastCharts(rows, { esc: e, scope: `当前筛选全部 ${rows.length} 条记录` }) + `<div class="sq-report-controls"><label class="sq-search">${C.icon('search')}<input id="sq-forecast-search" aria-label="搜索预测记录" value="${e(ui.query)}" placeholder="日期、标的、forecastId"></label><select id="sq-forecast-scope" aria-label="预测时间范围"><option value="latest" ${ui.scope === 'latest' ? 'selected' : ''}>每组目标最新记录</option><option value="all" ${ui.scope === 'all' ? 'selected' : ''}>全部历史记录</option></select><select id="sq-forecast-status" aria-label="预测状态">${Object.entries(
         {
           all: '所有状态',
           valid: '有效预测',
@@ -330,7 +336,7 @@ export function createForecastReports(C, F) {
       )}</select></label></div>${lookup}${ui.target ? `<div class="sq-actions"><span class="sq-subtle">当前目标：${e(ui.targetLabel || '已定位的目标定义')}</span>${F.button('forecast-clear-target', '清除目标筛选', { small: true })}</div>` : ''}`;
     return F.panel(
       '每一条预测都可核对',
-      controls +
+      forecastCharts(page.items, { esc: e, scope: `当前页 ${page.items.length} / ${page.total ?? '—'} 条记录的预览` }) + F.advanced('筛选记录', controls) +
         remoteState(
           page,
           table(
@@ -660,7 +666,7 @@ export function createForecastReports(C, F) {
     const page = remote.enabled() ? remote.page('modelFits') : null;
     const rows = r.forecasts.modelFits || [];
     const shown = page ? page.items : rows.slice((ui.page - 1) * 25, ui.page * 25);
-    if (!shown.length) return F.panel('F 模型', page ? remoteState(page, '', '没有拟合记录') : F.note('此报告没有拟合记录。'));
+    if (!shown.length) return modelCandidates.view(r) + F.panel('F 模型', page ? remoteState(page, '', '没有拟合记录') : F.note('此报告没有拟合记录。'));
     if (!shown.some(fit => fit.id === ui.fitId)) ui.fitId = (shown.find(fit => fit.status !== 'invalid') || shown[0]).id;
     const brief = shown.find(fit => fit.id === ui.fitId);
     if (page && !brief.functionArtifact && selectedFit?.id !== ui.fitId) loadFit(ui.fitId);
@@ -670,7 +676,8 @@ export function createForecastReports(C, F) {
       ? F.note(selectedFit.error, 'error') + F.button('forecast-model-retry', '重试读取 F', { small: true })
       : '<div class="sq-loading" role="status">正在读取模型与参数…</div>';
     if (fit?.functionArtifact) model += `<div class="sq-actions">${F.button('forecast-fit', '修改与试算 F', { id: fit.id, primary: true })}${F.button('mfe-library', '已保存的函数', { small: true })}</div>`;
-    return F.panel('F(X)', model + (page ? remotePages(page) : pages(ui.page, rows.length, 'forecast-page')), { actions: picker, className: 'sq-model-primary' }) +
+    const adopted = F.panel(r.forecasts?.diagnostics?.modelSearch ? '已采用的滚动模型' : 'F(X)', model + (page ? remotePages(page) : pages(ui.page, rows.length, 'forecast-page')), { actions: picker, className: 'sq-model-primary' });
+    return modelCandidates.view(r) + (r.forecasts?.diagnostics?.modelSearch ? F.advanced('已采用的滚动模型', adopted) : adopted) +
       F.panel('拟合数据', table(['版本', '训练日期', '训练行数', '最晚标签成熟', '信息截止'], shown.map(x => `<tr><td>${e(d(x.fitDate))}</td><td>${e(d(x.trainStart))} — ${e(d(x.trainEnd))}</td>${cell(x.trainRows, 0)}<td>${e(d(x.labelEndMax))}</td><td>${e(d(x.informationCutoff))}</td></tr>`)) + F.button('forecast-tab', '查看预测与实际值', { id: 'forecasts', small: true }));
   }
   function execution(r) {
@@ -882,6 +889,7 @@ export function createForecastReports(C, F) {
     if (!action?.startsWith('forecast-')) return false;
     const r = ui.result;
     if (!r) return true;
+    if (await modelCandidates.handle(el)) return true;
     if (action === 'forecast-model-retry') { loadFit(ui.fitId); render(); return true; }
     if (action === 'forecast-remote-page') {
       remote.move(el.dataset.id, el.dataset.direction);
@@ -1016,6 +1024,7 @@ export function createForecastReports(C, F) {
   }
   function onChange(el) {
     functionEditor.onInput(el);
+    if (modelCandidates.onChange(el)) return;
     if (el.id === 'sq-model-fit') { ui.fitId = el.value; ui.treeIndex = 0; render(); return; }
     if (el.id === 'sq-model-tree-output') { ui.treeOutput = Number(el.value); ui.treeIndex = 0; render(); return; }
     if (el.id === 'sq-model-tree-index') { ui.treeIndex = Number(el.value); render(); return; }

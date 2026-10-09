@@ -110,7 +110,7 @@ await route('easy/state');
 assert(!w.document.querySelector('.sq-research-body').textContent.includes('点时数据'));
 assert(!w.document.querySelector('.sq-research-body').textContent.includes('目录规模'));
 assert(w.document.querySelector('[data-v2-drop="recipe"]'));
-assert.equal(w.document.querySelectorAll('[data-sq="feature-tab"]').length, 2);
+assert.equal(w.document.querySelectorAll('[data-sq="feature-tab"]').length, 3);
 w.document.querySelector('[data-sq="feature-tab"][data-id="builder"]').click(); await tick();
 assert(w.document.querySelector('#v2-builder-expression'));
 assert(w.document.querySelector('[data-v2="add-custom"]'));

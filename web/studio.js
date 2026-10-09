@@ -314,7 +314,7 @@
       if(a==='catalog-category'){v.filters.category=button.dataset.id;v.filters.page=1;return loadFactors();}
       if(a==='factor-page'){v.filters.page=Number(button.dataset.page);return loadFactors();}
       if(a==='field-page'){v.fieldFilters.page=Number(button.dataset.page);return loadFields();}
-      if(a==='add-factor'){const f=C.findFactor(id);if(!f)throw Error('未找到因子定义。');C.closeModal();addFeatures([f]);}
+      if(a==='add-factor'){const [f]=await resolveFactors([id]);C.closeModal();addFeatures([f]);}
       if(a==='factor-detail')showCatalogDetail(id);
       if(a==='edit-factor'){const f=C.findFactor(id);v.builder={...v.builder,name:`${itemName(f)} · 我的版本`,expression:f.expression,direction:f.direction||1};v.lint=null;v.catalogTab='builder';if(C.quantFeatureTab)C.quantFeatureTab('builder');C.closeModal();location.hash=s.strategy.research?.mode==='statistical_quant'?'quant/studio/state':'studio/factors';render();}
       if(a==='group'){if((s.strategy.graph.groups?.length||0)>=12)throw Error('最多保留 12 个研究分组。');C.openModal('新建研究分组',`<form id="v2-group-form"><label class="field"><span>分组名称</span><input name="name" maxlength="60" required placeholder="例如：估值分支 / 趋势分支"></label><p>分组组织研究思路，模型仍使用各组因子的合并特征。</p><div class="form-footer"><button class="btn primary" type="submit">创建分组</button></div></form>`);}
