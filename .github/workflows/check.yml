@@ -31,6 +31,7 @@ jobs:
       - run: node web/tests/statistical-dom.mjs
       - run: node web/tests/factor-workbench-dom.mjs
       - run: node web/tests/universe-filter-dom.mjs
+      - run: node web/tests/universe-legacy-dom.mjs
       - run: node web/tests/market-preparation-dom.mjs
       - run: node web/tests/market-admission-adversarial-dom.mjs
       - run: node web/tests/market-trend-admission-dom.mjs
