@@ -48,7 +48,8 @@ def test_etf_proxy_metadata_never_masquerades_as_history_or_exact_classification
     for proxy in SOURCES['proxies']:
         assert proxy['sourceKind'] == 'etf_proxy' and proxy['isOfficialIndex'] is False
         assert proxy['mappingKind'] == 'research_proxy_not_equivalent'
-        assert proxy['historyStatus'] == ('adapter_supported_requires_observations' if proxy['symbol'] in {'XSD','XLK'} else 'adapter_supported_history_unverified')
+        positive = {probe['symbol'] for probe in SOURCES['historyProbes'] if probe['api'] == 'yfinance_history' and probe.get('rowCount',0) > 0}
+        assert proxy['historyStatus'] == ('adapter_supported_requires_observations' if proxy['symbol'] in positive else 'adapter_supported_history_unverified')
         assert proxy['provider'] == 'YAHOO_YFINANCE'
         assert proxy['factorId'].startswith('context_yf_')
         assert 'corporate_actions' in proxy['requiredData'] and 'asof_timestamp' in proxy['requiredData']

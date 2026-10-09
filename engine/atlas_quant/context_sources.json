@@ -7782,7 +7782,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XLB",
@@ -7801,7 +7801,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XLI",
@@ -7820,7 +7820,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XLY",
@@ -7839,7 +7839,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XLP",
@@ -7858,7 +7858,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XLV",
@@ -7877,7 +7877,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XLF",
@@ -7896,7 +7896,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XLK",
@@ -7934,7 +7934,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XLU",
@@ -7953,7 +7953,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XLRE",
@@ -7972,7 +7972,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "KBE",
@@ -7991,7 +7991,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "KRE",
@@ -8010,7 +8010,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "KCE",
@@ -8029,7 +8029,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "KIE",
@@ -8048,7 +8048,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XAR",
@@ -8067,7 +8067,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XTN",
@@ -8086,7 +8086,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XBI",
@@ -8105,7 +8105,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XPH",
@@ -8124,7 +8124,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XHE",
@@ -8143,7 +8143,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XHS",
@@ -8162,7 +8162,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XOP",
@@ -8181,7 +8181,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XES",
@@ -8200,7 +8200,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XME",
@@ -8219,7 +8219,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XRT",
@@ -8238,7 +8238,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XHB",
@@ -8257,7 +8257,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XSD",
@@ -8295,7 +8295,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XTL",
@@ -8314,7 +8314,7 @@
       "currency": "USD",
       "alignment": "last_foreign_session_strictly_before_cn_date_max_7_calendar_days",
       "priceAdjustment": "yahoo_adj_close_split_dividend",
-      "historyStatus": "adapter_supported_history_unverified"
+      "historyStatus": "adapter_supported_requires_observations"
     },
     {
       "ts_code": "XTH",

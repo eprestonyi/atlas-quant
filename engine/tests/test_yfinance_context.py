@@ -139,6 +139,7 @@ def test_http_calls_bounded_without_provider_fallback(monkeypatch,case):
 
 def test_unverified_yahoo_source_stops_before_any_call(monkeypatch):
     monkeypatch.setattr(yahoo,'history',lambda params: pytest.fail('unverified source must not acquire'))
+    monkeypatch.setitem(FIELDS, 'ext_ctx_yf_xbi_close', {**FIELDS['ext_ctx_yf_xbi_close'], 'historyStatus':'adapter_supported_history_unverified'})
     frame=pd.DataFrame([{'ts_code':'000001.SZ','trade_date':'20240311'}])
     with pytest.raises(ProviderError) as failure:
         load_context_fields(None,frame,['ext_ctx_yf_xbi_close'],['20240311'],'20240311','20240311')
