@@ -12,7 +12,7 @@ const provenance = {
   contextSourceRoot:'a'.repeat(64), contextObservationClock:'source_session_publication_before_cn_origin',
   contextSources:[
     {api:'sw_daily',params:{ts_code:'801120.SI',start_date:'20260101',end_date:'20260930'},fields:['ts_code','trade_date','close'],rowCount:175,sha256:'b'.repeat(64)},
-    {api:'yfinance_history',params:{ts_code:'XSD',start_date:'20260101',end_date:'20260930'},fields:['ts_code','trade_date','adj_factor','close'],rowCount:178,sha256:'c'.repeat(64),priceAdjustment:'yahoo_adj_close_split_dividend',historicalRevisionVerified:false},
+    {api:'yfinance_history',params:{ts_code:'XSD',start_date:'20260101',end_date:'20260930'},fields:['ts_code','trade_date','adj_close','close'],rowCount:178,sha256:'c'.repeat(64),priceAdjustment:'yahoo_adj_close_split_dividend',historicalRevisionVerified:false,providerDetails:{provider:'YAHOO_YFINANCE',libraryVersion:'1.7.0',currency:'USD',exchangeTimezoneName:'America/New_York',instrumentType:'ETF',libraryCalls:1,httpReceipts:[{host:'query1.finance.yahoo.com',path:'/v8/finance/chart/XSD',status:200,bytes:700,sha256:'d'.repeat(64)}],unrecognizedSecret:'not-for-display'}},
   ],
 };
 const frozen=JSON.stringify(provenance); main.innerHTML=renderContextSources(C,F,provenance);
@@ -21,6 +21,7 @@ assert(main.textContent.includes('Yahoo Finance / yfinance')); assert(main.textC
 assert(main.textContent.includes('请求区间')); assert(main.textContent.includes('已保存行数'));
 assert(main.textContent.includes('请求区间不代表逐日完整覆盖')); assert(main.textContent.includes('2026-01-01 — 2026-09-30'));
 assert.equal(main.querySelector('details').open,false); assert(main.textContent.includes('yahoo_adj_close_split_dividend'));
+assert(main.textContent.includes('America/New_York'));assert(main.textContent.includes('1.7.0'));assert(main.textContent.includes('/v8/finance/chart/XSD'));assert(!main.textContent.includes('not-for-display'));
 assert.equal(JSON.stringify(provenance),frozen); assert.equal(renderContextSources(C,F,{}),'');
 assert.equal(providerLabel({api:'unknown'}),'');
 const unsafe=structuredClone(provenance);unsafe.contextSources[0].params.ts_code='<img src=x onerror=alert(1)>';

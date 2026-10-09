@@ -9,6 +9,10 @@ export function renderContextSources(C, F, provenance) {
   const date = value => /^\d{8}$/.test(value || '')
     ? `${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6,8)}` : value || '—';
   const row = s => `<tr><th scope="row">${e(s.params?.ts_code || s.symbol || '—')}</th><td>${e(providerLabel(s) || '未提供')}<small>${e(s.api || s.providerApi || '—')}</small></td><td>${e(date(s.params?.start_date))} — ${e(date(s.params?.end_date))}</td><td class="numeric">${Number.isSafeInteger(s.rowCount) && s.rowCount >= 0 ? e(s.rowCount) : '—'}</td><td>${e((s.fields || []).join(', '))}</td></tr>`;
+  const providerDetails = value => value && typeof value === 'object' ? Object.fromEntries(
+    ['provider','libraryVersion','retrievedAt','currency','exchangeTimezoneName','instrumentType','libraryCalls','httpReceipts']
+      .filter(key => Object.hasOwn(value,key)).map(key => [key,value[key]])
+  ) : undefined;
   const details = {
     contextSourceRoot: provenance.contextSourceRoot,
     contextScope: provenance.contextScope,
@@ -19,6 +23,7 @@ export function renderContextSources(C, F, provenance) {
       ...(s.priceAdjustment ? { priceAdjustment: s.priceAdjustment } : {}),
       ...(s.alignment ? { alignment: s.alignment } : {}),
       ...(s.providerVersion ? { providerVersion: s.providerVersion } : {}),
+      ...(s.providerDetails ? { providerDetails: providerDetails(s.providerDetails) } : {}),
       ...(s.observedRange ? { observedRange: s.observedRange } : {}),
       ...(typeof s.historicalRevisionVerified === 'boolean' ? { historicalRevisionVerified: s.historicalRevisionVerified } : {}),
     })),
