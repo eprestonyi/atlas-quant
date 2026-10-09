@@ -6,7 +6,10 @@ def trial_summary(trials):
 
 
 def diagnostics_summary(diagnostics):
-    result = {k: v for k, v in diagnostics.items() if k not in {"outerFolds", "finalTrials", "factorIncrement"}}
+    result = {k: v for k, v in diagnostics.items() if k not in {"outerFolds", "finalTrials", "factorIncrement", "modelSearch", "perTargetResearch"}}
+    if "modelSearch" in diagnostics:
+        result["modelSearch"] = {k: v for k, v in diagnostics["modelSearch"].items() if k != "candidates"}
+        result["modelSearch"]["completeArtifactPath"] = "forecasts.diagnostics.modelSearch"
     result["outerFolds"] = [{k: v for k, v in fold.items() if k != "trials"} for fold in diagnostics["outerFolds"]]
     result["finalTrials"] = trial_summary(diagnostics["finalTrials"])
     if "factorIncrement" in diagnostics:

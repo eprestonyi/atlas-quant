@@ -13,6 +13,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.exceptions import ConvergenceWarning
 
 from .schema import fail
+from .basis_models import NONLINEAR_GRIDS, BasisRegressor
 
 
 GRIDS = {
@@ -21,12 +22,29 @@ GRIDS = {
     "elastic_net": [{"alpha": .0001, "l1_ratio": .2}, {"alpha": .001, "l1_ratio": .5}],
     "hist_gradient_boosting": [{"max_leaf_nodes": 7, "l2_regularization": 1.}, {"max_leaf_nodes": 15, "l2_regularization": 5.}],
 }
+LEGACY_ESTIMATORS = tuple(GRIDS)
+LEGACY_GRIDS = copy.deepcopy(GRIDS)
+GRIDS.update(NONLINEAR_GRIDS)
+BASE_SEARCH_GRIDS = copy.deepcopy(GRIDS)
+RESERVE_GRIDS = {"ridge": [{"alpha": 100.}, {"alpha": 1000.}],
+                 "elastic_net": [{"alpha": .01, "l1_ratio": .5}],
+                 "polynomial_ridge": [{"alpha": 1000., "degree": 2}],
+                 "transformed_ridge": [{"alpha": 1000.}],
+                 "factorwise_basis": [{"alpha": .1, "l1_ratio": .5}]}
+for _name, _params in RESERVE_GRIDS.items():
+    GRIDS[_name] = [*GRIDS[_name], *_params]
 
 
-def candidates(estimator):
-    names = list(GRIDS) if estimator == "auto" else [estimator]
-    return [{"id": f"{name}:{i}", "estimator": name, "params": params}
-            for name in names for i, params in enumerate(GRIDS[name])]
+def is_reserve(spec):
+    return spec["params"] in RESERVE_GRIDS.get(spec["estimator"], [])
+
+
+def candidates(estimator, search=None):
+    names = list(GRIDS if search is not None else LEGACY_ESTIMATORS) if estimator == "auto" else [estimator]
+    grids = GRIDS if search is not None else (LEGACY_GRIDS if estimator in LEGACY_ESTIMATORS or estimator == "auto" else BASE_SEARCH_GRIDS)
+    specs = [{"id": f"{name}:{i}", "estimator": name, "params": params}
+             for name in names for i, params in enumerate(grids[name])]
+    return [spec for spec in specs if not is_reserve(spec)]+[spec for spec in specs if is_reserve(spec)]
 
 
 class FittedModel:
@@ -82,7 +100,9 @@ def fit(spec, X, y, preprocess, *, automatic_metadata=None, training_dates=None)
             steps.append(("impute", SimpleImputer(strategy="median")))
             if preprocess["standardize"]:
                 steps.append(("scale", StandardScaler()))
-        if name == "ridge":
+        if name in NONLINEAR_GRIDS:
+            estimator = BasisRegressor(name, **spec["params"])
+        elif name == "ridge":
             estimator = Ridge(**spec["params"])
         elif name == "elastic_net":
             estimator = ElasticNet(**spec["params"], max_iter=5000, tol=1e-5, selection="cyclic")
@@ -114,6 +134,8 @@ def fit(spec, X, y, preprocess, *, automatic_metadata=None, training_dates=None)
         if hasattr(estimator, "coef_"):
             audit["coefficients"] = np.asarray(estimator.coef_).tolist()
             audit["intercepts"] = np.asarray(estimator.intercept_).tolist()
+        if isinstance(estimator, BasisRegressor):
+            audit["basisFit"] = estimator.audit()
         model = FittedModel(spec, columns, pipe, audit)
     # A training-only conditional effect diagnostic, never a causal conclusion.
     effects = []

@@ -64,14 +64,20 @@ def declared_fit_budget(s, samples, *, max_forecasts=None):
     branches = 2 if factor_columns else 1
     _, terminal_origins = forecast_origins(samples, s, max_forecasts=max_forecasts)
     terminal_dates = samples.meta.loc[terminal_origins, "date"].nunique()
-    candidate_count = len(candidates(s["model"]["estimator"]))
+    candidate_count = len(candidates(s["model"]["estimator"], s["model"].get("search")))
     outer_count, inner_count = s["validation"]["outerFolds"], s["validation"]["innerFolds"]
-    selection_fit_cap = branches*((outer_count+1)*inner_count*candidate_count+outer_count)
-    return {"branches": branches, "includesFactorFreeBaseline": bool(factor_columns),
+    groups = samples.meta.targetId.nunique() if s["model"].get("parameterSharing") == "per_target" else 1
+    selection_fit_cap = branches*groups*((outer_count+1)*inner_count*candidate_count+outer_count)
+    candidate_export_cap = groups*candidate_count if s["model"].get("search") else 0
+    result = {"branches": branches, "includesFactorFreeBaseline": bool(factor_columns),
         "nestedSelectionAndOuterFitCap": selection_fit_cap,
-        "sequentialFitAttemptCap": int(branches*terminal_dates),
-        "maximumFitAttempts": int(selection_fit_cap+branches*terminal_dates),
+        "sequentialFitAttemptCap": int(branches*groups*terminal_dates),
+        "maximumFitAttempts": int(selection_fit_cap+candidate_export_cap+branches*groups*terminal_dates),
         "declaredBeforeFitting": True, "actualFitsMayBeLower": True}
+    if s["model"].get("search"):
+        result.update(candidateFunctionFitCap=int(candidate_export_cap), modelGroups=int(groups),
+                      internalBasisSubfitCapPerCandidate=1+len(samples.X.columns))
+    return result
 
 
 def forecast_branches(s, samples, *, plan_sink=None, max_forecasts=None, runtime=None,
@@ -81,6 +87,8 @@ def forecast_branches(s, samples, *, plan_sink=None, max_forecasts=None, runtime
     Default export/callback behavior preserves every existing route. Callbacks
     are process-local diagnostics, never a callable read from a user contract.
     """
+    from .ai_review import attach_reviewer
+    runtime = attach_reviewer(s, runtime)
     limits = {} if max_forecasts is None else {"max_forecasts": max_forecasts}
     if runtime is not None:
         limits["runtime"] = runtime
@@ -137,6 +145,13 @@ def forecast_branches(s, samples, *, plan_sink=None, max_forecasts=None, runtime
         for i, f in enumerate(fits) if "functionArtifact" in f],
         "diagnostics": factor_diagnostics(samples, diagnostics["holdoutStart"], s["factors"]),
         "editSemantics": "derived_function_requires_new_validation_original_report_is_immutable"}
+    if "modelSearch" in diagnostics:
+        factor_research["candidateModelFunctions"] = [
+            {"candidateId": candidate["id"], "modelFitId": candidate["fit"]["id"],
+             "artifactId": candidate["functionArtifact"]["artifactId"],
+             "path": f"forecasts.diagnostics.modelSearch.candidates[{i}].functionArtifact"}
+            for i, candidate in enumerate(diagnostics["modelSearch"]["candidates"])
+            if candidate.get("functionArtifact") is not None]
     diagnostics["selectionAudit"]["researchFitBudget"] = {
         **declared_budget, "sequentialFitAttempts": len(fits)+(len(baseline_fits) if factor_columns else 0)}
     return {"rows": rows, "fits": fits, "diagnostics": diagnostics, "factorResearch": factor_research,

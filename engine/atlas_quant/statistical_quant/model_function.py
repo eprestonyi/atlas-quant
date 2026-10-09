@@ -17,6 +17,7 @@ import numpy as np
 
 SCHEMA = "atlas-model-function/1"
 AUTOMATIC_FUNCTION_SCHEMA = "atlas-model-function/2"
+BASIS_FUNCTION_SCHEMA = "atlas-model-function/3"
 HASH_ALGORITHM = "sha256-canonical-f64-json/1"
 MAX_BYTES = 2 * 1024 * 1024
 MAX_FEATURES = 128
@@ -84,7 +85,13 @@ def export_function(model, training, strategy):
         transforms = {"imputeMedian": model.audit["imputerMedian"],
                       "winsorLower": model.audit.get("winsorLower"), "winsorUpper": model.audit.get("winsorUpper"),
                       "scaleMean": model.audit.get("scalerMean"), "scaleScale": model.audit.get("scalerScale")}
-        if hasattr(fitted, "coef_"):
+        if "basisFit" in model.audit:
+            basis = model.audit["basisFit"]
+            estimator = {"kind": "basis_linear", "coefficients": np.asarray(fitted.coef_).tolist(),
+                         "intercepts": np.asarray(fitted.intercept_).tolist(),
+                         "terms": copy.deepcopy(basis["terms"]), "termCenter": basis["termCenter"],
+                         "termScale": basis["termScale"], "signedExpm1AbsoluteInputCap": 3.}
+        elif hasattr(fitted, "coef_"):
             estimator = {"kind": "linear", "coefficients": np.asarray(fitted.coef_).tolist(),
                          "intercepts": np.asarray(fitted.intercept_).tolist()}
         else:
@@ -113,7 +120,7 @@ def export_function(model, training, strategy):
             _bad("fitted feature construction does not match the declared protocol")
         if not isinstance(model.predictor, np.ndarray) and strategy["preprocess"]["standardize"] and model.audit.get("scalerMethod") != "median_iqr":
             _bad("automatic function requires a fitted median/IQR scaler")
-    value = {"schema": AUTOMATIC_FUNCTION_SCHEMA if automatic else SCHEMA, "hashAlgorithm": HASH_ALGORITHM, "inputSchema": [{"name": c, "type": "finite_number_or_null"} for c in model.columns],
+    value = {"schema": BASIS_FUNCTION_SCHEMA if estimator["kind"] == "basis_linear" else (AUTOMATIC_FUNCTION_SCHEMA if automatic else SCHEMA), "hashAlgorithm": HASH_ALGORITHM, "inputSchema": [{"name": c, "type": "finite_number_or_null"} for c in model.columns],
              "transforms": transforms, "estimator": estimator,
              "featureConstruction": {"schema": "origin-state-features/1", "family": strategy["model"]["family"],
                  "factors": copy.deepcopy(strategy["factors"]), "preprocess": copy.deepcopy(strategy["preprocess"]),
@@ -172,7 +179,7 @@ def _metadata(a):
     _date(scope["researchStart"]); _date(scope["researchEnd"])
     if scope["researchStart"] >= scope["researchEnd"]:
         _bad("invalid research interval")
-    automatic = a["schema"] == AUTOMATIC_FUNCTION_SCHEMA
+    automatic = a["schema"] == AUTOMATIC_FUNCTION_SCHEMA or (a["schema"] == BASIS_FUNCTION_SCHEMA and construction.get("schema") == "origin-state-features/2")
     _keys(construction, ("schema", "family", "factors", "preprocess", "targetSpecification", "quantityPolicy", *(("automatic",) if automatic else ())))
     if construction["schema"] != ("origin-state-features/2" if automatic else "origin-state-features/1") or construction["family"] != scope["family"] or construction["quantityPolicy"] != "origin_specific_frozen_quantities":
         _bad("invalid feature construction")
@@ -249,7 +256,7 @@ def validate_function(artifact):
         valid_hash = artifact.get("artifactId") == function_digest({k: v for k, v in artifact.items() if k != "artifactId"})
     except (TypeError, ValueError, OverflowError, RecursionError):
         _bad("non-finite, recursive or non-JSON object")
-    if len(raw) > MAX_BYTES or artifact.get("schema") not in (SCHEMA, AUTOMATIC_FUNCTION_SCHEMA) or artifact.get("hashAlgorithm") != HASH_ALGORITHM or not valid_hash:
+    if len(raw) > MAX_BYTES or artifact.get("schema") not in (SCHEMA, AUTOMATIC_FUNCTION_SCHEMA, BASIS_FUNCTION_SCHEMA) or artifact.get("hashAlgorithm") != HASH_ALGORITHM or not valid_hash:
         _bad("schema, content hash or size mismatch")
     expected = {"schema", "hashAlgorithm", "inputSchema", "featureConstruction", "transforms", "estimator", "training", "scope", "outputs", "identity", "provenance", "editPolicy", "lineage", "artifactId"}
     if set(artifact) != expected or artifact["outputs"] != OUTPUTS:
@@ -271,7 +278,8 @@ def validate_function(artifact):
         names.append(item["name"])
     if len(set(names)) != len(names):
         _bad("duplicate feature names")
-    if artifact["schema"] == AUTOMATIC_FUNCTION_SCHEMA:
+    automatic = artifact["featureConstruction"]["schema"] == "origin-state-features/2"
+    if automatic:
         from .preprocessing import feature_names
         allowed = feature_names(artifact["scope"]["family"], artifact["featureConstruction"]["automatic"])
         if set(names) - allowed:
@@ -301,6 +309,34 @@ def validate_function(artifact):
             _bad("invalid coefficient shape")
         for output in e["coefficients"]:
             _vector(output, n)
+    elif e.get("kind") == "basis_linear" and set(e) == {"kind", "coefficients", "intercepts", "terms", "termCenter", "termScale", "signedExpm1AbsoluteInputCap"}:
+        from .basis_models import MAX_TERMS
+        terms = e["terms"]
+        if artifact["schema"] != BASIS_FUNCTION_SCHEMA or not isinstance(terms, list) or not 1 <= len(terms) <= MAX_TERMS or e["signedExpm1AbsoluteInputCap"] != 3:
+            _bad("invalid basis dictionary")
+        for term in terms:
+            if not isinstance(term, dict):
+                _bad("invalid basis term")
+            if term.get("kind") == "interaction":
+                pair = term.get("features")
+                if set(term) != {"kind", "features"} or not isinstance(pair, list) or len(pair) != 2 or not all(_integer(i, 0, n-1) for i in pair) or pair[0] >= pair[1]:
+                    _bad("invalid interaction term")
+            elif term.get("kind") == "power":
+                if set(term) != {"kind", "feature", "degree"} or not _integer(term["feature"], 0, n-1) or not _integer(term["degree"], 1, 3):
+                    _bad("invalid polynomial term")
+            elif term.get("kind") in ("signed_log1p", "signed_expm1"):
+                if set(term) != {"kind", "feature"} or not _integer(term["feature"], 0, n-1):
+                    _bad("invalid transformed term")
+            else:
+                _bad("unsupported basis term")
+        if len({json.dumps(term, sort_keys=True) for term in terms}) != len(terms):
+            _bad("duplicate basis terms")
+        _vector(e["intercepts"], 2)
+        _vector(e["termCenter"], len(terms)); _vector(e["termScale"], len(terms))
+        if any(value <= 0 for value in e["termScale"]) or not isinstance(e["coefficients"], list) or len(e["coefficients"]) != 2:
+            _bad("invalid basis scale or coefficient shape")
+        for output in e["coefficients"]:
+            _vector(output, len(terms))
     elif e.get("kind") == "histogram_trees" and set(e) == {"kind", "nodeFields", "thresholdRule", "leafValuesIncludeLearningRate", "outputs"}:
         if e["nodeFields"] != ["value", "feature", "threshold", "left", "right", "leaf", "missingLeft"] or e["thresholdRule"] != "left_if_less_equal" or e["leafValuesIncludeLearningRate"] is not True or not isinstance(e["outputs"], list) or len(e["outputs"]) != 2:
             _bad("invalid histogram encoding")
@@ -330,14 +366,17 @@ def validate_function(artifact):
                     _bad("unreachable tree nodes")
     else:
         _bad("unsupported estimator or extra executable fields")
-    expected_kind = {"no_change": "constant", "historical_drift": "constant", "ridge": "linear", "elastic_net": "linear", "hist_gradient_boosting": "histogram_trees"}[artifact["provenance"]["estimator"]]
+    from .basis_models import NONLINEAR_GRIDS
+    expected_kind = {"no_change": "constant", "historical_drift": "constant", "ridge": "linear", "elastic_net": "linear", "hist_gradient_boosting": "histogram_trees", **{name: "basis_linear" for name in NONLINEAR_GRIDS}}[artifact["provenance"]["estimator"]]
     if e["kind"] != expected_kind:
         _bad("estimator provenance and encoding disagree")
     if e["kind"] == "constant" and any(v is not None for v in t.values()):
         _bad("constant function cannot carry ignored transforms")
     if e["kind"] != "constant" and t["imputeMedian"] is None:
         _bad("trained median required")
-    if artifact["schema"] == AUTOMATIC_FUNCTION_SCHEMA and e["kind"] != "constant":
+    if (artifact["schema"] == BASIS_FUNCTION_SCHEMA) != (e["kind"] == "basis_linear"):
+        _bad("basis function schema and estimator disagree")
+    if automatic and e["kind"] != "constant":
         pre = artifact["featureConstruction"]["preprocess"]
         if (t["winsorLower"] is not None) != pre["winsorize"] or (t["scaleMean"] is not None) != pre["standardize"]:
             _bad("frozen transforms disagree with automatic preprocessing controls")
@@ -370,6 +409,10 @@ def predict_function(artifact, rows, *, current_state=None, scale=None):
             result = np.tile(e["value"], (len(rows), 1))
         elif e["kind"] == "linear":
             result = X @ np.asarray(e["coefficients"]).T + e["intercepts"]
+        elif e["kind"] == "basis_linear":
+            from .basis_models import expand
+            terms = (expand(X, e["terms"])-e["termCenter"])/e["termScale"]
+            result = terms @ np.asarray(e["coefficients"]).T + e["intercepts"]
         else:
             result = np.zeros((len(rows), 2))
             for output_i, output in enumerate(e["outputs"]):
@@ -414,7 +457,7 @@ def edit_function(artifact, edits):
         permitted = False
         if kind == "constant":
             permitted = len(keys) == 4 and keys[:3] == ["", "estimator", "value"] and keys[3] in ("0", "1")
-        elif kind == "linear":
+        elif kind in ("linear", "basis_linear"):
             permitted = (len(keys) == 4 and keys[:3] == ["", "estimator", "intercepts"] and keys[3] in ("0", "1")) or (len(keys) == 5 and keys[:3] == ["", "estimator", "coefficients"] and keys[3] in ("0", "1") and re.fullmatch(r"0|[1-9][0-9]*", keys[4]))
         else:
             permitted = (len(keys) == 5 and keys[:3] == ["", "estimator", "outputs"] and keys[3] in ("0", "1") and keys[4] == "baseline") or (len(keys) == 8 and keys[:3] == ["", "estimator", "outputs"] and keys[3] in ("0", "1") and keys[4] == "trees" and all(re.fullmatch(r"0|[1-9][0-9]*", x) for x in keys[5:]) and keys[7] == "0")
