@@ -1,0 +1,41 @@
+{
+  "schema": "provider-history-probes/1",
+  "probes": [
+    {
+      "api": "yfinance_history",
+      "symbol": "XSD",
+      "params": {
+        "ts_code": "XSD",
+        "start_date": "20240903",
+        "end_date": "20240913"
+      },
+      "observedAt": "2026-10-09T20:30:02.580799+00:00",
+      "rowCount": 9,
+      "observedStart": "20240903",
+      "observedEnd": "20240913",
+      "recordSha256": "794d1db0062afc0dd29d992f4d3fceec72387e67e0c631b643294e6c3c7be7ef",
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete_offline_recovery"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLK",
+      "params": {
+        "ts_code": "XLK",
+        "start_date": "20240903",
+        "end_date": "20240913"
+      },
+      "observedAt": "2026-10-09T20:30:19.595907+00:00",
+      "rowCount": 9,
+      "observedStart": "20240903",
+      "observedEnd": "20240913",
+      "recordSha256": "42dffb6511b51d003b3e934bcc2a24eca47c65deca2c2634a2b07fcf73785152",
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete"
+    }
+  ]
+}

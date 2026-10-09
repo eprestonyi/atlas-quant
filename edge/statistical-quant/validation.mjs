@@ -1,5 +1,5 @@
 import contextRegistry from '../../engine/atlas_quant/context_sources.json' with {type:'json'};
-const contextAliases = new Set(contextRegistry.items.flatMap(s => (s.api === 'sw_daily' ? ['close','vol','amount','pe','pb','total_mv','float_mv'] : ['close','vol','amount']).map(f => 'ext_ctx_'+s.ts_code.toLowerCase().replace('.', '_')+'_'+f)));
+const contextAliases = new Set(contextRegistry.items.flatMap(s => (s.api === 'yfinance_history' ? ['close','vol'] : s.api === 'sw_daily' ? ['close','vol','amount','pe','pb','total_mv','float_mv'] : ['close','vol','amount']).map(f => 'ext_ctx_'+(s.aliasKey || s.ts_code.toLowerCase().replace('.', '_'))+'_'+f)));
 import financialDefinitions from '../financial/definitions.json' with { type: 'json' };
 const financialStateIds = new Set(financialDefinitions.items.map(x => x.id));
 import { ApiError } from '../errors.mjs';

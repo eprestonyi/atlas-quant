@@ -94,12 +94,17 @@ def build(sw, gics):
             row['factorId'] = 'context_'+update['index_code'].lower().replace('.', '_')+'_price' 
     proxies = json.loads((ROOT/'data/industry-proxies.json').read_text())['items']
     probes = json.loads((ROOT/'data/industry-history-probes.json').read_text())['probes']
+    yahoo_probes = json.loads((ROOT/'data/yfinance-history-probes.json').read_text())['probes']
     by_id = {row['id']: row for row in items}
     for proxy in proxies:
         proxy['historyStatus'] = 'adapter_supported_history_unverified'
-        proxy['lastProbe'] = next((probe for probe in reversed(probes) if probe['api'] == 'us_daily_adj' and probe['symbol'] == proxy['symbol']), None)
-        proxy['factorId'] = 'context_'+proxy['symbol'].lower()+'_price'
-        proxy['providerApi'] = 'us_daily_adj'
+        proxy['lastProbe'] = next((probe for probe in yahoo_probes if probe['symbol'] == proxy['symbol']), None)
+        if proxy['lastProbe'] and proxy['lastProbe']['rowCount'] > 0:
+            proxy['historyStatus'] = 'adapter_supported_requires_observations'
+        proxy['factorId'] = 'context_yf_'+proxy['symbol'].lower()+'_price'
+        proxy['providerApi'] = 'yfinance_history'
+        proxy['provider'] = 'YAHOO_YFINANCE'
+        proxy['dataSourceUrl'] = 'https://finance.yahoo.com/quote/'+proxy['symbol']+'/history/'
         for identity in proxy['classificationIds']:
             if identity not in by_id:
                 raise ValueError('Unregistered proxy classification '+identity)
@@ -115,7 +120,7 @@ def build(sw, gics):
                 'summary': {'classificationIdentities': len(items), 'cnClassificationIdentities': 511,
                             'usClassificationIdentities': 273, 'cnPublishedIndexAdapters': sum(row['market'] == 'CN' and row['historyStatus'] == 'adapter_supported_requires_observations' for row in items),
                             'etfProxyIdentities': len(proxies), 'observedHistoryCount': None,
-                            'inventoryIsNotCoverage': True}, 'historyProbes': probes}
+                            'inventoryIsNotCoverage': True}, 'historyProbes': probes+yahoo_probes}
     context_path = ROOT/'engine/atlas_quant/context_sources.json'
     context = json.loads(context_path.read_text())
     original = {row['ts_code']: row for row in context['items'] if row['api'] == 'index_daily' or row.get('level') == 1}
@@ -139,6 +144,14 @@ def build(sw, gics):
                              'proxyId': proxy['id'], 'currency': 'USD',
                              'alignment': 'last_foreign_session_strictly_before_cn_date_max_7_calendar_days',
                              'priceAdjustment': 'close_times_adj_factor',
+                             'historyStatus': 'adapter_supported_history_unverified'} for proxy in proxies)
+    context['items'].extend({'ts_code': proxy['symbol'], 'aliasKey': 'yf_'+proxy['symbol'].lower(),
+                             'name': proxy['name'], 'api': 'yfinance_history', 'provider': 'YAHOO_YFINANCE',
+                             'providerApi': 'yfinance_history', 'category': '美国行业ETF', 'scope': 'global',
+                             'market': 'US', 'sourceKind': 'etf_proxy', 'sourceUrl': proxy['sourceUrl'],
+                             'dataSourceUrl': proxy['dataSourceUrl'], 'proxyId': proxy['id'], 'currency': 'USD',
+                             'alignment': 'last_foreign_session_strictly_before_cn_date_max_7_calendar_days',
+                             'priceAdjustment': 'yahoo_adj_close_split_dividend',
                              'historyStatus': proxy['historyStatus']} for proxy in proxies)
     context['classificationSources'] = [sources[0], sources[2]]
     return taxonomy, context

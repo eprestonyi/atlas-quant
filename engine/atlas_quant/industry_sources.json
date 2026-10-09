@@ -15603,8 +15603,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xle_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xle_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLE/history/"
     },
     {
       "id": "us_etf_xlb",
@@ -15630,8 +15632,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xlb_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xlb_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLB/history/"
     },
     {
       "id": "us_etf_xli",
@@ -15657,8 +15661,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xli_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xli_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLI/history/"
     },
     {
       "id": "us_etf_xly",
@@ -15684,8 +15690,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xly_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xly_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLY/history/"
     },
     {
       "id": "us_etf_xlp",
@@ -15711,8 +15719,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xlp_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xlp_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLP/history/"
     },
     {
       "id": "us_etf_xlv",
@@ -15738,8 +15748,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xlv_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xlv_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLV/history/"
     },
     {
       "id": "us_etf_xlf",
@@ -15765,8 +15777,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xlf_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xlf_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLF/history/"
     },
     {
       "id": "us_etf_xlk",
@@ -15782,7 +15796,7 @@
         "gics2023_45"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_history_unverified",
+      "historyStatus": "adapter_supported_requires_observations",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15792,23 +15806,27 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": {
-        "api": "us_daily_adj",
+        "api": "yfinance_history",
         "symbol": "XLK",
         "params": {
-          "end_date": "20240913",
+          "ts_code": "XLK",
           "start_date": "20240903",
-          "ts_code": "XLK"
+          "end_date": "20240913"
         },
-        "observedAt": "2026-10-09T20:08:04.936118+00:00",
-        "responseSha256": "1cc2daca954522da5a0c342eb77b02572099582b47b47009ad42836f01129422",
-        "httpStatus": 200,
-        "providerCode": 0,
-        "rowCount": 0,
-        "outcome": "empty_sample",
-        "requests": 1
+        "observedAt": "2026-10-09T20:30:19.595907+00:00",
+        "rowCount": 9,
+        "observedStart": "20240903",
+        "observedEnd": "20240913",
+        "recordSha256": "42dffb6511b51d003b3e934bcc2a24eca47c65deca2c2634a2b07fcf73785152",
+        "libraryVersion": "1.7.0",
+        "libraryCalls": 1,
+        "httpRequests": 4,
+        "acceptance": "complete"
       },
-      "factorId": "context_xlk_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xlk_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLK/history/"
     },
     {
       "id": "us_etf_xlc",
@@ -15834,8 +15852,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xlc_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xlc_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLC/history/"
     },
     {
       "id": "us_etf_xlu",
@@ -15861,8 +15881,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xlu_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xlu_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLU/history/"
     },
     {
       "id": "us_etf_xlre",
@@ -15888,8 +15910,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xlre_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xlre_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XLRE/history/"
     },
     {
       "id": "us_etf_kbe",
@@ -15915,8 +15939,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_kbe_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_kbe_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/KBE/history/"
     },
     {
       "id": "us_etf_kre",
@@ -15942,8 +15968,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_kre_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_kre_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/KRE/history/"
     },
     {
       "id": "us_etf_kce",
@@ -15969,8 +15997,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_kce_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_kce_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/KCE/history/"
     },
     {
       "id": "us_etf_kie",
@@ -15996,8 +16026,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_kie_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_kie_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/KIE/history/"
     },
     {
       "id": "us_etf_xar",
@@ -16023,8 +16055,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xar_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xar_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XAR/history/"
     },
     {
       "id": "us_etf_xtn",
@@ -16050,8 +16084,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xtn_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xtn_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XTN/history/"
     },
     {
       "id": "us_etf_xbi",
@@ -16077,8 +16113,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xbi_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xbi_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XBI/history/"
     },
     {
       "id": "us_etf_xph",
@@ -16104,8 +16142,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xph_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xph_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XPH/history/"
     },
     {
       "id": "us_etf_xhe",
@@ -16131,8 +16171,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xhe_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xhe_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XHE/history/"
     },
     {
       "id": "us_etf_xhs",
@@ -16158,8 +16200,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xhs_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xhs_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XHS/history/"
     },
     {
       "id": "us_etf_xop",
@@ -16185,8 +16229,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xop_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xop_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XOP/history/"
     },
     {
       "id": "us_etf_xes",
@@ -16212,8 +16258,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xes_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xes_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XES/history/"
     },
     {
       "id": "us_etf_xme",
@@ -16239,8 +16287,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xme_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xme_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XME/history/"
     },
     {
       "id": "us_etf_xrt",
@@ -16266,8 +16316,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xrt_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xrt_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XRT/history/"
     },
     {
       "id": "us_etf_xhb",
@@ -16293,8 +16345,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xhb_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xhb_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XHB/history/"
     },
     {
       "id": "us_etf_xsd",
@@ -16310,7 +16364,7 @@
         "gics2023_45301020"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_history_unverified",
+      "historyStatus": "adapter_supported_requires_observations",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16320,23 +16374,27 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": {
-        "api": "us_daily_adj",
+        "api": "yfinance_history",
         "symbol": "XSD",
         "params": {
-          "end_date": "20260925",
-          "start_date": "20260914",
-          "ts_code": "XSD"
+          "ts_code": "XSD",
+          "start_date": "20240903",
+          "end_date": "20240913"
         },
-        "observedAt": "2026-10-09T20:08:06.454896+00:00",
-        "responseSha256": "1cc2daca954522da5a0c342eb77b02572099582b47b47009ad42836f01129422",
-        "httpStatus": 200,
-        "providerCode": 0,
-        "rowCount": 0,
-        "outcome": "empty_sample",
-        "requests": 1
+        "observedAt": "2026-10-09T20:30:02.580799+00:00",
+        "rowCount": 9,
+        "observedStart": "20240903",
+        "observedEnd": "20240913",
+        "recordSha256": "794d1db0062afc0dd29d992f4d3fceec72387e67e0c631b643294e6c3c7be7ef",
+        "libraryVersion": "1.7.0",
+        "libraryCalls": 1,
+        "httpRequests": 4,
+        "acceptance": "complete_offline_recovery"
       },
-      "factorId": "context_xsd_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xsd_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XSD/history/"
     },
     {
       "id": "us_etf_xsw",
@@ -16362,8 +16420,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xsw_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xsw_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XSW/history/"
     },
     {
       "id": "us_etf_xtl",
@@ -16389,8 +16449,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xtl_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xtl_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XTL/history/"
     },
     {
       "id": "us_etf_xth",
@@ -16416,8 +16478,10 @@
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
       "lastProbe": null,
-      "factorId": "context_xth_price",
-      "providerApi": "us_daily_adj"
+      "factorId": "context_yf_xth_price",
+      "providerApi": "yfinance_history",
+      "provider": "YAHOO_YFINANCE",
+      "dataSourceUrl": "https://finance.yahoo.com/quote/XTH/history/"
     }
   ],
   "summary": {
@@ -16509,6 +16573,42 @@
       "rowCount": 0,
       "outcome": "empty_sample",
       "requests": 1
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XSD",
+      "params": {
+        "ts_code": "XSD",
+        "start_date": "20240903",
+        "end_date": "20240913"
+      },
+      "observedAt": "2026-10-09T20:30:02.580799+00:00",
+      "rowCount": 9,
+      "observedStart": "20240903",
+      "observedEnd": "20240913",
+      "recordSha256": "794d1db0062afc0dd29d992f4d3fceec72387e67e0c631b643294e6c3c7be7ef",
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete_offline_recovery"
+    },
+    {
+      "api": "yfinance_history",
+      "symbol": "XLK",
+      "params": {
+        "ts_code": "XLK",
+        "start_date": "20240903",
+        "end_date": "20240913"
+      },
+      "observedAt": "2026-10-09T20:30:19.595907+00:00",
+      "rowCount": 9,
+      "observedStart": "20240903",
+      "observedEnd": "20240913",
+      "recordSha256": "42dffb6511b51d003b3e934bcc2a24eca47c65deca2c2634a2b07fcf73785152",
+      "libraryVersion": "1.7.0",
+      "libraryCalls": 1,
+      "httpRequests": 4,
+      "acceptance": "complete"
     }
   ]
 }

@@ -48,7 +48,8 @@ def test_reject_unregistered_index_request_before_network(api,params):
     assert not session.calls
 
 def test_catalog_has_named_identity_and_no_constituent_backfill():
-    assert len(REGISTRY['items'])==450
+    assert len(REGISTRY['items'])==480
+    assert len({(x['api'],x['ts_code']) for x in REGISTRY['items']})==480
     assert len({x['ts_code'] for x in REGISTRY['items']})==450
     assert all(x['scope']=='global' for x in FIELDS.values())
     assert not any(x.get('historicalMembershipVerified') for x in FIELDS.values())

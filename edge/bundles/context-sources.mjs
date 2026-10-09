@@ -28,11 +28,29 @@ function summary(value) {
       || !Number.isSafeInteger(value.rowCount) || value.rowCount<1 || value.rowCount>4000
       || !Array.isArray(value.fields) || value.fields.length<3
       || value.fields[0]!=='ts_code' || value.fields[1]!=='trade_date') fail();
-  const valid = ['close','vol','amount',...(value.api==='sw_daily'?['pe','pb','total_mv','float_mv']:value.api==='us_daily_adj'?['adj_factor']:[])];
+  const valid = value.api==='yfinance_history'?['close','adj_close','vol','dividends','stock_splits']:['close','vol','amount',...(value.api==='sw_daily'?['pe','pb','total_mv','float_mv']:value.api==='us_daily_adj'?['adj_factor']:[])];
   const fields = value.fields.slice(2);
   if (fields.some(field=>!valid.includes(field)) || !same(fields,[...new Set(fields)].sort())
-      || (value.api==='us_daily_adj' && fields.includes('close') && !fields.includes('adj_factor'))) fail();
+      || (value.api==='us_daily_adj' && fields.includes('close') && !fields.includes('adj_factor'))
+      || (value.api==='yfinance_history' && fields.includes('close') && !['adj_close','dividends','stock_splits'].every(field=>fields.includes(field)))) fail();
   return value;
+}
+
+
+function validateYahooDetails(value) {
+  exact(value,['provider','libraryVersion','retrievedAt','currency','exchangeTimezoneName','instrumentType','libraryCalls','httpReceipts']);
+  if(value.provider!=='YAHOO_YFINANCE'||value.libraryVersion!=='1.7.0'||value.currency!=='USD'
+    ||value.exchangeTimezoneName!=='America/New_York'||value.instrumentType!=='ETF'||value.libraryCalls!==1
+    ||typeof value.retrievedAt!=='string'||!/(?:Z|[+-]\d{2}:\d{2})$/.test(value.retrievedAt)||!Number.isFinite(Date.parse(value.retrievedAt))
+    ||!Array.isArray(value.httpReceipts)||value.httpReceipts.length<1||value.httpReceipts.length>8) fail();
+  for(const receipt of value.httpReceipts) {
+    exact(receipt,['host','path','status','bytes','sha256']);
+    if(!['query1.finance.yahoo.com','query2.finance.yahoo.com','fc.yahoo.com','guce.yahoo.com','consent.yahoo.com'].includes(receipt.host)
+      ||typeof receipt.path!=='string'||!receipt.path.startsWith('/')||receipt.path.includes('?')||receipt.path.length>160
+      ||!Number.isSafeInteger(receipt.status)||receipt.status<100||receipt.status>599
+      ||!Number.isSafeInteger(receipt.bytes)||receipt.bytes<0||receipt.bytes>8388608
+      ||typeof receipt.sha256!=='string'||!HASH.test(receipt.sha256)) fail();
+  }
 }
 
 export function assertContextManifest(parsed) {
@@ -43,7 +61,7 @@ export function assertContextManifest(parsed) {
     return;
   }
   const report = parsed.metadata.report.provenance, snapshot = parsed.metadata.snapshot?.provenance;
-  const foreign = report?.contextSources?.some(source=>source?.api==='us_daily_adj');
+  const foreign = report?.contextSources?.some(source=>['us_daily_adj','yfinance_history'].includes(source?.api));
   if (parsed.manifest.kind!=='forecast' || collection.rowCount<1 || collection.rowCount>16
       || parsed.metadata.snapshot.fingerprintVersion!=='research_input_context_v1'
       || !object(snapshot) || !HASH.test(snapshot.contextSourceRoot)
@@ -84,7 +102,8 @@ export async function validateContextChunk(text, rows, start, summaries) {
   const raw = rawSources(text);
   if(raw.length!==rows.length || !Array.isArray(summaries)) fail();
   for(const [i,row] of rows.entries()) {
-    exact(row,['api','params','fields','records','sha256','classification','notWireBytes','historicalRevisionVerified']);
+    exact(row,['api','params','fields','records','sha256','classification','notWireBytes','historicalRevisionVerified',...(row.api==='yfinance_history'?['providerDetails']:[])]);
+    if(row.api==='yfinance_history') validateYahooDetails(row.providerDetails);
     if(!Array.isArray(row.records) || row.classification!=='PARSED_PROVIDER_RESPONSE'
        || row.notWireBytes!==true || row.historicalRevisionVerified!==false) fail();
     const current = summary(Object.fromEntries(summaryKeys.map(key=>[key,key==='rowCount'?row.records.length:row[key]])));
@@ -99,7 +118,7 @@ export async function validateContextChunk(text, rows, start, summaries) {
       for(const field of row.fields.slice(2)) {
         const value=record[field];
         if(value!==null && (typeof value!=='number' || !Number.isFinite(value)
-            || (['close','adj_factor'].includes(field)&&value<=0) || (['vol','amount','total_mv','float_mv'].includes(field)&&value<0))) fail();
+            || (['close','adj_factor','adj_close'].includes(field)&&value<=0) || (['vol','amount','total_mv','float_mv','dividends','stock_splits'].includes(field)&&value<0))) fail();
       }
     }
     // In the exact, sorted source object records is followed by sha256; nested

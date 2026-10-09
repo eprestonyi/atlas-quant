@@ -71,9 +71,13 @@ def build_catalog():
         datasets = sorted({fields[f]["dataset"] for f in meta["fields"]})
         external = any(field.startswith('fd_') for field in meta["fields"])
         factors.append({"id": ident, "name": name, "category": category, "description": description, "expression": expression, "direction": direction, "lookback": meta["lookback"], "family": family, "window": window, "requiredFields": meta["fields"], "sourceDatasets": datasets, "dataRequirement": "financial_pit" if external else "daily_basic" if "daily_basic" in datasets else "ohlcv", "availability": "first_trading_session_after_disclosure_date" if external else "after_required_daily_fields_are_published", "minimumLagSessions": 1 if external else 0, "lagAppliedBy": "point_in_time_data_join" if external else "factor_expression", "recipeVersion": 1, "license": "Apache-2.0", "status": "definition_only_requires_data", "researchStatus": "UNVALIDATED_HYPOTHESIS", "pitRevisionHistoryVerified": False})
-        if any(dataset in {'index_daily', 'sw_daily', 'us_daily_adj'} for dataset in datasets):
+        if any(dataset in {'index_daily', 'sw_daily', 'us_daily_adj', 'yfinance_history'} for dataset in datasets):
             factors[-1].update(dataRequirement='named_index_history', scope='global' if all(field.startswith('ext_ctx_') for field in factors[-1]['requiredFields']) else 'asset',
                                automaticPreprocessingRequired=True, database='MKT')
+        if 'yfinance_history' in datasets:
+            context = next(fields[field] for field in meta['fields'] if fields[field]['dataset'] == 'yfinance_history')
+            factors[-1].update(source='Yahoo Finance / yfinance', provider='YAHOO_YFINANCE', providerApi='yfinance_history',
+                               historyStatus=context['historyStatus'], historyAvailabilityReason='该 ETF 的 Yahoo 历史尚未验证。')
         if 'us_daily_adj' in datasets:
             factors[-1].update(historyStatus='adapter_supported_history_unverified',
                                historyAvailabilityReason='ETF 历史待验；XSD、XLK 的已检样本未返回记录。')
@@ -88,15 +92,15 @@ def build_catalog():
 
     from .context_sources import REGISTRY as CONTEXT_REGISTRY
     for source in CONTEXT_REGISTRY['items']:
-        key = source['ts_code'].lower().replace('.', '_')
-        close, amount = 'ext_ctx_'+key+'_close', 'ext_ctx_'+key+'_amount'
+        key = source.get('aliasKey', source['ts_code'].lower().replace('.', '_'))
+        close, amount = 'ext_ctx_'+key+'_close', 'ext_ctx_'+key+('_vol' if source['api'] == 'yfinance_history' else '_amount')
         for suffix, label, expression in [
             ('price','价格',close),
             ('momentum20','20日动量',f'returns({close},20)'),
             ('momentum60','60日动量',f'returns({close},60)'),
             ('volatility20','20日波动',f'ts_std(returns({close},1),20)'),
             ('drawdown60','60日回撤',f'{close}/ts_max({close},60)-1'),
-            ('amount20','20日相对成交额',f'{amount}/ts_mean({amount},20)-1')]:
+            ('volume20' if source['api'] == 'yfinance_history' else 'amount20','20日相对成交量' if source['api'] == 'yfinance_history' else '20日相对成交额',f'{amount}/ts_mean({amount},20)-1')]:
             add('context_'+key+'_'+suffix, source['name']+' · '+label, source['category'], expression, 1,
                 '来自指定指数自身历史；与研究股票池独立，不代表当时行业成员归属。', 'named_index_'+suffix)
         beta = f'(ts_mean(returns(close,1)*returns({close},1),60)-ts_mean(returns(close,1),60)*ts_mean(returns({close},1),60))/(ts_std(returns({close},1),60)*ts_std(returns({close},1),60))'

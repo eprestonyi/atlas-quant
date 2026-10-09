@@ -20,23 +20,23 @@ Official sources:
 
 ## Independent histories and clocks
 
-The 450 named source adapters comprise 6 broad China indices, 414 published SW indices, and 30 US ETF proxies. They are independent inputs; they are not estimated by averaging the currently selected output stocks. Research output and execution remain limited to the existing A-share universe.
+The 480 named source identities comprise 6 broad China indices, 414 published SW indices, 30 historical Tushare ETF adapters and 30 separate Yahoo ETF adapters. The same ETF ticker on different providers has a different API/alias identity. They are independent inputs; they are not estimated by averaging the currently selected output stocks. Research output and execution remain limited to the existing A-share universe.
 
 China indices use `index_daily` or `sw_daily`. Source rows join the declared China trading grid by exact date; missing dates remain missing. Historical membership is not inferred from current classification metadata.
 
-US ETF proxies use [Tushare `us_daily_adj`](https://tushare.pro/document/2?doc_id=338). Tushare documents `close × adj_factor` as the adjusted price. Both raw fields remain archived, and projection recomputes the adjusted mark. Zero, negative, missing, or nonfinite adjusted prices cannot become valid price inputs. The provider documents a separate US-data permission; enabling an adapter does not create that permission or prove ETF coverage.
+Historical US ETF source packages use [Tushare `us_daily_adj`](https://tushare.pro/document/2?doc_id=338). Tushare documents `close × adj_factor` as the adjusted price. Both raw fields remain archived, and projection recomputes the adjusted mark. Zero, negative, missing, or nonfinite adjusted prices cannot become valid price inputs. The provider documents a separate US-data permission; enabling an adapter does not create that permission or prove ETF coverage.
 
 At a China daily origin, the eligible US record is the latest source trading date strictly before the China date. This excludes the same-date US session, whose regular close occurs on the following China civil day in either daylight-saving regime. The availability companion records that next civil date. Marks older than seven calendar days are missing. No missing historical price is invented.
 
 Subsequent returns and volatility are calculated on the declared China research grid using those previously known adjusted marks. A repeated mark is a carried observation; these are not relabelled as native US-session returns. The model's output stock calendar remains the China calendar. Provider revision history and exact intraday publication timestamps are not independently verified; the source package keeps `historicalRevisionVerified: false`.
 
-Foreign inputs require runner capability `named-market-history/2`. Old runners cannot acquire these jobs. New envelopes use `named_market_series_asof_broadcast_by_date` and `source_session_publication_before_cn_origin`; China-only source envelopes retain the previous contract unchanged.
+Tushare foreign inputs require runner capability `named-market-history/2`; Yahoo inputs additionally require `named-market-history/3`. Old runners cannot acquire these jobs. New envelopes use `named_market_series_asof_broadcast_by_date` and `source_session_publication_before_cn_origin`; China-only source envelopes retain the previous contract unchanged.
 
 ## Factors and archives
 
 Price fields receive the existing automatic return/trailing-volatility transform when automatic preprocessing is selected. Global market/industry inputs are standardized over the training time axis and broadcast, never demeaned across stocks into zero. ETF volume and amount have US-specific units. Aliases identify the original selected fields while the frozen function artifact records the effective transformation.
 
-Each distinct named source costs one bounded historical request per acquisition, even when multiple selected recipes share it. The existing limit of 16 independent sources per acquisition remains enforced. The complete source grids, request parameters, raw adjustment factors, hashes and actual availability companions travel in the existing context archive. Python restoration, edge admission, and the independent standard-library auditor reconstruct the same as-of projection.
+Each distinct Tushare named source costs one bounded historical request per acquisition, even when multiple selected recipes share it. Yahoo uses one library history invocation per source; cookie/timezone bootstrap may require additional HTTP requests, which are counted separately. The existing limit of 16 independent sources per acquisition remains enforced. The complete source grids, request parameters, raw adjustment factors, hashes and actual availability companions travel in the existing context archive. Python restoration, edge admission, and the independent standard-library auditor reconstruct the same as-of projection.
 
 The compact generated catalog contains recipe definitions. Its size and counts are UI inventory, not observed historical coverage or validated strategies. New source readbacks must record concrete API, symbol, interval, received rows and outcome separately; a successful sample cannot establish coverage for every symbol in the registry.
 
@@ -52,6 +52,34 @@ After the Portal's isolated wrapper deployment was read back, three initial hist
 | `us_daily_adj / XLK` | 2024-09-03 through 2024-09-13 | HTTP 200, provider code 0, **zero records** |
 | `us_daily_adj / XSD` | 2026-09-14 through 2026-09-25 | HTTP 200, provider code 0, **zero records** |
 
-The empty XSD and XLK responses prove neither a permission denial nor ETF support. All 30 US ETF adapters remain `adapter_supported_history_unverified` in the library; their identities and adapter implementation are available, but they are not advertised as researched or connected histories. The two nonempty China samples do not establish all-symbol/all-date coverage. `data/industry-history-probes.json` preserves these exact scopes, statuses and wire hashes; private evidence retains every raw response. Including the two classification reads, this cycle consumed seven provider requests and zero model fits.
+The empty XSD and XLK responses prove neither a permission denial nor ETF support. All 30 **Tushare** US ETF adapters remain `adapter_supported_history_unverified` in the library; their identities and adapter implementation are available, but they are not advertised as researched or connected histories. The two nonempty China samples do not establish all-symbol/all-date coverage. `data/industry-history-probes.json` preserves these exact scopes, statuses and wire hashes; private evidence retains every raw response. Including the two classification reads, this cycle consumed seven provider requests and zero model fits.
 
 The official `us_daily` and `us_daily_adj` documents describe stocks and bare ticker symbols, without explicitly documenting ETF coverage. Testing a second ETF and a recent interval did not produce a positive observation; no unsupported ticker suffix or undocumented endpoint was guessed.
+
+
+## Yahoo ETF history contract
+
+The optional `yfinance==1.7.0` adapter uses a separate API identity, `yfinance_history`, and aliases such as `ext_ctx_yf_xsd_close`. Existing `us_daily_adj` sources and aliases are unchanged; archived Tushare data is never reinterpreted as Yahoo data. No Yahoo request passes through the Tushare Portal.
+
+A single `Ticker.history` call uses daily intervals, inclusive start and exclusive end (the adapter converts its inclusive end to the next day), `auto_adjust=False`, `back_adjust=False`, `repair=False`, `actions=True`, `keepna=True` and `rounding=False`. The adapter requires ETF/USD/America-New-York identity from that same history response. Yahoo `Close` and `Adj Close` remain distinct. The research close uses **Adj Close directly**, without dividing and multiplying through a rounded adjustment ratio. Yahoo's Close must not be labelled as pre-split as-traded price. Volume is retained in provider share units. **There is no Yahoo amount field and no fabricated close-times-volume turnover.** Dividends and split observations accompanying the adjusted close stay in the archive.
+
+The Yahoo source archive retains the existing context collection and adds a required `providerDetails` object only to `yfinance_history` envelopes: fixed library version, UTC acquisition time, validated currency/timezone/instrument type, one library call and bounded HTTP receipts. The receipts contain host/path/status/byte count/hash, never query strings, cookies or crumbs. The report source summary remains API/request/fields/record hash/row count. Older Tushare envelope keys and hashes retain their original contract. The records are parsed provider data, not wire bytes; their hash establishes content consistency, not provider authority or point-in-time revision history.
+
+The HTTP wrapper allows at most eight requests per library invocation with 15-second per-request timeouts, a 90-second admission deadline, and an 8 MiB response limit. Application-level retries and provider fallback are absent. A failed chart request is not repeated even if the library attempts an alternate cookie strategy. The existing previous-US-session/maximum-seven-day projection applies before the factor's returns and trailing-volatility transform.
+
+Two independent Yahoo samples were acquired on 2026-10-09 UTC:
+
+| Symbol | Requested and returned dates | Rows | Library calls | HTTP requests | Result |
+| --- | --- | --- | --- | --- | --- |
+| XSD | 2024-09-03 through 2024-09-13 | 9 | 1 | 4 | Original chart retained; offline recovery after a receipt-path normalization validation error |
+| XLK | 2024-09-03 through 2024-09-13 | 9 | 1 | 4 | Adapter completed |
+
+XSD was **not fetched again**. Its already saved chart was parsed offline with the pinned library's quote parser; the absence of corporate-action events in that response was checked. Its original failed envelope result remains preserved. Both complete source grids subsequently passed offline parsing, as-of projection, engine validation and independent standard-library audit: 18 source rows, 8 two-stock/date broadcast rows and 50 consistency checks, with zero additional provider requests or model fits. Only XSD and XLK Yahoo inputs are enabled; 28 other Yahoo ETF identities remain `adapter_supported_history_unverified` and are rejected before acquisition. This verifies two short histories, not all-date coverage or predictive performance. The public `data/yfinance-history-probes.json` contains metadata and hashes only; downloaded values and original response bodies are private.
+
+Sources: [yfinance documentation](https://ranaroussi.github.io/yfinance/), [fixed package](https://pypi.org/project/yfinance/1.7.0/), [history implementation](https://github.com/ranaroussi/yfinance/blob/main/yfinance/scrapers/history.py), [Yahoo adjusted-close definition](https://in.help.yahoo.com/kb/adjusted-close-sln28256.html).
+
+## Free-source and distribution boundary
+
+[yfinance's documentation](https://ranaroussi.github.io/yfinance/) states that it is unofficial and that Yahoo Finance data is intended for personal use. The adapter is for owner-private research inputs. Open-sourcing its code grants no right to redistribute Yahoo data: downloaded prices, response bodies, cookies and private archives are excluded from public source distributions. No public quote redistribution endpoint or public Yahoo cache is added. [Yahoo's terms](https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html) remain applicable. Yahoo's website [CSV download workflow](https://in.help.yahoo.com/kb/finance/download-historical-data-yahoo-finance-sln2311.html) has separate subscription requirements; it is not represented as a free CSV service.
+
+Two documented alternatives were reviewed, not silently invoked. [Alpha Vantage's free allowance](https://www.alphavantage.co/support/) is 25 requests/day, while its [adjusted daily endpoint](https://www.alphavantage.co/documentation/) is labelled premium. [Twelve Data Basic](https://twelvedata.com/pricing) lists US equities/ETFs with eight credits/minute and 800/day for individual internal use; it requires a separate account/key and its own terms. Neither is treated as an already authorized, licensed or adjusted-history-compatible fallback. Stooq's public historical-download page presented a verification challenge, so its adjustment and redistribution contract was not established and no challenge was bypassed.

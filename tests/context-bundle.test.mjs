@@ -93,3 +93,22 @@ test('foreign archives retain raw adjustment data and require foreign clock',asy
   rows[0].records[0].adj_factor=0;
   await assert.rejects(validateContextChunk(canonical(rows),rows,0,p.metadata.report.provenance.contextSources));
 });
+
+test('Yahoo source has a separate frozen API, direct adjusted close and bounded provider metadata',async()=>{
+  const {yahooContextBundleFixture}=await import('./fixtures/context-bundle-fixture.mjs');
+  const f=yahooContextBundleFixture(),p=await validateManifest(f.manifestText,f.bundleId);
+  const raw=f.chunks.get('snapshotContextSources:0'),rows=JSON.parse(raw);
+  await validateContextChunk(raw,rows,0,p.metadata.report.provenance.contextSources);
+  for(const mutate of [
+    r=>delete r.providerDetails,
+    r=>r.providerDetails.libraryVersion='unfrozen',
+    r=>r.providerDetails.cookie='private',
+    r=>r.providerDetails.httpReceipts[0].path+='?crumb=private',
+    r=>r.providerDetails.httpReceipts[0].bytes=8388609,
+    r=>r.records[0].adj_close=0,
+    r=>r.fields.push('amount'),
+  ]) {
+    const changed=structuredClone(rows);mutate(changed[0]);
+    await assert.rejects(validateContextChunk(canonical(changed),changed,0,p.metadata.report.provenance.contextSources));
+  }
+});

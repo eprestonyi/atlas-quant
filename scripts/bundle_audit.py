@@ -103,6 +103,15 @@ class Collection:
     name: str
 
 
+
+def validate_yahoo_details(value):
+    require(isinstance(value, dict) and set(value) == {'provider','libraryVersion','retrievedAt','currency','exchangeTimezoneName','instrumentType','libraryCalls','httpReceipts'}, 'Invalid Yahoo metadata')
+    require(value['provider'] == 'YAHOO_YFINANCE' and value['libraryVersion'] == '1.7.0' and value['currency'] == 'USD' and value['exchangeTimezoneName'] == 'America/New_York' and value['instrumentType'] == 'ETF' and type(value['libraryCalls']) is int and value['libraryCalls'] == 1, 'Invalid Yahoo provider identity')
+    require(isinstance(value['retrievedAt'], str) and datetime.fromisoformat(value['retrievedAt'].replace('Z','+00:00')).tzinfo is not None, 'Invalid Yahoo retrieval timestamp')
+    require(isinstance(value['httpReceipts'], list) and 1 <= len(value['httpReceipts']) <= 8, 'Invalid Yahoo request count')
+    for row in value['httpReceipts']:
+        require(isinstance(row, dict) and set(row) == {'host','path','status','bytes','sha256'} and row['host'] in {'query1.finance.yahoo.com','query2.finance.yahoo.com','fc.yahoo.com','guce.yahoo.com','consent.yahoo.com'} and isinstance(row['path'], str) and row['path'].startswith('/') and len(row['path']) <= 160 and '?' not in row['path'] and type(row['status']) is int and 100 <= row['status'] <= 599 and type(row['bytes']) is int and 0 <= row['bytes'] <= 8388608 and isinstance(row['sha256'], str) and re.fullmatch(r'[0-9a-f]{64}', row['sha256']), 'Invalid Yahoo HTTP receipt')
+
 class BundleAudit:
     def __init__(self, directory, database):
         self.directory = Path(directory).resolve()
@@ -187,7 +196,7 @@ class BundleAudit:
     def validate_context_sources(self, provenance):
         """Verify frozen values and broadcast consistency, not provider authenticity."""
         report = self.documents["report"]["provenance"]
-        foreign = any(source.get('api') == 'us_daily_adj' for source in report.get('contextSources', []) if isinstance(source, dict))
+        foreign = any(source.get('api') in {'us_daily_adj', 'yfinance_history'} for source in report.get('contextSources', []) if isinstance(source, dict))
         require(provenance.get("contextScope") == ("named_market_series_asof_broadcast_by_date" if foreign else "named_index_series_broadcast_by_date")
                 and provenance.get("contextObservationClock") == ("source_session_publication_before_cn_origin" if foreign else "after_daily_publication_before_next_open"),
                 "Context source clock/scope mismatch")
@@ -205,14 +214,16 @@ class BundleAudit:
             return value
         for index, source in enumerate(self.rows("snapshotContextSources")):
             require(set(source) == {"api", "params", "fields", "records", "sha256", "classification",
-                                    "notWireBytes", "historicalRevisionVerified"}, "Invalid context source envelope")
+                                    "notWireBytes", "historicalRevisionVerified"} | ({"providerDetails"} if source.get("api") == "yfinance_history" else set()), "Invalid context source envelope")
+            if source.get("api") == "yfinance_history":
+                validate_yahoo_details(source["providerDetails"])
             require(source["classification"] == "PARSED_PROVIDER_RESPONSE" and source["notWireBytes"] is True
                     and source["historicalRevisionVerified"] is False, "Invalid context evidence classification")
             params, api, fields, records = source["params"], source["api"], source["fields"], source["records"]
             require(isinstance(params, dict) and set(params) == {"ts_code", "start_date", "end_date"}
-                    and api in {"index_daily", "sw_daily", "us_daily_adj"}, "Invalid context source request")
+                    and api in {"index_daily", "sw_daily", "us_daily_adj", "yfinance_history"}, "Invalid context source request")
             code = params["ts_code"]
-            require(isinstance(code, str) and (bool(re.fullmatch(r"[A-Z]{1,8}", code)) if api == 'us_daily_adj'
+            require(isinstance(code, str) and (bool(re.fullmatch(r"[A-Z]{1,8}", code)) if api in {'us_daily_adj', 'yfinance_history'}
                     else bool(re.fullmatch(r"[0-9]{6}\.(?:SH|SZ|SI)", code)) and (code.endswith(".SI") == (api == "sw_daily"))),
                     "Invalid context source identity")
             identity = (api, code)
@@ -220,11 +231,12 @@ class BundleAudit:
             previous_source = identity
             start, end = date(params["start_date"]), date(params["end_date"])
             require(start <= end, "Invalid context request interval")
-            allowed = {"close", "vol", "amount"} | ({"pe", "pb", "total_mv", "float_mv"} if api == "sw_daily" else {'adj_factor'} if api == 'us_daily_adj' else set())
+            allowed = {"close", "adj_close", "vol", "dividends", "stock_splits"} if api == "yfinance_history" else {"close", "vol", "amount"} | ({"pe", "pb", "total_mv", "float_mv"} if api == "sw_daily" else {'adj_factor'} if api == 'us_daily_adj' else set())
             require(isinstance(fields, list) and all(isinstance(f, str) for f in fields)
                     and len(fields) >= 3 and fields[:2] == ["ts_code", "trade_date"]
                     and fields[2:] == sorted(set(fields[2:])) and set(fields[2:]) <= allowed
-                    and (api != 'us_daily_adj' or 'close' not in fields or 'adj_factor' in fields),
+                    and (api != 'us_daily_adj' or 'close' not in fields or 'adj_factor' in fields)
+                    and (api != 'yfinance_history' or 'close' not in fields or {'adj_close','dividends','stock_splits'}.issubset(fields)),
                     "Invalid context source fields")
             require(isinstance(records, list) and 1 <= len(records) <= 4000
                     and source["sha256"] == sha(canonical(records)), "Context source records hash/count mismatch")
@@ -245,33 +257,35 @@ class BundleAudit:
                 for field in fields[2:]:
                     value = row[field]
                     require(value is None or (type(value) in (int, float) and math.isfinite(value)
-                            and (field not in {"close", "adj_factor"} or value > 0)
-                            and (field not in {"vol", "amount", "total_mv", "float_mv"} or value >= 0)),
+                            and (field not in {"close", "adj_factor", "adj_close"} or value > 0)
+                            and (field not in {"vol", "amount", "total_mv", "float_mv", "dividends", "stock_splits"} or value >= 0)),
                             "Invalid context observation")
-                    if field == 'adj_factor':
+                    if field in {'adj_factor', 'adj_close', 'dividends', 'stock_splits'}:
                         continue
                     if api == 'us_daily_adj' and field == 'close':
                         adjustment = row['adj_factor']
                         require(adjustment is None or type(adjustment) in (int, float) and math.isfinite(adjustment) and adjustment > 0,
                                 'Invalid ETF adjustment')
                         value = value*adjustment if value is not None and adjustment is not None else None
-                    alias = "ext_ctx_" + code.lower().replace(".", "_") + "_" + field
+                    alias = "ext_ctx_" + ("yf_" if api == "yfinance_history" else "") + code.lower().replace(".", "_") + "_" + field
+                    if api == 'yfinance_history' and field == 'close':
+                        value = row['adj_close']
                     aliases.add(alias)
-                    if api == 'us_daily_adj':
+                    if api in {'us_daily_adj', 'yfinance_history'}:
                         foreign_aliases.add(alias)
                     self.db.execute("INSERT INTO context_values VALUES(?,?,?)", (alias, day, value))
                 self.checks += 1
             for field in fields[2:]:
-                if field == 'adj_factor':
+                if field in {'adj_factor', 'adj_close', 'dividends', 'stock_splits'}:
                     continue
-                alias = "ext_ctx_" + code.lower().replace(".", "_") + "_" + field
+                alias = "ext_ctx_" + ("yf_" if api == "yfinance_history" else "") + code.lower().replace(".", "_") + "_" + field
                 unit = {"close": "index_points", "pe": "ratio", "pb": "ratio",
                         "total_mv": "CNY_10000", "float_mv": "CNY_10000"}.get(field)
                 unit = unit or ({"vol": "shares_10000", "amount": "CNY_10000"} if api == "sw_daily"
                                 else {"vol": "hands", "amount": "CNY_thousands"})[field]
-                if api == 'us_daily_adj':
+                if api in {'us_daily_adj', 'yfinance_history'}:
                     unit = {'close': 'adjusted_USD_per_share', 'vol': 'shares', 'amount': 'USD'}[field]
-                expected = {"source": "TUSHARE_PRO", "path": api+"/"+code+"/"+field, "dataType": "number",
+                expected = {"source": "YAHOO_YFINANCE" if api == "yfinance_history" else "TUSHARE_PRO", "path": api+"/"+code+"/"+field, "dataType": "number",
                             "unit": unit, "availabilityPolicy": "point_in_time_asof", "availableDateColumn": alias+"__available_date"}
                 require(mappings.get(alias) == expected, "Context mapping differs from source")
         root.update(b"]")

@@ -38,7 +38,7 @@ def test_only_published_cn_indices_become_context_factors():
             assert all(field in FIELDS for field in factor['requiredFields'])
         else:
             assert 'factorId' not in item
-    assert len(REGISTRY['items']) == len(ready)+6+30
+    assert len(REGISTRY['items']) == len(ready)+6+60
     assert catalog['industrySources'] == SOURCES
 
 
@@ -48,7 +48,9 @@ def test_etf_proxy_metadata_never_masquerades_as_history_or_exact_classification
     for proxy in SOURCES['proxies']:
         assert proxy['sourceKind'] == 'etf_proxy' and proxy['isOfficialIndex'] is False
         assert proxy['mappingKind'] == 'research_proxy_not_equivalent'
-        assert proxy['historyStatus'] == 'adapter_supported_history_unverified'
+        assert proxy['historyStatus'] == ('adapter_supported_requires_observations' if proxy['symbol'] in {'XSD','XLK'} else 'adapter_supported_history_unverified')
+        assert proxy['provider'] == 'YAHOO_YFINANCE'
+        assert proxy['factorId'].startswith('context_yf_')
         assert 'corporate_actions' in proxy['requiredData'] and 'asof_timestamp' in proxy['requiredData']
         assert any(source['ts_code'] == proxy['symbol'] and source['api'] == 'us_daily_adj' for source in REGISTRY['items'])
         for identity in proxy['classificationIds']:
@@ -81,6 +83,7 @@ def test_current_provider_identity_overrides_retired_document_code():
 
 def test_empty_us_probe_does_not_promote_all_etf_adapters_to_ready():
     xsd = next(proxy for proxy in SOURCES['proxies'] if proxy['symbol'] == 'XSD')
-    assert xsd['lastProbe']['outcome'] == 'empty_sample' and xsd['lastProbe']['rowCount'] == 0
+    assert xsd['lastProbe']['api'] == 'yfinance_history' and xsd['lastProbe']['rowCount'] == 9
+    assert all(probe['rowCount'] == 0 for probe in SOURCES['historyProbes'] if probe['api'] == 'us_daily_adj')
     assert all(factor.get('historyStatus') == 'adapter_supported_history_unverified'
                for factor in build_catalog()['factors'] if 'us_daily_adj' in factor['sourceDatasets'])
