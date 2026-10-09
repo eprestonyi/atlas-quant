@@ -76,7 +76,7 @@ def build_catalog():
                                automaticPreprocessingRequired=True, database='MKT')
         if 'us_daily_adj' in datasets:
             factors[-1].update(historyStatus='adapter_supported_history_unverified',
-                               historyAvailabilityReason='ETF 历史待验；当前 XSD 样本区间未返回记录。')
+                               historyAvailabilityReason='ETF 历史待验；XSD、XLK 的已检样本未返回记录。')
 
     # Easy users choose a familiar raw concept; the versioned automatic
     # preprocessing policy chooses its economic transform before fold fitting.

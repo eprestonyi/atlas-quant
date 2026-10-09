@@ -97,7 +97,7 @@ def build(sw, gics):
     by_id = {row['id']: row for row in items}
     for proxy in proxies:
         proxy['historyStatus'] = 'adapter_supported_history_unverified'
-        proxy['lastProbe'] = next((probe for probe in probes if probe['api'] == 'us_daily_adj' and probe['symbol'] == proxy['symbol']), None)
+        proxy['lastProbe'] = next((probe for probe in reversed(probes) if probe['api'] == 'us_daily_adj' and probe['symbol'] == proxy['symbol']), None)
         proxy['factorId'] = 'context_'+proxy['symbol'].lower()+'_price'
         proxy['providerApi'] = 'us_daily_adj'
         for identity in proxy['classificationIds']:

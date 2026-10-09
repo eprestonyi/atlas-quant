@@ -42,12 +42,16 @@ The compact generated catalog contains recipe definitions. Its size and counts a
 
 ## Live source samples on 2026-10-09 UTC
 
-After the Portal's isolated wrapper deployment was read back, exactly three additional requests were sent once, without any model fit or retry:
+After the Portal's isolated wrapper deployment was read back, three initial history requests and two distinct diagnostic history requests were sent once each, without any model fit or retry:
 
 | API / symbol | Requested interval | Result |
 | --- | --- | --- |
 | `sw_daily / 801125.SI` 白酒 | 2024-09-02 through 2024-09-13 | HTTP 200, provider code 0, 10 records |
 | `sw_daily / 850818.SI` 半导体设备 | 2024-09-02 through 2024-09-13 | HTTP 200, provider code 0, 10 records |
 | `us_daily_adj / XSD` | 2024-09-03 through 2024-09-13 | HTTP 200, provider code 0, **zero records** |
+| `us_daily_adj / XLK` | 2024-09-03 through 2024-09-13 | HTTP 200, provider code 0, **zero records** |
+| `us_daily_adj / XSD` | 2026-09-14 through 2026-09-25 | HTTP 200, provider code 0, **zero records** |
 
-The empty XSD response proves neither a permission denial nor ETF support. All 30 US ETF adapters remain `adapter_supported_history_unverified` in the library; their identities and adapter implementation are available, but they are not advertised as researched or connected histories. The two nonempty China samples do not establish all-symbol/all-date coverage. `data/industry-history-probes.json` preserves these exact scopes, statuses and wire hashes; private evidence retains every raw response. Including the two classification reads, this cycle consumed five provider requests and zero model fits.
+The empty XSD and XLK responses prove neither a permission denial nor ETF support. All 30 US ETF adapters remain `adapter_supported_history_unverified` in the library; their identities and adapter implementation are available, but they are not advertised as researched or connected histories. The two nonempty China samples do not establish all-symbol/all-date coverage. `data/industry-history-probes.json` preserves these exact scopes, statuses and wire hashes; private evidence retains every raw response. Including the two classification reads, this cycle consumed seven provider requests and zero model fits.
+
+The official `us_daily` and `us_daily_adj` documents describe stocks and bare ticker symbols, without explicitly documenting ETF coverage. Testing a second ETF and a recent interval did not produce a positive observation; no unsupported ticker suffix or undocumented endpoint was guessed.

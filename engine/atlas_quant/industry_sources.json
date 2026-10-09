@@ -15791,7 +15791,22 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
-      "lastProbe": null,
+      "lastProbe": {
+        "api": "us_daily_adj",
+        "symbol": "XLK",
+        "params": {
+          "end_date": "20240913",
+          "start_date": "20240903",
+          "ts_code": "XLK"
+        },
+        "observedAt": "2026-10-09T20:08:04.936118+00:00",
+        "responseSha256": "1cc2daca954522da5a0c342eb77b02572099582b47b47009ad42836f01129422",
+        "httpStatus": 200,
+        "providerCode": 0,
+        "rowCount": 0,
+        "outcome": "empty_sample",
+        "requests": 1
+      },
       "factorId": "context_xlk_price",
       "providerApi": "us_daily_adj"
     },
@@ -16308,11 +16323,11 @@
         "api": "us_daily_adj",
         "symbol": "XSD",
         "params": {
-          "end_date": "20240913",
-          "start_date": "20240903",
+          "end_date": "20260925",
+          "start_date": "20260914",
           "ts_code": "XSD"
         },
-        "observedAt": "2026-10-09T20:04:38.130637+00:00",
+        "observedAt": "2026-10-09T20:08:06.454896+00:00",
         "responseSha256": "1cc2daca954522da5a0c342eb77b02572099582b47b47009ad42836f01129422",
         "httpStatus": 200,
         "providerCode": 0,
@@ -16456,6 +16471,38 @@
         "ts_code": "XSD"
       },
       "observedAt": "2026-10-09T20:04:38.130637+00:00",
+      "responseSha256": "1cc2daca954522da5a0c342eb77b02572099582b47b47009ad42836f01129422",
+      "httpStatus": 200,
+      "providerCode": 0,
+      "rowCount": 0,
+      "outcome": "empty_sample",
+      "requests": 1
+    },
+    {
+      "api": "us_daily_adj",
+      "symbol": "XLK",
+      "params": {
+        "end_date": "20240913",
+        "start_date": "20240903",
+        "ts_code": "XLK"
+      },
+      "observedAt": "2026-10-09T20:08:04.936118+00:00",
+      "responseSha256": "1cc2daca954522da5a0c342eb77b02572099582b47b47009ad42836f01129422",
+      "httpStatus": 200,
+      "providerCode": 0,
+      "rowCount": 0,
+      "outcome": "empty_sample",
+      "requests": 1
+    },
+    {
+      "api": "us_daily_adj",
+      "symbol": "XSD",
+      "params": {
+        "end_date": "20260925",
+        "start_date": "20260914",
+        "ts_code": "XSD"
+      },
+      "observedAt": "2026-10-09T20:08:06.454896+00:00",
       "responseSha256": "1cc2daca954522da5a0c342eb77b02572099582b47b47009ad42836f01129422",
       "httpStatus": 200,
       "providerCode": 0,
