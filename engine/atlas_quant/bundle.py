@@ -448,7 +448,7 @@ class BundleReader:
             if h.hexdigest() != document["sha256"]:
                 fail("BUNDLE_INTEGRITY", "文档不是原v1规范数值与键顺序编码。")
         if 'snapshotContextSources' in self.collections:
-            from .context_sources import source_clock
+            from .context_sources import source_clock, summarize_context_source
             report = document_skeleton(self.manifest, 'report')['provenance']
             snapshot = document_skeleton(self.manifest, 'snapshot')['provenance']
             summaries = report.get('contextSources')
@@ -466,8 +466,7 @@ class BundleReader:
                 if (not isinstance(source.get('records'), list)
                         or source.get('sha256') != sha(encode(source['records']))):
                     fail('BUNDLE_INTEGRITY', '独立指数来源记录哈希不一致。')
-                summary = {key: source.get(key) for key in ('api', 'params', 'fields', 'sha256')}
-                summary['rowCount'] = len(source['records'])
+                summary = summarize_context_source(source)
                 if summary != summaries[index]:
                     fail('BUNDLE_INTEGRITY', '独立指数来源摘要与冻结记录不一致。')
             root.update(b']')

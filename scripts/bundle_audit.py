@@ -242,6 +242,9 @@ class BundleAudit:
                     and source["sha256"] == sha(canonical(records)), "Context source records hash/count mismatch")
             summary = {k: source[k] for k in ("api", "params", "fields", "sha256")}
             summary["rowCount"] = len(records)
+            if api == 'yfinance_history':
+                summary.update(providerDetails=source['providerDetails'], historicalRevisionVerified=False,
+                               observedRange={'start': records[0]['trade_date'], 'end': records[-1]['trade_date']})
             require(summary == summaries[index], "Context source summary differs from frozen source")
             if index:
                 root.update(b",")

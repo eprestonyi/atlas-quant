@@ -51,7 +51,7 @@ export function yahooContextBundleFixture({mutate=null}={}) {
     source.providerDetails={provider:'YAHOO_YFINANCE',libraryVersion:'1.7.0',retrievedAt:'2026-10-10T00:00:00Z',currency:'USD',exchangeTimezoneName:'America/New_York',instrumentType:'ETF',libraryCalls:1,httpReceipts:[{host:'query2.finance.yahoo.com',path:'/v8/finance/chart/XSD',status:200,bytes:123,sha256:'a'.repeat(64)}]};
     const sources=[source],clock={contextSourceRoot:hash(canonical(sources)),contextScope:'named_market_series_asof_broadcast_by_date',contextObservationClock:'source_session_publication_before_cn_origin'};
     Object.assign(inputs.snapshot.provenance,clock,{contextSources:sources});
-    Object.assign(inputs.report.provenance,clock,{contextSources:sources.map(({api,params,fields,sha256,records})=>({api,params,fields,sha256,rowCount:records.length}))});
+    Object.assign(inputs.report.provenance,clock,{contextSources:sources.map(({api,params,fields,sha256,records,providerDetails})=>({api,params,fields,sha256,rowCount:records.length,providerDetails,historicalRevisionVerified:false,observedRange:{start:records[0].trade_date,end:records.at(-1).trade_date}}))});
     if(mutate)mutate(inputs);
   }});
 }

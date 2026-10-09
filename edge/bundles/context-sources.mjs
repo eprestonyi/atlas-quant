@@ -21,7 +21,7 @@ const validDate = value => {
 };
 
 function summary(value) {
-  exact(value, summaryKeys); exact(value.params, ['ts_code','start_date','end_date']);
+  exact(value, [...summaryKeys,...(value.api==='yfinance_history'?['providerDetails','historicalRevisionVerified','observedRange']:[])]); exact(value.params, ['ts_code','start_date','end_date']);
   if (!registry.items.some(item=>item.api===value.api && item.ts_code===value.params.ts_code)
       || !validDate(value.params.start_date) || !validDate(value.params.end_date)
       || value.params.start_date > value.params.end_date || typeof value.sha256!=='string' || !HASH.test(value.sha256)
@@ -33,6 +33,12 @@ function summary(value) {
   if (fields.some(field=>!valid.includes(field)) || !same(fields,[...new Set(fields)].sort())
       || (value.api==='us_daily_adj' && fields.includes('close') && !fields.includes('adj_factor'))
       || (value.api==='yfinance_history' && fields.includes('close') && !['adj_close','dividends','stock_splits'].every(field=>fields.includes(field)))) fail();
+  if(value.api==='yfinance_history') {
+    validateYahooDetails(value.providerDetails); exact(value.observedRange,['start','end']);
+    if(value.historicalRevisionVerified!==false||!validDate(value.observedRange.start)||!validDate(value.observedRange.end)
+      ||value.observedRange.start<value.params.start_date||value.observedRange.end>value.params.end_date
+      ||value.observedRange.start>value.observedRange.end) fail();
+  }
   return value;
 }
 
@@ -106,7 +112,9 @@ export async function validateContextChunk(text, rows, start, summaries) {
     if(row.api==='yfinance_history') validateYahooDetails(row.providerDetails);
     if(!Array.isArray(row.records) || row.classification!=='PARSED_PROVIDER_RESPONSE'
        || row.notWireBytes!==true || row.historicalRevisionVerified!==false) fail();
-    const current = summary(Object.fromEntries(summaryKeys.map(key=>[key,key==='rowCount'?row.records.length:row[key]])));
+    const current = summary({...Object.fromEntries(summaryKeys.map(key=>[key,key==='rowCount'?row.records.length:row[key]])),
+      ...(row.api==='yfinance_history'?{providerDetails:row.providerDetails,historicalRevisionVerified:false,
+        observedRange:{start:row.records[0]?.trade_date,end:row.records.at(-1)?.trade_date}}:{})});
     if(!same(current,summaries[start+i])) fail();
     let previous='';
     for(const record of row.records) {

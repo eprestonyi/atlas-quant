@@ -112,3 +112,18 @@ test('Yahoo source has a separate frozen API, direct adjusted close and bounded 
     await assert.rejects(validateContextChunk(canonical(changed),changed,0,p.metadata.report.provenance.contextSources));
   }
 });
+
+test('Yahoo report summary must match frozen metadata and actual first/last records',async()=>{
+  const {yahooContextBundleFixture}=await import('./fixtures/context-bundle-fixture.mjs');
+  for(const mutate of [
+    i=>i.report.provenance.contextSources[0].providerDetails.libraryVersion='changed',
+    i=>i.report.provenance.contextSources[0].observedRange.end='20150102',
+    i=>i.report.provenance.contextSources[0].historicalRevisionVerified=true,
+  ]) {
+    const f=yahooContextBundleFixture({mutate});
+    await assert.rejects(async()=>{
+      const p=await validateManifest(f.manifestText,f.bundleId),raw=f.chunks.get('snapshotContextSources:0');
+      await validateContextChunk(raw,JSON.parse(raw),0,p.metadata.report.provenance.contextSources);
+    });
+  }
+});

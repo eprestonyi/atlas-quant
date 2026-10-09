@@ -117,9 +117,16 @@ def summarize_context_provenance(provenance):
     """Report metadata only; the unchanged full sources stay in the snapshot."""
     if 'contextSources' not in provenance:
         return provenance
-    return {**provenance, 'contextSources': [
-        {key: source[key] for key in ('api', 'params', 'fields', 'sha256')}
-        | {'rowCount': len(source['records'])} for source in provenance['contextSources']]}
+    return {**provenance, 'contextSources': [summarize_context_source(source) for source in provenance['contextSources']]}
+
+
+def summarize_context_source(source):
+    summary = {key: source[key] for key in ('api', 'params', 'fields', 'sha256')}
+    summary['rowCount'] = len(source['records'])
+    if source['api'] == 'yfinance_history':
+        summary.update(providerDetails=copy.deepcopy(source['providerDetails']), historicalRevisionVerified=False,
+                       observedRange={'start': source['records'][0]['trade_date'], 'end': source['records'][-1]['trade_date']})
+    return summary
 
 
 def validate_context_sources(frame, provenance, aliases, dates, start, end):

@@ -77,6 +77,23 @@ def parse_history(code, frame, metadata, start, end):
     return pd.DataFrame(records)
 
 
+class _FreshHistoryData:
+    """Delegate one ticker's cached reads to its real transport.
+
+    yfinance's singleton cache survives sessions and would otherwise return
+    an earlier response without this capture's receipts. Do not clear or alter
+    the global cache, and do not relabel a cache hit as a new acquisition.
+    """
+    def __init__(self, data):
+        self.data = data
+
+    def cache_get(self, *args, **kwargs):
+        return self.data.get(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self.data, name)
+
+
 def history(params, evidence_dir=None):
     """Exactly one library history call; bounded HTTP including bootstrap calls.
 
@@ -127,6 +144,7 @@ def history(params, evidence_dir=None):
     try:
         with BoundedSession(impersonate='chrome') as session:
             ticker = yf.Ticker(code, session=session)
+            ticker._data = _FreshHistoryData(ticker._data)
             frame = ticker.history(start=datetime.strptime(start, '%Y%m%d').strftime('%Y-%m-%d'),
                                    end=(datetime.strptime(end, '%Y%m%d')+timedelta(days=1)).strftime('%Y-%m-%d'),
                                    timeout=15, **OPTIONS)

@@ -103,7 +103,7 @@ def test_library_call_uses_exclusive_end_and_no_adjustment_repair_or_info(monkey
         return SimpleNamespace(content=b'{}',status_code=200)
     monkeypatch.setattr(Session,'request',request)
     class Ticker:
-        def __init__(self,code,session): self.session=session;self._price_history=SimpleNamespace(_history_metadata=metadata())
+        def __init__(self,code,session): self.session=session;self._data=SimpleNamespace();self._price_history=SimpleNamespace(_history_metadata=metadata())
         def history(self,**kwargs):
             calls.append(kwargs)
             self.session.request('GET','https://fc.yahoo.com')
@@ -127,7 +127,7 @@ def test_http_calls_bounded_without_provider_fallback(monkeypatch,case):
         return SimpleNamespace(content=b'{}',status_code=429 if case=='error_replay' else 200)
     monkeypatch.setattr(Session,'request',request)
     class Ticker:
-        def __init__(self,code,session): self.session=session
+        def __init__(self,code,session): self.session=session;self._data=SimpleNamespace()
         def history(self,**kwargs):
             for i in range(9):
                 self.session.request('GET','https://bad.invalid/' if case=='target' else 'https://query2.finance.yahoo.com/v8/finance/chart/XSD')
