@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 SCHEMA = "atlas-model-function/1"
+AUTOMATIC_FUNCTION_SCHEMA = "atlas-model-function/2"
 HASH_ALGORITHM = "sha256-canonical-f64-json/1"
 MAX_BYTES = 2 * 1024 * 1024
 MAX_FEATURES = 128
@@ -80,7 +81,7 @@ def export_function(model, training, strategy):
     else:
         pipe = model.predictor
         fitted = pipe.named_steps["model"]
-        transforms = {"imputeMedian": pipe.named_steps["impute"].statistics_.tolist(),
+        transforms = {"imputeMedian": model.audit["imputerMedian"],
                       "winsorLower": model.audit.get("winsorLower"), "winsorUpper": model.audit.get("winsorUpper"),
                       "scaleMean": model.audit.get("scalerMean"), "scaleScale": model.audit.get("scalerScale")}
         if hasattr(fitted, "coef_"):
@@ -104,7 +105,15 @@ def export_function(model, training, strategy):
                 outputs.append({"baseline": float(output._baseline_prediction[0, 0]), "trees": trees})
             estimator = {"kind": "histogram_trees", "nodeFields": ["value", "feature", "threshold", "left", "right", "leaf", "missingLeft"],
                          "thresholdRule": "left_if_less_equal", "leafValuesIncludeLearningRate": True, "outputs": outputs}
-    value = {"schema": SCHEMA, "hashAlgorithm": HASH_ALGORITHM, "inputSchema": [{"name": c, "type": "finite_number_or_null"} for c in model.columns],
+    automatic = "automatic" in strategy["preprocess"]
+    if automatic:
+        from .preprocessing import automatic_metadata
+        expected = automatic_metadata(strategy)
+        if model.audit.get("automaticPreprocessing") != expected:
+            _bad("fitted feature construction does not match the declared protocol")
+        if not isinstance(model.predictor, np.ndarray) and strategy["preprocess"]["standardize"] and model.audit.get("scalerMethod") != "median_iqr":
+            _bad("automatic function requires a fitted median/IQR scaler")
+    value = {"schema": AUTOMATIC_FUNCTION_SCHEMA if automatic else SCHEMA, "hashAlgorithm": HASH_ALGORITHM, "inputSchema": [{"name": c, "type": "finite_number_or_null"} for c in model.columns],
              "transforms": transforms, "estimator": estimator,
              "featureConstruction": {"schema": "origin-state-features/1", "family": strategy["model"]["family"],
                  "factors": copy.deepcopy(strategy["factors"]), "preprocess": copy.deepcopy(strategy["preprocess"]),
@@ -120,6 +129,9 @@ def export_function(model, training, strategy):
              "provenance": {"estimator": model.spec["estimator"], "parameters": model.spec["params"], "sklearnVersion": sklearn.__version__},
              "editPolicy": {"allowed": ["estimator_numeric_parameters"], "arbitraryCode": False, "editedEvidenceStatus": "UNVALIDATED_USER_EDIT"},
              "lineage": {"parentArtifactId": None, "status": "fitted"}}
+    if automatic:
+        value["featureConstruction"]["schema"] = "origin-state-features/2"
+        value["featureConstruction"]["automatic"] = copy.deepcopy(model.audit["automaticPreprocessing"])
     result = _seal(value)
     validate_function(result)
     return result
@@ -160,8 +172,9 @@ def _metadata(a):
     _date(scope["researchStart"]); _date(scope["researchEnd"])
     if scope["researchStart"] >= scope["researchEnd"]:
         _bad("invalid research interval")
-    _keys(construction, ("schema", "family", "factors", "preprocess", "targetSpecification", "quantityPolicy"))
-    if construction["schema"] != "origin-state-features/1" or construction["family"] != scope["family"] or construction["quantityPolicy"] != "origin_specific_frozen_quantities":
+    automatic = a["schema"] == AUTOMATIC_FUNCTION_SCHEMA
+    _keys(construction, ("schema", "family", "factors", "preprocess", "targetSpecification", "quantityPolicy", *(("automatic",) if automatic else ())))
+    if construction["schema"] != ("origin-state-features/2" if automatic else "origin-state-features/1") or construction["family"] != scope["family"] or construction["quantityPolicy"] != "origin_specific_frozen_quantities":
         _bad("invalid feature construction")
     factors = construction["factors"]
     if not isinstance(factors, list) or len(factors) > 32:
@@ -173,9 +186,16 @@ def _metadata(a):
             _bad("invalid factor metadata")
         factor_ids.add(factor["id"])
     pre = construction["preprocess"]
-    _keys(pre, ("winsorize", "standardize", "decorrelation", "correlationThreshold"))
+    _keys(pre, ("winsorize", "standardize", "decorrelation", "correlationThreshold", *(("automatic",) if automatic else ())))
     if type(pre["winsorize"]) is not bool or type(pre["standardize"]) is not bool or pre["decorrelation"] not in ("none", "drop_correlated") or not _numeric(pre["correlationThreshold"]) or not .5 <= pre["correlationThreshold"] <= 1:
         _bad("invalid preprocessing metadata")
+    if automatic:
+        from .preprocessing import validate_automatic, validate_metadata
+        try:
+            validate_automatic(pre["automatic"])
+            validate_metadata(construction["automatic"], factors)
+        except ValueError as exc:
+            _bad(str(exc))
     target = construction["targetSpecification"]
     _keys(target, ("kind", "horizonSessions"), ("basket",))
     if target["kind"] != scope["targetKind"] or target["horizonSessions"] != scope["horizonSessions"]:
@@ -229,7 +249,7 @@ def validate_function(artifact):
         valid_hash = artifact.get("artifactId") == function_digest({k: v for k, v in artifact.items() if k != "artifactId"})
     except (TypeError, ValueError, OverflowError, RecursionError):
         _bad("non-finite, recursive or non-JSON object")
-    if len(raw) > MAX_BYTES or artifact.get("schema") != SCHEMA or artifact.get("hashAlgorithm") != HASH_ALGORITHM or not valid_hash:
+    if len(raw) > MAX_BYTES or artifact.get("schema") not in (SCHEMA, AUTOMATIC_FUNCTION_SCHEMA) or artifact.get("hashAlgorithm") != HASH_ALGORITHM or not valid_hash:
         _bad("schema, content hash or size mismatch")
     expected = {"schema", "hashAlgorithm", "inputSchema", "featureConstruction", "transforms", "estimator", "training", "scope", "outputs", "identity", "provenance", "editPolicy", "lineage", "artifactId"}
     if set(artifact) != expected or artifact["outputs"] != OUTPUTS:
@@ -251,6 +271,11 @@ def validate_function(artifact):
         names.append(item["name"])
     if len(set(names)) != len(names):
         _bad("duplicate feature names")
+    if artifact["schema"] == AUTOMATIC_FUNCTION_SCHEMA:
+        from .preprocessing import feature_names
+        allowed = feature_names(artifact["scope"]["family"], artifact["featureConstruction"]["automatic"])
+        if set(names) - allowed:
+            _bad("input is not a declared constructed feature")
     n = len(names)
     t = artifact["transforms"]
     if not isinstance(t, dict) or set(t) != {"imputeMedian", "winsorLower", "winsorUpper", "scaleMean", "scaleScale"}:
@@ -312,6 +337,10 @@ def validate_function(artifact):
         _bad("constant function cannot carry ignored transforms")
     if e["kind"] != "constant" and t["imputeMedian"] is None:
         _bad("trained median required")
+    if artifact["schema"] == AUTOMATIC_FUNCTION_SCHEMA and e["kind"] != "constant":
+        pre = artifact["featureConstruction"]["preprocess"]
+        if (t["winsorLower"] is not None) != pre["winsorize"] or (t["scaleMean"] is not None) != pre["standardize"]:
+            _bad("frozen transforms disagree with automatic preprocessing controls")
     return artifact
 
 

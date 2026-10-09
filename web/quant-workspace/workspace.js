@@ -4,6 +4,7 @@ import { SOURCE_LABELS, scopeKey, activeBinding, bindingFields, restoreBindings,
 import { createMarketPreparation } from './market/preparation.js';
 import { mechanismAdmission } from './mechanism-admission.js';
 import { createModuleHub } from './module-hub.js';
+import { firstIncompleteStep, stepErrors, isPairTarget, pairTarget, easyTargetScopeMismatch, canUseIndividualTarget, easyTargetScopeMessage } from './research-steps.js';
 import { createDatasetWorkspace } from './datasets/workspace.js';
 // Statistical research routes and private-workspace orchestration; numerical work stays in the engine.
 import {
@@ -44,9 +45,13 @@ window.AtlasQuantV4 = {
       typeof matchMedia === 'function'
         ? matchMedia('(min-width: 1250px)')
         : null;
+    let firstDraft = false;
+    try { firstDraft = !localStorage.getItem('atlas-quant-statistical-draft-v2') && !localStorage.getItem('atlas-quant-draft-v1'); } catch {}
     const ui = {
       ready: false,
+      firstDraft,
       pageErrors: [],
+      pageErrorInputs: null,
       errors: [],
       experiments: [],
       experimentsLoaded: false,
@@ -127,6 +132,26 @@ window.AtlasQuantV4 = {
     const goto = (id) => {
       location.hash = route(id);
     };
+    const stepOptions = () => ({ easy: !isStudio(), dataSource: s.dataSource, dataset: s.dataset, session: s.session });
+    function setPageErrors(errors) {
+      ui.pageErrors = [...new Set(errors)];
+      ui.pageErrorInputs = { strategy: JSON.stringify(s.strategy), source: s.dataSource, dataset: s.dataset };
+    }
+    function showStepErrors(id, errors) {
+      setPageErrors(errors);
+      s.quantStep = id;
+      window.history.replaceState(null, '', '#' + route(id));
+      render();
+      const error = document.querySelector('#sq-page-errors');
+      error?.focus({ preventScroll: true });
+      error?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    }
+    function admitStep(destination) {
+      const incomplete = firstIncompleteStep(s.strategy, destination, stepOptions());
+      if (!incomplete) return true;
+      showStepErrors(incomplete.step, incomplete.errors);
+      return false;
+    }
     const targetLabel = () =>
       s.strategy.target?.kind === 'frozen_basket'
         ? '冻结数量篮子'
@@ -177,12 +202,17 @@ window.AtlasQuantV4 = {
       }</div>`;
     }
     function page() {
+      const previous = ui.pageErrorInputs;
+      if (ui.pageErrors.length && previous && (previous.strategy !== JSON.stringify(s.strategy) || previous.source !== s.dataSource || previous.dataset !== s.dataset)) {
+        ui.pageErrors = [];
+        ui.pageErrorInputs = null;
+      }
       const st = step(),
         index = STEPS.findIndex((x) => x.id === st),
         meta = STEPS[index];
       if (legacy())
         return `${heading('HISTORICAL CONFIGURATION', '这是历史版本研究', '原始配置和报告保持其当时的语义。新研究采用独立预测协议。', button('new', '创建新的预测研究', { primary: true, icon: 'plus' }))}<div class="sq-legacy">${C.legacy.renderScreen('code')}</div>`;
-      return `${heading(`${isStudio() ? 'QUANT STUDIO' : 'EASY MODE'} / ${String(index + 1).padStart(2, '0')}`, meta.name, '', button('save', '保存', { icon: 'save', disabled: s.saving }))}${researchName()}${ui.pageErrors.length ? `<div id="sq-page-errors" tabindex="-1" role="alert">${note(ui.pageErrors.join('；'), 'warning')}</div>` : ''}<div class="sq-progress"><span style="width:${((index + 1) / STEPS.length) * 100}%"></span></div><div class="sq-research-layout ${isStudio() ? '' : 'sq-focused-layout'}"><div class="sq-research-body">${{ universe: universePage, state: statePage, settings: settingsPage, model: modelPage, report: reviewPage }[st]()}<div class="sq-page-navigation">${index ? button('step', `上一步 · ${STEPS[index - 1].short}`, { id: STEPS[index - 1].id }) : `<a class="sq-button" href="#${route('statistical')}">统计量化交易</a>`}<span>STEP ${index + 1} OF ${STEPS.length}</span>${index < STEPS.length - 1 ? button('step', `下一步 · ${STEPS[index + 1].short}`, { id: STEPS[index + 1].id, direction: 'next', primary: true, icon: 'arrow' }) : button('run', s.submitting ? '正在提交' : '拟合并生成 F 模型', { primary: true, icon: 'play', disabled: s.submitting })}</div></div>${summary()}</div>`;
+      return `${heading(`${isStudio() ? 'QUANT STUDIO' : 'EASY MODE'} / ${String(index + 1).padStart(2, '0')}`, meta.name, '', button('save', '保存', { icon: 'save', disabled: s.saving }))}${researchName()}${ui.pageErrors.length ? `<div id="sq-page-errors" tabindex="-1" role="alert">${note(ui.pageErrors.join('；'), 'warning')}${!isStudio() && (st === 'state' || ui.pageErrors.some(message => message.includes('Studio'))) ? `<a class="sq-button small" href="#${route(st, true)}">在 Studio 配置</a>` : ''}</div>` : ''}<div class="sq-progress"><span style="width:${((index + 1) / STEPS.length) * 100}%"></span></div><div class="sq-research-layout ${isStudio() ? '' : 'sq-focused-layout'}"><div class="sq-research-body">${{ universe: universePage, state: statePage, settings: settingsPage, model: modelPage, report: reviewPage }[st]()}<div class="sq-page-navigation">${index ? button('step', `上一步 · ${STEPS[index - 1].short}`, { id: STEPS[index - 1].id }) : `<a class="sq-button" href="#${route('statistical')}">统计量化交易</a>`}<span>STEP ${index + 1} OF ${STEPS.length}</span>${index < STEPS.length - 1 ? button('step', `下一步 · ${STEPS[index + 1].short}`, { id: STEPS[index + 1].id, direction: 'next', primary: true, icon: 'arrow' }) : button('run', s.submitting ? '正在提交' : '拟合并生成 F 模型', { primary: true, icon: 'play', disabled: s.submitting })}</div></div>${summary()}</div>`;
     }
     const boundDataset = () =>
       s.dataSource === 'ready_dataset' && s.datasetBinding;
@@ -267,7 +297,7 @@ window.AtlasQuantV4 = {
     function statePage() {
       if (boundDataset()) return panel('因子库', `<div class="ds-members">${s.datasetBinding.selectedStateIds.map((id) => `<label class="fin-checkbox"><input type="checkbox" data-sq-dataset-state="${e(id)}" ${s.strategy.factors.some((f) => f.expression === id) ? 'checked' : ''}>${e(s.datasetBinding.stateDefinitions?.find((x) => x.id === id)?.name || s.strategy.factors.find((f) => f.id === id)?.name || id)}</label>`).join('')}</div>`);
       const factors = s.strategy.factors;
-      const selected = `<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>已选因子 <span>${factors.length} / 32</span></h2></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(C.findFactor(f.id)?.name || f.name || f.id)}</strong>${isStudio() ? `<code>${e(f.expression)}</code>` : ''}</div><label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option><option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>对冲暴露</option><option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入</option></select></label>${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('')}<div class="sq-drop-caption">${i('plus')}拖入因子</div></div>`;
+      const selected = `<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>已选因子 <span>${factors.length} / 32</span></h2></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(C.findFactor(f.id)?.name || f.name || f.id)}</strong>${isStudio() ? `<code>${e(f.expression)}</code>` : ''}</div>${isStudio() ? `<label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option><option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>对冲暴露</option><option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入</option></select></label>` : ''}${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('')}<div class="sq-drop-caption">${i('plus')}拖入因子</div></div>`;
       const tabs = [['catalog', '因子库'], ['builder', '构建因子'], ...(isStudio() ? [['modules', '状态模块'], ['fields', '数据库字段']] : [])];
       const active = tabs.some(([id]) => id === ui.featureTab) ? ui.featureTab : 'catalog';
       const library = active === 'modules' ? catalog.view('state') : `<div class="sq-legacy sq-factor-library">${active === 'builder' ? C.legacy.builder({ compact: true }) : active === 'fields' ? C.legacy.fieldBrowser() : C.legacy.catalogBrowser({ compact: true })}</div>`;
@@ -292,11 +322,19 @@ window.AtlasQuantV4 = {
     }
     function targetPage() {
       const t = s.strategy.target;
-      const choices = boundDataset() ? '' : `<div class="sq-choice-grid">${[
+      const choices = boundDataset() || !isStudio() ? '' : `<div class="sq-choice-grid">${[
         ['asset_price', '单资产价格'], ['frozen_basket', '冻结数量篮子'],
       ].map(([id, name]) => `<button class="sq-choice ${t.kind === id ? 'selected' : ''}" data-sq="target-kind" data-id="${id}" aria-pressed="${t.kind === id}">${i(id === 'asset_price' ? 'chart' : 'layers')}<strong>${name}</strong></button>`).join('')}</div>`;
-      return panel('研究目标', `${choices}<div class="sq-form-grid">${input('预测期限', 'target.horizonSessions', { min: 1, max: 60, unit: '交易日' })}${input('观察间隔', 'research.observationDays', { min: 1, max: 60, unit: '交易日' })}</div>`) +
-        (t.kind === 'frozen_basket' ? basketDefinition() : '');
+      const objects = !isStudio() && !boundDataset()
+        ? s.strategy.model.family === 'pair_reversion' ? pairObjects()
+          : t.kind === 'frozen_basket' ? `<div class="sq-data-binding"><span>研究对象：${e((t.basket?.symbols || []).join('、') || '尚未设置')}</span><a class="sq-button small" href="#${route('model', true)}">在 Studio 调整</a></div>${easyTargetScopeMismatch(s.strategy) ? `<div class="sq-target-repair" role="status">${note(easyTargetScopeMessage(s.strategy), 'warning')}<div class="sq-actions">${canUseIndividualTarget(s.strategy) ? button('repair-asset-target', '改为逐只研究当前股票', { small: true }) : ''}<a class="sq-button small" href="#${route('universe')}">调整筛选，保留原组合</a></div></div>` : ''}` : ''
+        : '';
+      return panel(isStudio() ? '研究目标' : '研究设置', `${choices}${objects}<div class="sq-form-grid">${input('预测期限', 'target.horizonSessions', { min: 1, max: 60, unit: '交易日' })}${input('观察间隔', 'research.observationDays', { min: 1, max: 60, unit: '交易日' })}</div>`) +
+        (isStudio() && t.kind === 'frozen_basket' ? basketDefinition() : '');
+    }
+    function pairObjects() {
+      const selected = isPairTarget(s.strategy) ? s.strategy.target.basket.symbols : [], members = s.strategy.universe.symbols;
+      return `<div class="sq-form-grid sq-pair-objects">${[0, 1].map(index => `<label class="sq-field"><span>配对对象${index + 1}</span><select data-sq-pair-object="${index}" required aria-label="配对对象${index + 1}"><option value="">选择股票</option>${selected[index] && !members.includes(selected[index]) ? `<option value="${e(selected[index])}" selected disabled>${e(selected[index])} · 已移出筛选范围</option>` : ''}${members.map(code => `<option value="${e(code)}" ${selected[index] === code ? 'selected' : ''} ${selected[1-index] === code ? 'disabled' : ''}>${e(code)}</option>`).join('')}</select></label>`).join('')}</div>`;
     }
     function basketDefinition() {
       const b = s.strategy.target.basket || {};
@@ -719,7 +757,7 @@ window.AtlasQuantV4 = {
       prepareFactorProtocol();
       const errors = [...validateStrategy(s.strategy), ...marketBindingErrors(s), ...financialBindingErrors(s)];
       if (errors.length) {
-        ui.pageErrors = errors;
+        setPageErrors(errors);
         render();
         document.querySelector('#sq-page-errors')?.focus();
         toast(errors[0], true);
@@ -785,11 +823,11 @@ window.AtlasQuantV4 = {
     function prepareFactorProtocol() {
       if (!isStatistical(s.strategy)) return;
       s.strategy.execution.enabled = false;
-      if (!isStudio() && !boundDataset()) s.strategy.model.estimator = 'auto';
     }
     async function run() {
       if (s.submitting) return;
       prepareFactorProtocol();
+      if (!admitStep('report')) return;
       const bindingErrors = [...marketBindingErrors(s, { run: true }), ...financialBindingErrors(s)];
       if (bindingErrors.length) { ui.runError = bindingErrors.join('；'); goto('report'); render(); toast(ui.runError, true); return; }
       if (s.dataSource === 'ready_dataset' && !s.datasetBinding) {
@@ -903,47 +941,11 @@ window.AtlasQuantV4 = {
       toast('已应用模块配置；需要明确填写的成员和数据仍会验证。');
     }
     function currentStepErrors() {
-      const errors = [];
-      const controls = [
-        ...document.querySelectorAll(
-          '.sq-research-body input[data-sq-config],.sq-research-body select[data-sq-config]',
-        ),
-      ];
-      for (const control of controls)
+      const errors = stepErrors(s.strategy, step(), stepOptions());
+      for (const control of document.querySelectorAll('.sq-research-body input[data-sq-config],.sq-research-body select[data-sq-config],.sq-research-body select[data-sq-pair-object]'))
         if (!control.checkValidity())
-          errors.push(
-            `${control.closest('label')?.querySelector('span')?.textContent || '参数'}需要完整填写并符合范围。`,
-          );
-      const st = step(),
-        spec = s.strategy;
-      if (st === 'settings') errors.push(...validateStrategy(spec).filter(x => /研究日期|测试集开始日期|训练窗口|重新拟合间隔|最终报告占比/.test(x)));
-      if (
-        st === 'universe' &&
-        !spec.universe.symbols.length
-      )
-        errors.push('先计算股票筛选条件，完整结果至少需要一个成员。');
-      if (st === 'universe' && spec.universe.selection && spec.universe.subsetPolicy !== 'all')
-        errors.push('请重新计算完整筛选集合；旧版研究子集不会被当作完整结果。');
-      if (st === 'model' && spec.target.kind === 'frozen_basket') {
-        const b = spec.target.basket || {},
-          legs = b.symbols || [];
-        if (b.method === 'pair_ols' && legs.length !== 2)
-          errors.push('请明确选择两条配对篮子腿，再继续模型配置。');
-        if (
-          b.method === 'pca_residual' &&
-          (legs.length < 3 || legs.length > 20)
-        )
-          errors.push('请明确选择 3–20 条 PCA 篮子腿。');
-        if (
-          b.method === 'fixed' &&
-          (!legs.length ||
-            legs.length > 20 ||
-            legs.some((x) => !Number.isFinite(b.quantities?.[x])) ||
-            !legs.some((x) => b.quantities?.[x] !== 0))
-        )
-          errors.push('请为 1–20 条固定篮子腿填写非全零的有限数量。');
-      }
-      return errors;
+          errors.push(`${control.closest('label')?.querySelector('span')?.textContent || '参数'}需要完整填写并符合范围。`);
+      return [...new Set(errors)];
     }
     async function handle(element) {
       if (element.dataset.sq?.startsWith('market-')) return market.handle(element);
@@ -951,9 +953,18 @@ window.AtlasQuantV4 = {
       if (await catalog.handle(element)) return;
       const action = element.dataset.sq,
         id = element.dataset.id;
+      if (action === 'select-mode') {
+        if (ui.firstDraft && !ui.activeId && !s.strategy.universe.symbols.length && !s.strategy.factors.length && id === 'easy') {
+          s.strategy.preprocess.automatic = { schema: 'auto-factor-preprocess/1' };
+          persistDraft();
+        }
+        ui.firstDraft = false;
+        location.hash = `quant/${id}/universe`;
+      }
       if (action === 'new') {
         C.legacy.flow.reset();
-        s.strategy = defaultStrategy();
+        s.strategy = defaultStrategy({ automatic: !isStudio() });
+        ui.firstDraft = false;
         s.strategyId = null;
         s.strategyVersion = null;
         ui.activeId = null;
@@ -985,15 +996,10 @@ window.AtlasQuantV4 = {
       }
       if (action === 'step') {
         if (element.dataset.direction === 'next') {
-          ui.pageErrors = currentStepErrors();
-          if (ui.pageErrors.length) {
-            render();
-            const error = document.querySelector('#sq-page-errors');
-            error?.focus({ preventScroll: true });
-            error?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
-            return;
-          }
+          const errors = currentStepErrors();
+          if (errors.length) { showStepErrors(step(), errors); return; }
         }
+        if (!admitStep(id)) return;
         ui.pageErrors = [];
         goto(id);
       }
@@ -1053,15 +1059,27 @@ window.AtlasQuantV4 = {
         persistDraft();
         render();
       }
+      if (action === 'repair-asset-target') {
+        if (isStudio() || boundDataset() || !canUseIndividualTarget(s.strategy)) return;
+        s.strategy.target.kind = 'asset_price';
+        delete s.strategy.target.basket;
+        ui.pageErrors = [];
+        ui.pageErrorInputs = null;
+        persistDraft();
+        render();
+        toast('已改为逐只研究当前股票；保存后才会生成新版本。');
+      }
       if (action === 'family') {
         const admission = mechanismStatus(id);
         if (!admission.selectable) { toast(admission.message, true); return; }
+        if (!isStudio() && s.strategy.model.family === 'pair_reversion' && id !== 'pair_reversion') {
+          s.strategy.target.kind = 'asset_price';
+          delete s.strategy.target.basket;
+        }
         s.strategy.model.family = id;
         if (!isStudio()) s.strategy.model.estimator = 'auto';
-        if (id === 'pair_reversion') {
-          s.strategy.target.kind = 'frozen_basket';
-          s.strategy.target.basket = { method: 'pair_ols', symbols: [], formationDays: 126 };
-        }
+        if (id === 'pair_reversion') s.strategy.target = pairTarget(s.strategy, { automatic: !isStudio() });
+        ui.pageErrors = [];
         persistDraft();
         render();
       }
@@ -1166,7 +1184,15 @@ window.AtlasQuantV4 = {
       reports.onChange(element);
       catalog.onChange(element);
       commitInput(element);
-      if (element.id === 'sq-step-picker') goto(element.value);
+      if (element.id === 'sq-step-picker' && admitStep(element.value)) goto(element.value);
+      if (element.dataset.sqPairObject !== undefined) {
+        if (!isPairTarget(s.strategy)) s.strategy.target = pairTarget(s.strategy);
+        const previous = s.strategy.target.basket.symbols;
+        s.strategy.target.basket.symbols = [0, 1].map(index => index === Number(element.dataset.sqPairObject) ? element.value : previous[index] || '');
+        ui.pageErrors = [];
+        persistDraft();
+        render();
+      }
       if (element.dataset.sqFactorRole) {
         s.strategy.factors.find(
           (x) => x.id === element.dataset.sqFactorRole,
@@ -1198,6 +1224,7 @@ window.AtlasQuantV4 = {
         setTimeout(render, 0);
     }
     async function routeChanged() {
+      if (s.view === 'quant' && STEPS.some(x => x.id === s.quantStep) && isStatistical(s.strategy) && !admitStep(s.quantStep)) return;
       market.routeChanged();
       ui.pageErrors = [];
       if (s.view === 'quant' && STEPS.some(x => x.id === s.quantStep) && isStatistical(s.strategy)) {

@@ -1,5 +1,6 @@
 """Finite, two-output conditional level-change estimators with train-only transforms."""
 from __future__ import annotations
+import copy
 import warnings
 import numpy as np
 import pandas as pd
@@ -42,7 +43,7 @@ class FittedModel:
         return result
 
 
-def fit(spec, X, y, preprocess):
+def fit(spec, X, y, preprocess, *, automatic_metadata=None, training_dates=None):
     from ..engine import _decorrelate, TrainWinsorizer
     if not len(X) or y.shape != (len(X), 2) or not np.isfinite(y.to_numpy()).all():
         fail("INSUFFICIENT_FORECAST_DATA", "拟合缺少已成熟的双目标样本")
@@ -51,6 +52,15 @@ def fit(spec, X, y, preprocess):
         fail("MISSING_MODEL_DATA", "无有效预测特征")
     audit = {"trainRows": len(X), "featureNames": columns, "decorrelation": decorrelation,
              "estimator": spec["estimator"], "params": spec["params"], "outputs": ["entry_level_change_over_known_gross", "exit_level_change_over_known_gross"]}
+    automatic = "automatic" in preprocess
+    if automatic:
+        from .preprocessing import validate_automatic
+        validate_automatic(preprocess["automatic"])
+        if automatic_metadata is None:
+            fail("MISSING_AUTOMATIC_PREPROCESSING", "自动预处理模型需要冻结的特征构造定义")
+        audit["automaticPreprocessing"] = copy.deepcopy(automatic_metadata)
+    elif automatic_metadata is not None:
+        fail("INVALID_AUTOMATIC_PREPROCESSING", "旧版模型不能混入自动特征构造")
     name = spec["estimator"]
     if name in ("no_change", "historical_drift"):
         value = np.zeros(2) if name == "no_change" else y.mean(axis=0).to_numpy()
@@ -60,11 +70,18 @@ def fit(spec, X, y, preprocess):
         if (X[columns].notna().sum() < 10).any():
             fail("MISSING_MODEL_DATA", "预测特征至少需要10个真实训练观测；不以全缺失值训练")
         steps = []
-        if preprocess["winsorize"]:
-            steps.append(("winsorize", TrainWinsorizer()))
-        steps.append(("impute", SimpleImputer(strategy="median")))
-        if preprocess["standardize"]:
-            steps.append(("scale", StandardScaler()))
+        if automatic:
+            from .fold_preprocessing import AutomaticFoldTransform
+            globals_ = [item["feature"] for item in automatic_metadata["factors"] if item["scope"] == "global"]
+            steps.append(("automatic", AutomaticFoldTransform(columns=columns,
+                global_columns=[column for column in columns if column in globals_], dates=training_dates,
+                winsorize=preprocess["winsorize"], standardize=preprocess["standardize"])))
+        else:
+            if preprocess["winsorize"]:
+                steps.append(("winsorize", TrainWinsorizer()))
+            steps.append(("impute", SimpleImputer(strategy="median")))
+            if preprocess["standardize"]:
+                steps.append(("scale", StandardScaler()))
         if name == "ridge":
             estimator = Ridge(**spec["params"])
         elif name == "elastic_net":
@@ -79,11 +96,21 @@ def fit(spec, X, y, preprocess):
             pipe.fit(X[columns], y.to_numpy())
         if any(issubclass(w.category, ConvergenceWarning) for w in captured):
             fail("MODEL_DID_NOT_CONVERGE", "候选模型未收敛")
-        audit["imputerMedian"] = pipe.named_steps["impute"].statistics_.tolist()
+        if automatic:
+            transformed = pipe.named_steps["automatic"]
+            audit.update(imputerMedian=transformed.statistics_.tolist(),
+                         automaticFitRows=transformed.fit_rows_, automaticObservedRows=transformed.observed_rows_)
+            if transformed.lower_ is not None:
+                audit.update(winsorLower=transformed.lower_.tolist(), winsorUpper=transformed.upper_.tolist())
+            if transformed.center_ is not None:
+                audit.update(scalerMean=transformed.center_.tolist(), scalerScale=transformed.scale_.tolist(), scalerMethod="median_iqr")
+        else:
+            audit["imputerMedian"] = pipe.named_steps["impute"].statistics_.tolist()
         if "winsorize" in pipe.named_steps:
             audit.update(winsorLower=pipe.named_steps["winsorize"].lower_.tolist(), winsorUpper=pipe.named_steps["winsorize"].upper_.tolist())
         if "scale" in pipe.named_steps:
-            audit.update(scalerMean=pipe.named_steps["scale"].mean_.tolist(), scalerScale=pipe.named_steps["scale"].scale_.tolist())
+            scaler = pipe.named_steps["scale"]
+            audit.update(scalerMean=scaler.mean_.tolist(), scalerScale=scaler.scale_.tolist())
         if hasattr(estimator, "coef_"):
             audit["coefficients"] = np.asarray(estimator.coef_).tolist()
             audit["intercepts"] = np.asarray(estimator.intercept_).tolist()

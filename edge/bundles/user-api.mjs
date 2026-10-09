@@ -25,7 +25,7 @@ export function transportView(stage, parsed, runId) {
     hasFrozenInputs: Object.hasOwn(parsed.manifest.documents, 'snapshot'),
     collections: Object.fromEntries(
       [...parsed.collections.values()]
-        .filter((c) => !['snapshotRows', 'snapshotColumns'].includes(c.id))
+        .filter((c) => !['snapshotRows', 'snapshotColumns', 'snapshotContextSources'].includes(c.id))
         .map((c) => [c.id, { total: c.rowCount }])
     ),
     downloadUrl: `/quant/api/runs/${runId}/report/download?bundleId=${stage.bundle_id}`,

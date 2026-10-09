@@ -1,3 +1,5 @@
+import contextRegistry from '../../engine/atlas_quant/context_sources.json' with {type:'json'};
+const contextAliases = new Set(contextRegistry.items.flatMap(s => (s.api === 'sw_daily' ? ['close','vol','amount','pe','pb','total_mv','float_mv'] : ['close','vol','amount']).map(f => 'ext_ctx_'+s.ts_code.toLowerCase().replace('.', '_')+'_'+f)));
 import financialDefinitions from '../financial/definitions.json' with { type: 'json' };
 const financialStateIds = new Set(financialDefinitions.items.map(x => x.id));
 import { ApiError } from '../errors.mjs';
@@ -191,7 +193,8 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
       fail('因子ID须唯一且为ASCII字母数字、下划线或连字符');
     seen.add(id);
     const expression = text(f.expression, '表达式', 500);
-    validateExpression(expression);
+    const expressionFields = validateExpression(expression).fields;
+    if (expressionFields.some(f => f.startsWith('ext_ctx_') && !contextAliases.has(f))) fail('指数因子来源未登记');
     return {
       id,
       expression,
@@ -200,9 +203,12 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
       ...(f.version === undefined ? {} : { version: number(f.version, '因子版本', 1, 1e6, true) })
     };
   });
+  const contextFields = cleanFactors.flatMap(f => validateExpression(f.expression).fields).filter(f => contextAliases.has(f));
+  if (new Set(contextFields.map(f => f.split('_').slice(0, 4).join('_'))).size > 16)
+    fail('一次研究最多使用16个不同指数来源');
   const pre = keys(
     input.preprocess ?? {},
-    ['winsorize', 'standardize', 'decorrelation', 'correlationThreshold'],
+    ['winsorize', 'standardize', 'decorrelation', 'correlationThreshold', 'automatic'],
     '训练预处理'
   );
   const preprocess = {
@@ -215,6 +221,15 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
     ),
     correlationThreshold: number(pre.correlationThreshold ?? 0.9, '相关阈值', 0.5, 1)
   };
+  if (pre.automatic !== undefined) {
+    keys(pre.automatic, ['schema'], '自动因子处理');
+    if (pre.automatic.schema !== 'auto-factor-preprocess/1') fail('自动因子处理版本无效');
+    preprocess.automatic = {schema: 'auto-factor-preprocess/1'};
+    if (cleanFactors.some(f => f.expression.replace(/[\s()]/g, '') === 'raw_close'))
+      fail('自动价格处理请使用复权 close；raw_close 仅供 Studio 显式定义');
+  }
+  if (cleanFactors.some(f => validateExpression(f.expression).fields.some(x => x.startsWith('ext_ctx_'))) && !preprocess.automatic)
+    fail('指数上下文因子需要自动因子处理');
   const t = keys(input.target, ['kind', 'horizonSessions', 'basket'], '预测目标');
   const target = {
     kind: choice(t.kind, ['asset_price', 'frozen_basket'], '目标类型'),

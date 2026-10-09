@@ -144,7 +144,7 @@ def required_fields(expressions) -> set[str]:
     return set().union(*(set(validate_expression(x)["fields"]) for x in expressions))
 
 
-def evaluate_expression(expression: str, frame: pd.DataFrame) -> pd.Series:
+def evaluate_expression(expression: str, frame: pd.DataFrame, *, mask_asset_availability=True) -> pd.Series:
     tree, meta = _parse(expression)
     if not isinstance(frame.index, pd.MultiIndex) or list(frame.index.names) != ["trade_date", "ts_code"]:
         raise FactorError("因子数据索引须为 trade_date / ts_code")
@@ -220,7 +220,7 @@ def evaluate_expression(expression: str, frame: pd.DataFrame) -> pd.Series:
     with np.errstate(all="ignore"):
         result = series(calc(tree.body)).replace([np.inf, -np.inf], np.nan)
     # A missing market session must not generate a trade signal through a lag.
-    return result.where(frame["close"].notna())
+    return result.where(frame["close"].notna()) if mask_asset_availability else result
 
 
 def load_catalog() -> dict:

@@ -13,6 +13,7 @@ from .reporting import diagnostics_summary, trial_summary
 
 def _envelope(strategy, provenance, audit, artifact, panel, dates, execution_only=False):
     from ..engine import _finite_json
+    from ..context_sources import summarize_context_provenance
     metrics, equity, trades, execution = execute(panel, dates, strategy, artifact)
     diagnostics = artifact["diagnostics"]
     positive = diagnostics["metrics"].get("mseImprovement")
@@ -29,7 +30,7 @@ def _envelope(strategy, provenance, audit, artifact, panel, dates, execution_onl
               "strategy": strategy, "research": {"mode": "statistical_quant", "forecastFirst": True,
                   "executionOnly": execution_only, "predictionRefitPerformed": not execution_only,
                   "observationDays": strategy["research"]["observationDays"]},
-              "provenance": {**provenance, **audit}, "forecasts": artifact,
+              "provenance": {**summarize_context_provenance(provenance), **audit}, "forecasts": artifact,
               "validation": diagnostics_summary(diagnostics), "selection": {"winner": diagnostics["selectedModel"]["estimator"],
                   "winnerTrialId": diagnostics["selectedModel"]["id"], "params": diagnostics["selectedModel"]["params"],
                   "metric": "date_balanced_joint_entry_exit_normalized_mse", "trials": trial_summary(diagnostics["finalTrials"]),

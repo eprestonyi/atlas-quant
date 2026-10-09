@@ -43,6 +43,7 @@ def is_external_field(name):
 
 def field_registry():
     from .connectors import FINANCIAL_FIELDS
+    from .context_sources import field_registry as context_fields
     fields = []
     daily = {"open": "复权开盘价", "high": "复权最高价", "low": "复权最低价", "close": "复权收盘价", "raw_close": "原始收盘价", "vol": "成交量", "amount": "成交额", "adj_factor": "复权因子"}
     basics = {"turnover_rate": "换手率", "turnover_rate_f": "自由流通股换手率", "volume_ratio": "量比", "pe": "市盈率", "pe_ttm": "滚动市盈率", "pb": "市净率", "ps": "市销率", "ps_ttm": "滚动市销率", "dv_ratio": "股息率", "dv_ttm": "滚动股息率", "total_share": "总股本", "float_share": "流通股本", "free_share": "自由流通股本", "total_mv": "总市值", "circ_mv": "流通市值"}
@@ -52,7 +53,7 @@ def field_registry():
         fields.append({"id": name, "name": label, "dataType": "number", "numericEligible": True, "source": "TUSHARE_PRO", "dataset": source, "unit": unit, "availabilityStatus": "adapter_supported_requires_observations", "minimumLagSessions": 0, "availability": "after_daily_provider_publication_before_next_open", "revisionHistoryVerified": False, "syntheticSupported": name in daily})
     for name, (label, unit) in FINANCIAL_FIELDS.items():
         fields.append({"id": "fd_" + name, "name": label, "dataType": "number", "numericEligible": True, "source": "TUSHARE_FUNDAMENTAL", "dataset": "fina_indicator", "unit": unit, "availabilityStatus": "adapter_supported_requires_observations_and_available_date", "minimumLagSessions": 1, "availability": "first_trading_session_after_disclosure_date", "revisionHistoryVerified": False, "syntheticSupported": False})
-    return fields
+    return fields + context_fields()
 
 
 def build_catalog():
@@ -68,8 +69,44 @@ def build_catalog():
         meta = validate_expression(expression)
         seen.add(key)
         datasets = sorted({fields[f]["dataset"] for f in meta["fields"]})
-        external = any(is_external_field(field) for field in meta["fields"])
+        external = any(field.startswith('fd_') for field in meta["fields"])
         factors.append({"id": ident, "name": name, "category": category, "description": description, "expression": expression, "direction": direction, "lookback": meta["lookback"], "family": family, "window": window, "requiredFields": meta["fields"], "sourceDatasets": datasets, "dataRequirement": "financial_pit" if external else "daily_basic" if "daily_basic" in datasets else "ohlcv", "availability": "first_trading_session_after_disclosure_date" if external else "after_required_daily_fields_are_published", "minimumLagSessions": 1 if external else 0, "lagAppliedBy": "point_in_time_data_join" if external else "factor_expression", "recipeVersion": 1, "license": "Apache-2.0", "status": "definition_only_requires_data", "researchStatus": "UNVALIDATED_HYPOTHESIS", "pitRevisionHistoryVerified": False})
+        if any(dataset in {'index_daily', 'sw_daily'} for dataset in datasets):
+            factors[-1].update(dataRequirement='named_index_history', scope='global' if all(field.startswith('ext_ctx_') for field in factors[-1]['requiredFields']) else 'asset',
+                               automaticPreprocessingRequired=True, database='MKT')
+
+    # Easy users choose a familiar raw concept; the versioned automatic
+    # preprocessing policy chooses its economic transform before fold fitting.
+    for raw, label, category in [('total_mv','总市值','规模'),('circ_mv','流通市值','规模'),
+                                 ('close','价格','价格'),('vol','成交量','流动性'),
+                                 ('amount','成交额','流动性'),('pe_ttm','市盈率 TTM','价值'),
+                                 ('pb','市净率','价值'),('ps_ttm','市销率 TTM','价值')]:
+        add('raw_'+raw, label, category, raw, 1, '原始数值输入；自动模式按类型处理，处理定义和训练参数随函数保留。', 'raw_input')
+
+    from .context_sources import REGISTRY as CONTEXT_REGISTRY
+    for source in CONTEXT_REGISTRY['items']:
+        key = source['ts_code'].lower().replace('.', '_')
+        close, amount = 'ext_ctx_'+key+'_close', 'ext_ctx_'+key+'_amount'
+        for suffix, label, expression in [
+            ('price','价格',close),
+            ('momentum20','20日动量',f'returns({close},20)'),
+            ('momentum60','60日动量',f'returns({close},60)'),
+            ('volatility20','20日波动',f'ts_std(returns({close},1),20)'),
+            ('drawdown60','60日回撤',f'{close}/ts_max({close},60)-1'),
+            ('amount20','20日相对成交额',f'{amount}/ts_mean({amount},20)-1')]:
+            add('context_'+key+'_'+suffix, source['name']+' · '+label, source['category'], expression, 1,
+                '来自指定指数自身历史；与研究股票池独立，不代表当时行业成员归属。', 'named_index_'+suffix)
+        beta = f'(ts_mean(returns(close,1)*returns({close},1),60)-ts_mean(returns(close,1),60)*ts_mean(returns({close},1),60))/(ts_std(returns({close},1),60)*ts_std(returns({close},1),60))'
+        for suffix, label, expression in [
+            ('beta60', '个股敏感度', beta),
+            ('exposure_shock', '个股暴露 × 指数变化', f'({beta})*returns({close},1)'),
+            ('relative_momentum20', '个股相对动量', f'returns(close,20)-returns({close},20)')]:
+            add('context_'+key+'_'+suffix, source['name']+' · '+label, source['category'], expression, 1,
+                '个股与指定指数独立历史联合构造；同一研究模型接收不同个股的暴露输入。', 'named_index_'+suffix)
+        if source['api'] == 'sw_daily':
+            for field, label in [('pe','市盈率'),('pb','市净率'),('total_mv','总市值')]:
+                add('context_'+key+'_'+field, source['name']+' · '+label, source['category'], 'ext_ctx_'+key+'_'+field, 1,
+                    '指定申万一级行业指数的已发布指标；原单位及自动处理随函数保存。', 'named_industry_level')
 
     # Separate parameter windows are named recipes, not statistically
     # independent discoveries. Each formula has an explicit interpretation.
@@ -150,7 +187,7 @@ def build_catalog():
         add(field + "_price_yield", name, "财务价值", f"{field}/raw_close", 1, "已披露每股指标除以当日原价；非自动年化/TTM，拆股口径可能不一致，需研究者核验。", "financial_price_ratio")
 
     models = [{"id": ident, **{k: v for k, v in spec.items() if k != "grid"}, "parameterConfigurations": len(spec["grid"]), "parameters": spec["grid"]} for ident, spec in MODEL_REGISTRY.items()]
-    return {"schemaVersion": 2, "recipeLibraryVersion": "0.2.0", "factors": factors, "models": models, "targets": list(TARGETS.values()), "fieldRegistry": list(fields.values()), "externalRecipeTemplates": [{**recipe, "dataType": "number", "requiresPointInTimeObservations": True, "providesData": False, "researchStatus": "UNVALIDATED_HYPOTHESIS"} for recipe in EXTERNAL_RECIPE_TEMPLATES], "externalFieldContract": {"aliasPattern": "^(pcd|fd|ext|model)_[a-z0-9_]{1,60}$", "requiredCompanion": "<alias>__available_date", "provenanceMap": "externalFields", "availabilityPolicy": "point_in_time_asof", "inventoryIsNotCoverage": True, "numericOnly": True}, "summary": {"recipes": len(factors), "families": len(set(f["family"] for f in factors)), "ohlcvRecipes": sum(f["dataRequirement"] == "ohlcv" for f in factors), "dailyBasicRecipes": sum(f["dataRequirement"] == "daily_basic" for f in factors), "financialPITRecipes": sum(f["dataRequirement"] == "financial_pit" for f in factors), "modelFamilies": len(models), "parameterConfigurations": sum(len(m["grid"]) for m in MODEL_REGISTRY.values()), "rawFieldsAreNotFactors": True}}
+    return {"schemaVersion": 2, "recipeLibraryVersion": "0.2.0", "factors": factors, "models": models, "targets": list(TARGETS.values()), "fieldRegistry": list(fields.values()), "externalRecipeTemplates": [{**recipe, "dataType": "number", "requiresPointInTimeObservations": True, "providesData": False, "researchStatus": "UNVALIDATED_HYPOTHESIS"} for recipe in EXTERNAL_RECIPE_TEMPLATES], "externalFieldContract": {"aliasPattern": "^(pcd|fd|ext|model)_[a-z0-9_]{1,60}$", "requiredCompanion": "<alias>__available_date", "provenanceMap": "externalFields", "availabilityPolicy": "point_in_time_asof", "inventoryIsNotCoverage": True, "numericOnly": True}, "summary": {"recipes": len(factors), "families": len(set(f["family"] for f in factors)), "ohlcvRecipes": sum(f["dataRequirement"] == "ohlcv" for f in factors), "dailyBasicRecipes": sum(f["dataRequirement"] == "daily_basic" for f in factors), "financialPITRecipes": sum(f["dataRequirement"] == "financial_pit" for f in factors), "namedIndexRecipes": sum(f["dataRequirement"] == "named_index_history" for f in factors), "modelFamilies": len(models), "parameterConfigurations": sum(len(m["grid"]) for m in MODEL_REGISTRY.values()), "rawFieldsAreNotFactors": True}}
 
 
 if __name__ == "__main__":

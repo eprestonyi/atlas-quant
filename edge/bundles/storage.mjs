@@ -4,6 +4,7 @@ import { validateStoredStatisticalQuant } from '../statistical-quant/validation.
 import { BUNDLE_PROFILE, HASH } from './profile.mjs';
 import { byteLength } from './json.mjs';
 import { validateManifest, validateChunk } from './manifest.mjs';
+import { validateContextChunk } from './context-sources.mjs';
 import { FINANCIAL_FORMAT, validateFinancialManifest } from '../financial-bundles/manifest.mjs';
 import { validateFinancialGraphManifest } from '../financial-graph-bundles/manifest.mjs';
 import {
@@ -369,6 +370,8 @@ export async function uploadChunk(
   if (job.status === 'running' && authorize) await authorize(env, job, parsed);
   const codec = parsed.manifest.documents[collection.document].codec ?? 'forecast_json_v1';
   const rows = await validateChunk(text, descriptor, codec);
+  if (collectionId === 'snapshotContextSources')
+    await validateContextChunk(text, rows, descriptor.start, parsed.metadata.report.provenance.contextSources);
   if (validateRows) validateRows(collectionId, rows, parsed);
   const sortedSnapshot =
     collectionId === 'snapshotRows' && snapshotValidation(stage).strategy === SORTED_SNAPSHOT;

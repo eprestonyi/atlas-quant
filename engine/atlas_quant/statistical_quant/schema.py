@@ -104,16 +104,31 @@ def validate(strategy, *, capacity_profile=None):
         if isinstance(f["direction"], bool) or f["direction"] not in (-1, 1) or f["role"] not in ("predictor", "hedge", "event"):
             fail("INVALID_STATISTICAL_QUANT", "因子方向或角色无效")
         fields[f["id"]] = validate_expression(f.get("expression"))["fields"]
+        from ..context_sources import context_field
+        if any(field.startswith("ext_ctx_") and context_field(field) is None for field in fields[f["id"]]):
+            fail("CONTEXT_FIELD_UNKNOWN", "指数与行业因子须使用已登记的明确来源字段")
         if any(
             x.startswith("model_fin_") and not is_registered_statement_state(x)
             for x in fields[f["id"]]
         ):
             fail("UNREGISTERED_FINANCIAL_STATE", "财务状态须使用已注册的公式 ID")
         roles[f["id"]] = f["role"]
-    pre = section(s, "preprocess", {"winsorize", "standardize", "decorrelation", "correlationThreshold"}, {"winsorize": True, "standardize": True, "decorrelation": "drop_correlated", "correlationThreshold": .9})
+    from ..context_sources import context_field
+    sources = {(spec["api"], spec["ts_code"]) for selected in fields.values() for field in selected
+               if (spec := context_field(field)) is not None}
+    if len(sources) > 16:
+        fail("CONTEXT_SOURCE_LIMIT", "一次研究最多使用16个独立指数来源")
+    pre = section(s, "preprocess", {"winsorize", "standardize", "decorrelation", "correlationThreshold", "automatic"}, {"winsorize": True, "standardize": True, "decorrelation": "drop_correlated", "correlationThreshold": .9})
     if any(not isinstance(pre[k], bool) for k in ("winsorize", "standardize")) or pre["decorrelation"] not in ("none", "drop_correlated"):
         fail("INVALID_STATISTICAL_QUANT", "预处理配置无效")
     pre["correlationThreshold"] = number(pre["correlationThreshold"], "correlationThreshold", .5, 1)
+    if "automatic" in pre:
+        from .preprocessing import automatic_metadata
+        automatic_metadata(s)  # Reject invalid protocol/raw unadjusted prices before data acquisition.
+    else:
+        from ..context_sources import context_field
+        if any(context_field(field) is not None for items in fields.values() for field in items):
+            fail("CONTEXT_REQUIRES_AUTOMATIC_PREPROCESSING", "指数与行业上下文因子需要启用自动预处理，以保留全局输入")
     target = section(s, "target", {"kind", "horizonSessions", "basket"}, {"kind": "asset_price", "horizonSessions": 5})
     if target["kind"] not in ("asset_price", "frozen_basket"):
         fail("INCOMPATIBLE_TARGET", "预测对象无效")

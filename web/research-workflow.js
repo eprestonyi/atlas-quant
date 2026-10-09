@@ -66,7 +66,29 @@ import { universeFilter } from './universe-filter.js';
     function studioValidation(){return `${header('QUANT STUDIO / VALIDATION','检验与报告','配置先冻结，再检查真实运行证据。',link('research/review','逐步研究','workflow'))}${researchName()}${statusBox()}${reviewPage()}<div class="rq-pagination">${link('studio/reports','已有报告','chart')}${legacy('run',s.submitting?'提交中…':'运行研究','play','primary',s.submitting?'disabled':'')}</div>`;}
     async function initialize(){u.options=await api('/universe-options');selection();render();}
     function codes(value){const symbols=[...new Set(String(value||'').toUpperCase().split(/[\s,;，；]+/).filter(Boolean))];if(symbols.some(x=>!/^\d{6}\.(SH|SZ)$/.test(x)))throw Error('代码需要使用 600000.SH 或 000001.SZ 格式。');return symbols;}
-    async function resolve(){const request=++u.request;u.resolving=true;u.error='';render();try{const response=await api('/universes/resolve',{method:'POST',body:JSON.stringify({selection:selection()})});if(request!==u.request)return;u.resolution=response;u.savedSymbols=null;u.dirty=false;u.page=1;s.strategy.universe.selection=clone(response.selection||selection());u.selection=s.strategy.universe.selection;s.strategy.universe.resolutionHash=response.resolutionHash;s.strategy.universe.snapshotHash=response.snapshotHash;s.strategy.universe.catalogSnapshot=s.strategy.research?.mode==='statistical_quant'?{hash:response.catalogSnapshot?.hash||response.snapshotHash,asOf:response.catalogSnapshot?.asOf??null,historicalMembershipVerified:false}:clone(response.catalogSnapshot||{});if(isFactorResearch()){s.strategy.universe.symbols=[...response.symbols];s.strategy.universe.subsetPolicy='all';}persistDraft();toast(isFactorResearch()?`筛选完成，全部 ${response.symbolCount} 只进入研究。`:`完整集合 ${response.symbolCount} 只。请明确选择研究成员。`);}catch(err){u.error=err.message;throw err;}finally{if(request===u.request){u.resolving=false;render();}}}
+    async function resolve(){
+      const selected=selection(),request=++u.request;
+      u.resolving=true;u.error='';render();
+      try{
+        // A direct update click can precede change/blur. Parse both pending
+        // inputs before committing either, retaining invalid text for repair.
+        const includeSymbols=u.includeText===null?selected.includeSymbols:codes(u.includeText);
+        const excludeSymbols=u.excludeText===null?selected.excludeSymbols:codes(u.excludeText);
+        if(u.includeText!==null||u.excludeText!==null){
+          selected.includeSymbols=includeSymbols;selected.excludeSymbols=excludeSymbols;
+          u.includeText=null;u.excludeText=null;persistDraft();
+        }
+        const response=await api('/universes/resolve',{method:'POST',body:JSON.stringify({selection:selected})});
+        if(request!==u.request)return;
+        u.resolution=response;u.savedSymbols=null;u.dirty=false;u.page=1;
+        s.strategy.universe.selection=clone(response.selection||selected);u.selection=s.strategy.universe.selection;
+        s.strategy.universe.resolutionHash=response.resolutionHash;s.strategy.universe.snapshotHash=response.snapshotHash;
+        s.strategy.universe.catalogSnapshot=s.strategy.research?.mode==='statistical_quant'?{hash:response.catalogSnapshot?.hash||response.snapshotHash,asOf:response.catalogSnapshot?.asOf??null,historicalMembershipVerified:false}:clone(response.catalogSnapshot||{});
+        if(isFactorResearch()){s.strategy.universe.symbols=[...response.symbols];s.strategy.universe.subsetPolicy='all';}
+        persistDraft();toast(isFactorResearch()?`筛选完成，全部 ${response.symbolCount} 只进入研究。`:`完整集合 ${response.symbolCount} 只。请明确选择研究成员。`);
+      }catch(err){u.error=err.message;throw err;}
+      finally{if(request===u.request){u.resolving=false;render();}}
+    }
     async function selectUniverse(id){const response=await api('/universes/'+encodeURIComponent(id)),pool=response.item||response.universe||response;if(selection().includeGroups.length+selection().excludeGroups.length>=20)throw Error('纳入与剔除合计最多 20 个集合组。');if(!C.ready(pool))throw Error(C.reason(pool)||'这个股票池暂不可研究。');v.universe=pool;const sel=selection();const group={id:'g_'+Date.now().toString(36),name:pool.name||id,filters:[{field:'universe',value:id}]};sel.includeGroups.push(group);s.strategy.universe.presetId=id;changed();if(s.strategy.research?.mode==='statistical_quant'){if(s.view!=='quant'||s.quantStep!=='universe')C.navigate(s.quantMode==='studio'?'quant/studio/universe':'quant/universe');}else if(s.view!=='studio')C.navigate('research/universe');await resolve();}
     function setSubset(symbols,policy){if(symbols.length<minimumMembers()||symbols.length>50)throw Error(`本次研究需要明确选择 ${minimumMembers()}–50 只不同股票。`);if(s.strategy.universe.selection){if(u.dirty||!u.resolution)throw Error('集合规则需要先计算，才能应用研究成员。');const outside=symbols.filter(x=>!u.resolution.symbols.includes(x));if(outside.length)throw Error(`这些代码不在当前集合：${outside.slice(0,5).join('、')}。先在“额外纳入”中加入并重新计算集合。`);}u.manual=null;s.strategy.universe.symbols=symbols;if(s.strategy.research?.mode!=='statistical_quant'||s.strategy.universe.selection)s.strategy.universe.subsetPolicy=policy;else delete s.strategy.universe.subsetPolicy;if(s.strategy.research?.mode!=='statistical_quant')s.strategy.portfolio.topN=Math.min(s.strategy.portfolio.topN||3,symbols.length);if(isArb()&&s.strategy.statArb)s.strategy.statArb.components=Math.min(s.strategy.statArb.components,Math.min(10,symbols.length-2));persistDraft();render();toast(`已明确设置 ${symbols.length} 只研究成员。`);}
     function findGroup(el){return selection()[el.dataset.scope]?.find(x=>x.id===(el.dataset.id||el.dataset.rqField||el.dataset.rqValue));}

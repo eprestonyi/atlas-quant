@@ -37,7 +37,9 @@ def _train(samples, spec, train_dates, cutoff, strategy, runtime=None):
     model = None
     try:
         try:
-            model = models.fit(spec, samples.X.loc[mask], samples.y.loc[mask], strategy["preprocess"])
+            kwargs = {"automatic_metadata": samples.automatic_preprocessing,
+                      "training_dates": samples.meta.loc[mask, "date"].tolist()} if "automatic" in strategy["preprocess"] else {}
+            model = models.fit(spec, samples.X.loc[mask], samples.y.loc[mask], strategy["preprocess"], **kwargs)
         finally:
             if runtime is not None:
                 runtime.after_fit()

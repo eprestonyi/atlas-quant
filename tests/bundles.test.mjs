@@ -5,6 +5,7 @@ import { Miniflare } from "miniflare";
 import { buildWorkerSource } from "../scripts/worker-source.mjs";
 import { validateManifest } from "../edge/bundles/manifest.mjs";
 import { bundleFixture, canonical, hash } from "./fixtures/bundle-fixture.mjs";
+import { contextBundleFixture } from './fixtures/context-bundle-fixture.mjs';
 
 const script = await buildWorkerSource({
   wrapper: `export default {async fetch(req,env,ctx){
@@ -138,6 +139,33 @@ async function finish(fixture, claim, stage) {
   );
 }
 test.after(() => mf.dispose());
+
+test('context sources upload, finalize, and native private download preserve every original byte', async () => {
+  const f=contextBundleFixture(),q=await queued(f),s=await begin(f,q.claim);
+  await upload(f,q.claim,s);await finish(f,q.claim,s);
+  const summary=await payload(await call(`/runs/${q.claim.id}/report`,{cookie:q.cookie}));
+  assert.equal(summary.transport.collections.snapshotContextSources,undefined);
+  assert(summary.report.provenance.contextSources.every(row=>!Object.hasOwn(row,'records')));
+  const route=`/runs/${q.claim.id}/report/bundle?bundleId=${f.bundleId}`;
+  assert.equal((await call(route,{cookie:await session()})).status,404);
+  const response=await call(route,{cookie:q.cookie});assert.equal(response.status,200);
+  const archive=Buffer.from(await response.arrayBuffer()),found=new Map();
+  for(let offset=0;offset<archive.length-1024;) {
+    const header=archive.subarray(offset,offset+512),name=header.subarray(0,100).toString().replace(/\0.*$/s,'');
+    if(!name) break;
+    const size=parseInt(header.subarray(124,136).toString(),8);
+    found.set(name,archive.subarray(offset+512,offset+512+size));
+    offset+=512+Math.ceil(size/512)*512;
+  }
+  assert.equal(found.get('manifest.json').toString(),f.manifestText);
+  for(const [key,value] of f.chunks) {
+    const [collection,ordinal]=key.split(':');
+    assert.equal(found.get(`chunks/${collection}/${ordinal}.json`).toString(),value);
+  }
+  const records=await db.prepare("SELECT row_id,metadata FROM quant_bundle_records WHERE stage_id=? AND collection='snapshotContextSources'").bind(s.stageId).all();
+  assert.equal(records.results.length,2);
+  assert(records.results.every(row=>!row.metadata.includes('records')));
+});
 
 test('private bundle archives require ownership, publication and exact bundle identity', async () => {
   const f = bundleFixture(), q = await queued(f), s = await begin(f, q.claim);

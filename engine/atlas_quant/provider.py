@@ -88,6 +88,13 @@ def _records(frame):
     return json.loads(frame.to_json(orient="records", double_precision=12))
 
 
+def _exact_records(frame):
+    # New independent context archives preserve binary64 values end-to-end.
+    # Legacy provider cache identities/rounding remain unchanged.
+    return [{k: None if pd.isna(v) else v for k, v in row.items()}
+            for row in frame.to_dict(orient="records")]
+
+
 def _factor_fields(strategy):
     from .factors import required_fields
     expressions = [f.get("expression", "") for f in strategy.get("factors", []) if isinstance(f, dict)]
@@ -249,6 +256,11 @@ def validate_upload(strategy, dataset, *, deferred_fields=None):
         provenance["externalAvailabilityFingerprint"] = canonical_hash(_records(frame[["ts_code", "trade_date"] + [c+"__available_date" for c in external_mapping]]))
         if any(field.startswith("model_") for field in external_mapping):
             provenance["warnings"].append("导入 MODEL 数值逐行验证所声明的可用日期与来源路径；原模型训练截止时间、历史生成记录及独立预测性质仍须由上传者提供证据，Atlas 未独立验证。")
+    from .context_sources import FIELDS as CONTEXT_FIELDS
+    if (set(meta).intersection({"contextSources", "contextSourceRoot", "contextScope", "contextObservationClock"})
+            or set(CONTEXT_FIELDS).intersection(_factor_fields(strategy) | set(external_mapping or {}))):
+        from .context_sources import validate_context_sources
+        provenance.update(validate_context_sources(frame, meta, external_mapping or {}, dates, start, end))
     for key in ("source", "license", "asOf"):
         if isinstance(meta.get(key), str):
             provenance["declared" + key[0].upper() + key[1:]] = meta[key][:300]
@@ -361,13 +373,20 @@ class TushareClient:
 
 
 def _load(strategy, client, cache_dir, cache_identity, *, deferred_fields=None):
+    from .context_sources import context_field, load_context_fields
     symbols, start, end = validate_universe(strategy)
     optional_required = sorted(_factor_fields(strategy).intersection(OPTIONAL_FIELDS))
     financial_required = sorted(_factor_fields(strategy).intersection(FINANCIAL_ALIASES))
-    unavailable_external = {f for f in _factor_fields(strategy) if EXTERNAL_RE.fullmatch(f)} - set(FINANCIAL_ALIASES) - set(deferred_fields or ())
+    context_required = sorted(f for f in _factor_fields(strategy) if context_field(f))
+    if len({(context_field(f)['api'], context_field(f)['ts_code']) for f in context_required}) > 16:
+        raise ProviderError('CONTEXT_SOURCE_LIMIT', '一次研究最多使用16个独立指数来源。')
+    unavailable_external = {f for f in _factor_fields(strategy) if EXTERNAL_RE.fullmatch(f)} - set(FINANCIAL_ALIASES) - set(deferred_fields or ()) - set(context_required)
     if unavailable_external:
         raise ProviderError("EXTERNAL_DATA_REQUIRED", "所选 PCD/EXT/MODEL 字段需要导入带有逐行可用日期及来源记录的数据，或配置已实现的私有映射；Tushare 不会自动提供或伪造这些字段。")
-    key = canonical_hash({"version": 4, "symbols": symbols, "start": start, "end": end, "dailyBasicFields": optional_required, "financialFields": financial_required})
+    cache_spec = {"version": 4, "symbols": symbols, "start": start, "end": end, "dailyBasicFields": optional_required, "financialFields": financial_required}
+    if context_required:
+        cache_spec.update(version=5, contextFields=context_required)
+    key = canonical_hash(cache_spec)
     cache_path = None
     if cache_dir:
         root = Path(cache_dir) / hashlib.sha256(cache_identity.encode()).hexdigest()[:24]
@@ -436,6 +455,11 @@ def _load(strategy, client, cache_dir, cache_identity, *, deferred_fields=None):
         reports = pd.concat([load_financial_history(client, symbol, start, end) for symbol in symbols], ignore_index=True)
         frame, financial_provenance = join_financial_asof(frame, reports, financial_required, dates)
         frame = _validate_panel(strategy, _records(frame), external_fields=financial_provenance["externalFields"])
+    context_provenance = {}
+    if context_required:
+        frame, context_provenance = load_context_fields(client, frame, context_required, dates, start, end)
+        mappings = {**financial_provenance.get('externalFields', {}), **context_provenance['externalFields']}
+        frame = _validate_panel(strategy, _exact_records(frame), external_fields=mappings)
     if not set(frame.trade_date).issubset(dates):
         raise ProviderError("CALENDAR_MISMATCH", "行情记录包含官方日历之外的交易日。")
     provenance = {"source": "TUSHARE_PRO", "classification": "PROVIDER_DATA", "synthetic": False,
@@ -459,8 +483,18 @@ def _load(strategy, client, cache_dir, cache_identity, *, deferred_fields=None):
             provenance["warnings"].append("同证券、公告日、报告期与字段存在冲突版本：这些披露值已隔离为缺失，未猜测版本顺序；具体范围保存在 financialAmbiguitySample。")
     if optional_required:
         provenance["warnings"].append("daily_basic 按交易日期合并，缺失值保留；尚未验证历史修订版本与当时可获知时间。")
+    if context_provenance:
+        mappings = {**provenance.get('externalFields', {}), **context_provenance['externalFields']}
+        provenance.update(context_provenance)
+        provenance['externalFields'] = mappings
+        provenance['datasets'].extend(sorted({context_field(f)['api'] for f in context_required}))
+        provenance['observedColumns'].extend(context_required)
+        provenance.setdefault('externalFieldCoverage', {}).update({f:float(frame[f].notna().mean()) for f in context_required})
+        provenance['externalAvailabilityFingerprint'] = canonical_hash(_records(frame[['ts_code','trade_date']+[f+'__available_date' for f in mappings]]))
+        provenance['warnings'].append('指定指数按日期匹配并在正式日数据发布后使用；不以当前股票池或当前行业成分重建历史指数，供应商修订历史未经独立认证。')
     if cache_path:
-        content = json.dumps({"rows": _records(frame), "provenance": provenance}, ensure_ascii=False, allow_nan=False)
+        cache_rows = _exact_records(frame) if context_required else _records(frame)
+        content = json.dumps({"rows": cache_rows, "provenance": provenance}, ensure_ascii=False, allow_nan=False)
         if len(content.encode()) <= MAX_UPLOAD_BYTES:
             temp = cache_path.with_suffix(".tmp")
             fd = os.open(temp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)

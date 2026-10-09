@@ -3,6 +3,8 @@ import { parse } from "./runtime.mjs";
 import { ApiError } from "./errors.mjs";
 
 const FIELDS = [
+  "factorPreprocessFormats",
+  "contextSourceFormats",
   "datasetFormats",
   "snapshotFormats",
   "transportFormats",

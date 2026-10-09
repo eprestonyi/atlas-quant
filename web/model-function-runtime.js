@@ -1,6 +1,7 @@
 /** Numeric-only portable F(X). Shared by the browser and private Worker API. */
 import { validateMetadata } from './model-function-metadata.js';
 export const FUNCTION_SCHEMA = 'atlas-model-function/1';
+export const FUNCTION_SCHEMAS = Object.freeze([FUNCTION_SCHEMA, 'atlas-model-function/2']);
 export const FUNCTION_HASH = 'sha256-canonical-f64-json/1';
 export const FUNCTION_LIMITS = Object.freeze({ bytes: 2 * 1024 * 1024, features: 128, rows: 256, trees: 256, nodes: 255, operations: 2000000 });
 const OUTPUTS = ['entry_level_change_over_known_gross', 'exit_level_change_over_known_gross'];
@@ -82,7 +83,7 @@ export async function validateFunction(artifact) {
   try { text = JSON.stringify(artifact); } catch { throw new ModelFunctionError('函数仅支持无环的 JSON 值'); }
   require(new TextEncoder().encode(text).length <= FUNCTION_LIMITS.bytes, '函数超过大小预算');
   keys(artifact, ['schema', 'hashAlgorithm', 'artifactId', 'inputSchema', 'transforms', 'estimator', 'training', 'scope', 'outputs', 'identity', 'provenance', 'editPolicy', 'lineage', 'featureConstruction'], '函数');
-  require(artifact.schema === FUNCTION_SCHEMA && artifact.hashAlgorithm === FUNCTION_HASH && equal(artifact.outputs, OUTPUTS), '函数格式或输出版本不匹配');
+  require(FUNCTION_SCHEMAS.includes(artifact.schema) && artifact.hashAlgorithm === FUNCTION_HASH && equal(artifact.outputs, OUTPUTS), '函数格式或输出版本不匹配');
   const {artifactId, ...content} = artifact;
   require(typeof artifactId === 'string' && /^[a-f0-9]{64}$/.test(artifactId) && artifactId === await functionDigest(content), '函数内容身份不一致');
   const inputs = artifact.inputSchema;

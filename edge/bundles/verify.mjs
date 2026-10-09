@@ -9,6 +9,7 @@ import {
   assertTransport
 } from './storage.mjs';
 import { verifyDocuments } from './streams.mjs';
+import { verifyContextRoot } from './context-sources.mjs';
 import { assertRunMarket } from '../market-preparation/research.mjs';
 import { verifyMarketCoverage } from '../market-preparation/coverage.mjs';
 import { SORTED_SNAPSHOT, snapshotValidation, verifySnapshotReceipts } from './snapshot-index.mjs';
@@ -183,6 +184,9 @@ export async function finalizeBundle(
     }
   await verifyRecords(env, stage, parsed);
   await verifyDocuments(parsed, (collection, descriptor) =>
+    readChunk(env, stage, collection, descriptor, byKey)
+  );
+  await verifyContextRoot(parsed, (collection, descriptor) =>
     readChunk(env, stage, collection, descriptor, byKey)
   );
   await verifyMarketSnapshot(stage, parsed, (collection, descriptor) =>

@@ -100,11 +100,36 @@ await reopen('frozen-empty');assert.equal(count(),'0只');assert.deepEqual(displ
 
 const fresh=w.AtlasQuantV4.defaultStrategy();s.strategy=fresh;flow.reset();q.render();
 assert.equal(count(),'—只');assert.deepEqual(displayed(),[]);assert.equal(s.strategy.universe.selection,undefined);
+// Browser fill emits input, not necessarily change, before the update click.
+let codeChangeEvents=0;
+w.document.addEventListener('change',event=>{if(['rq-include-symbols','rq-exclude-symbols'].includes(event.target.id))codeChangeEvents++;});
+const fillCodes=(id,value)=>{const node=w.document.getElementById(id);node.value=value;node.dispatchEvent(new w.InputEvent('input',{bubbles:true}));};
+fillCodes('rq-include-symbols',symbols.join(', '));
+await resolveClick('[data-v2="pool-resolve"]');
+assert.deepEqual(resolves().at(-1).body.selection.includeSymbols,symbols,'update consumes pending input without a change event');
+assert.deepEqual([...s.strategy.universe.symbols],symbols);assert.equal(count(),'2只');
+fillCodes('rq-exclude-symbols',symbols[0]);
+await resolveClick('[data-v2="pool-resolve"]');
+assert.deepEqual(resolves().at(-1).body.selection.excludeSymbols,[symbols[0]]);
+assert.deepEqual([...s.strategy.universe.symbols],[symbols[1]]);assert.equal(count(),'1只');
+const beforeInvalid=resolves().length, priorIncludes=[...s.strategy.universe.selection.includeSymbols];
+fillCodes('rq-include-symbols',symbols[1]);fillCodes('rq-exclude-symbols','invalid-code');
+await click('[data-v2="pool-resolve"]',()=>!!flow.__test.u.error);
+assert.equal(resolves().length,beforeInvalid,'invalid pending codes never reach the API');
+assert.deepEqual([...s.strategy.universe.selection.includeSymbols],priorIncludes,'both fields parse before either is committed');
+assert.equal(w.document.getElementById('rq-include-symbols').value,symbols[1]);
+assert.equal(w.document.getElementById('rq-exclude-symbols').value,'invalid-code');
+fillCodes('rq-include-symbols','');fillCodes('rq-exclude-symbols','');
+await resolveClick('[data-v2="pool-resolve"]');
+assert.deepEqual(resolves().at(-1).body.selection.includeSymbols,[]);
+assert.deepEqual(resolves().at(-1).body.selection.excludeSymbols,[]);assert.equal(count(),'0只');
+assert.equal(codeChangeEvents,0,'these interactions never dispatch synthetic change events');
+s.strategy=w.AtlasQuantV4.defaultStrategy();flow.reset();q.render();
 await resolveClick('[data-v2="pool-preset"][data-id="bank-pair"]');
 assert.deepEqual([...s.strategy.universe.symbols],symbols,'ordinary live filtering still uses its actual complete result');
 assert.equal(s.strategy.universe.selection.includeGroups.length,1);assert.deepEqual([...s.strategy.universe.selection.includeSymbols],[]);
 assert.equal(flow.__test.u.savedSymbols,null);assert.equal(count(),'2只');
 assert.equal(JSON.stringify(experiments.get('legacy-two').strategy),JSON.stringify(raw),'the saved API record was never changed');
 assert(!requests.some(x=>/\/runs|\/forecasts|\/executions/.test(x.path)),'no provider, model or execution requests');
-console.log(JSON.stringify({legacyReopen:true,readOnlyLoad:true,noInventedHashes:true,updateRetainsMembers:true,legacyExclusion:true,explicitEmptyDoesNotFallback:true,frozenEmptyRestored:true,liveFilterUnchanged:true,fixtureOnly:true,responseDelayMs,waitsForResolution:true}));
+console.log(JSON.stringify({legacyReopen:true,readOnlyLoad:true,noInventedHashes:true,updateRetainsMembers:true,legacyExclusion:true,explicitEmptyDoesNotFallback:true,frozenEmptyRestored:true,pendingInputSubmitted:true,invalidInputNoRequest:true,liveFilterUnchanged:true,fixtureOnly:true,responseDelayMs,waitsForResolution:true}));
 dom.window.close();

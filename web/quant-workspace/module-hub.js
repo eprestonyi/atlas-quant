@@ -12,7 +12,7 @@ export function createModuleHub(C, F, { heading, route }) {
       `<div class="sq-mode-grid">${[
         ['easy', '轻松模式', '选择机制和研究范围，系统完成估计器比较与因子拟合。', 'workflow'],
         ['studio', 'Quant Studio', '展开数据、因子定义、验证参数和代码，逐项控制研究协议。', 'code'],
-      ].map(([id, title, description, icon]) => `<a class="sq-mode-card" href="#quant/${id}/universe"><span>${i(icon)}</span><h2>${title}</h2><p>${description}</p><strong>进入 ${i('arrow')}</strong></a>`).join('')}</div>`;
+      ].map(([id, title, description, icon]) => `<a class="sq-mode-card" data-sq="select-mode" data-id="${id}" href="#quant/${id}/universe"><span>${i(icon)}</span><h2>${title}</h2><p>${description}</p><strong>进入 ${i('arrow')}</strong></a>`).join('')}</div>`;
   }
   function statistical() {
     return heading('ATLAS QUANT', '统计量化交易', '') +

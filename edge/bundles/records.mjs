@@ -158,6 +158,9 @@ export async function recordIndex(
   } else if (collection === 'snapshotColumns') {
     rowId = identifier(row.name, '冻结数据列');
     metadata = { kind: row.kind };
+  } else if (collection === 'snapshotContextSources') {
+    rowId = row.api + '/' + row.params.ts_code;
+    metadata = {sha256: row.sha256, rowCount: row.records.length};
   } else if (collection === 'snapshotRows') {
     rowId = snapshotRecordKey(row);
     day = row.trade_date;
