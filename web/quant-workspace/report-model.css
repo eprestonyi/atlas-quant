@@ -58,7 +58,7 @@
 .sq-chart-grid .sq-data-chart { margin:0; }
 .sq-data-chart figcaption { font-size:13px; font-weight:500; margin-bottom:16px; }
 .sq-data-chart svg { display:block; width:100%; max-height:1100px; overflow:visible; }
-.sq-data-chart svg text { fill:var(--muted,#8d9788); font:11px system-ui,sans-serif; }
+.sq-data-chart svg text { fill:var(--muted,#8d9788); font:16px system-ui,sans-serif; }
 .sq-data-chart .grid { stroke:#374137; stroke-width:.7; }
 .sq-data-chart .reference { stroke:#c2b490; stroke-dasharray:4 4; stroke-width:1; }
 .sq-data-chart .point { fill:#bfd497; opacity:.6; }
@@ -84,6 +84,7 @@
 @media (max-width: 640px) {
   .sq-chart-grid,.sq-industry-list { grid-template-columns:1fr; }
   .sq-data-chart { padding:12px 8px; }
+  .sq-data-chart svg text {font-size:20px;}
   .sq-model-formulas { padding: .85rem; }
   .sq-model-fit-picker { max-width: 100%; }
   .sq-report-tabs { margin-inline: -.25rem; }

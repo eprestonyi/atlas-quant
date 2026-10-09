@@ -4,7 +4,7 @@ import {validateManifest,validateChunk} from '../edge/bundles/manifest.mjs';
 import {validateContextChunk} from '../edge/bundles/context-sources.mjs';
 import {archiveEntries} from '../edge/bundles/archive.mjs';
 import {transportView} from '../edge/bundles/user-api.mjs';
-import {contextBundleFixture} from './fixtures/context-bundle-fixture.mjs';
+import {contextBundleFixture,foreignContextBundleFixture} from './fixtures/context-bundle-fixture.mjs';
 import {bundleFixture,canonical,hash} from './fixtures/bundle-fixture.mjs';
 
 test('16 independent histories fit bounded manifest and private archive paths',async()=>{
@@ -73,4 +73,23 @@ test('absent optional context leaves the legacy fixture bytes unchanged',async()
   const a=bundleFixture(),b=bundleFixture({collectionPaths:{...Object.fromEntries(a.manifest.collections.map(c=>[c.id,[c.document,c.path]])),snapshotContextSources:['snapshot','/provenance/contextSources']}});
   assert.equal(a.manifestText,b.manifestText);assert.deepEqual(a.chunks,b.chunks);
   await validateManifest(a.manifestText,a.bundleId);
+});
+
+
+test('foreign archives retain raw adjustment data and require foreign clock',async()=>{
+  const f=foreignContextBundleFixture(),p=await validateManifest(f.manifestText,f.bundleId);
+  const raw=f.chunks.get('snapshotContextSources:0'),descriptor=p.collections.get('snapshotContextSources').chunks[0];
+  const rows=await validateChunk(raw,descriptor);
+  assert.equal(rows[0].records[0].adj_factor,0.5);
+  assert.equal(rows[0].records[0].close,f.snapshot.provenance.contextSources[0].records[0].close);
+  await validateContextChunk(raw,rows,0,p.metadata.report.provenance.contextSources);
+  for(const mutate of [
+    i=>{i.report.provenance.contextObservationClock=i.snapshot.provenance.contextObservationClock='after_daily_publication_before_next_open'},
+    i=>i.report.provenance.contextSources[0].fields.splice(2,1),
+  ]) {
+    const broken=foreignContextBundleFixture({mutate});
+    await assert.rejects(validateManifest(broken.manifestText,broken.bundleId));
+  }
+  rows[0].records[0].adj_factor=0;
+  await assert.rejects(validateContextChunk(canonical(rows),rows,0,p.metadata.report.provenance.contextSources));
 });

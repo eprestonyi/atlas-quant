@@ -12,16 +12,16 @@ const frame = (title, content, e, footer = '') => `<figure class="sq-data-chart"
 const svg = (title, content, e, height = 280) => `<svg viewBox="0 0 620 ${height}" role="img" aria-label="${e(title)}">${content}</svg>`;
 function axes(xd, yd, e, xTitle, yTitle, format = number) {
   const x = scaled(xd, [65, 590]), y = scaled(yd, [225, 25]);
-  return ticks(yd).map(t => `<line class="grid" x1="65" x2="590" y1="${y(t)}" y2="${y(t)}"/><text x="58" y="${y(t) + 4}" text-anchor="end">${e(format(t))}</text>`).join('') + ticks(xd).map(t => `<text x="${x(t)}" y="244" text-anchor="middle">${e(format(t))}</text>`).join('') + `<text class="axis-title" x="325" y="270" text-anchor="middle">${e(xTitle)}</text><text class="axis-title" x="65" y="13">${e(yTitle)}</text>`;
+  return ticks(yd).map(t => `<line class="grid" x1="65" x2="590" y1="${y(t)}" y2="${y(t)}"/><text x="58" y="${y(t) + 4}" text-anchor="end">${e(format(t))}</text>`).join('') + ticks(xd).map((t,i) => `<text x="${x(t)}" y="244" text-anchor="${i===0?'start':i===4?'end':'middle'}">${e(format(t))}</text>`).join('') + `<text class="axis-title" x="325" y="270" text-anchor="middle">${e(xTitle)}</text><text class="axis-title" x="65" y="13">${e(yTitle)}</text>`;
 }
 
 export function coefficientChart({ labels, values, esc: e, title = '未来输出系数' }) {
   const rows = values.map((value, i) => ({ value, label: labels[i] || `X${i + 1}` })).filter(x => finite(x.value));
   if (!rows.length) return '';
-  const shown = rows.slice(0, 40), max = Math.max(...shown.map(x => Math.abs(x.value))) || 1, h = 35 + shown.length * 28;
+  const shown = rows.slice(0, 20), max = Math.max(...shown.map(x => Math.abs(x.value))) || 1, h = 35 + shown.length * 48;
   return frame(title, svg(title, `<line class="grid" x1="340" x2="340" y1="10" y2="${h - 10}"/>` + shown.map(({ value, label }, i) => {
-    const width = Math.abs(value) / max * 170, y = 14 + i * 28;
-    return `<text x="8" y="${y + 13}">${e(label.length > 30 ? label.slice(0, 29) + '…' : label)}</text><rect class="${value < 0 ? 'negative' : 'positive'}" x="${value < 0 ? 340 - width : 340}" y="${y}" width="${Math.max(width, .5)}" height="18" rx="2"><title>${e(label)}: ${value}</title></rect><text x="${value < 0 ? 334 - width : 346 + width}" y="${y + 13}" text-anchor="${value < 0 ? 'end' : 'start'}">${number(value)}</text>`;
+    const width = Math.abs(value) / max * 170, y = 14 + i * 48;
+    return `<text x="8" y="${y}">${e(label.length > 46 ? label.slice(0, 45) + '…' : label)}</text><rect class="${value < 0 ? 'negative' : 'positive'}" x="${value < 0 ? 340 - width : 340}" y="${y + 10}" width="${Math.max(width, .5)}" height="18" rx="2"><title>${e(label)}: ${value}</title></rect><text x="${value < 0 ? 334 - width : 346 + width}" y="${y + 24}" text-anchor="${value < 0 ? 'end' : 'start'}">${number(value)}</text>`;
   }).join(''), e, h), e, rows.length > shown.length ? `显示声明顺序前 ${shown.length} / ${rows.length} 项；全部系数见参数表。` : '系数按模型输入单位显示；不等同于因果贡献。');
 }
 

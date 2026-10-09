@@ -118,3 +118,19 @@ def test_real_queue_client_routes_context_chunks_only_in_ordinary_bundle_namespa
     with pytest.raises(RunnerError):
         client.bundle_chunk('PUT','a'*64,'unknownSource',0,identity,raw=raw,stage_id='test-stage')
     assert len(calls)==2  # rejected locally, without a network call
+
+
+def test_foreign_cross_language_archive_retains_raw_adjustments():
+    root = Path(__file__).resolve().parents[2]
+    script = "import {foreignContextBundleFixture} from './tests/fixtures/context-bundle-fixture.mjs'; const f=foreignContextBundleFixture();console.log(JSON.stringify([f.report,f.snapshot,f.coverage]));"
+    result = subprocess.run(['node','--input-type=module','-e',script],cwd=root,text=True,capture_output=True,check=True)
+    report,snapshot,coverage = json.loads(result.stdout)
+    report['research']['executionOnly'] = False
+    report['forecasts']['diagnostics']['holdoutStart'] = coverage['holdoutStart']
+    report['forecasts']['artifactId'] = bundle.sha(bundle.encode({k:v for k,v in report['forecasts'].items() if k!='artifactId'}))
+    report['execution']['forecastArtifactId'] = report['forecasts']['artifactId']
+    raw,chunks,reader = packed((report,snapshot,coverage))
+    assert reader.verify_integrity()['verified']
+    assert reader.document('snapshot') == snapshot
+    source = reader.document('snapshot')['provenance']['contextSources'][0]
+    assert source['api'] == 'us_daily_adj' and source['records'][0]['adj_factor'] == 0.5

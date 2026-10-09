@@ -20,6 +20,11 @@ test('proxy rejects wrong source, invalid dates and broad requests before any up
   ['index_daily',{ts_code:'000300.SH',start_date:'20000101',end_date:'20250101'}],
   ['index_daily',{ts_code:'000300.SH',trade_date:'20250101'}],
   ['sw_daily',{start_date:'20230101',end_date:'20250101'}],
+  ['sw_daily',{ts_code:'850112.SI',start_date:'20230101',end_date:'20250101'}],
+  ['sw_daily',{ts_code:'850816.SI',start_date:'20230101',end_date:'20250101'}],
+  ['sw_daily',{ts_code:'XSD',start_date:'20230101',end_date:'20250101'}],
+  ['us_daily_adj',{ts_code:'AAPL',start_date:'20230101',end_date:'20250101'}],
+  ['us_daily_adj',{ts_code:'XSD',trade_date:'20250101'}],
  ])assert.equal((await request(api,params)).status,400);
  assert.equal(upstream.length,before);
 });

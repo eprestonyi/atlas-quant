@@ -7,9 +7,10 @@ const contextSources = new Map(contextRegistry.items.flatMap(source =>
 const supports = (runner, field, format) => Array.isArray(runner?.[field]) && runner[field].includes(format);
 function hasUploadedContext(dataset, fields) {
   const provenance = dataset?.provenance;
+  const foreign = provenance?.contextSources?.some(source => source?.api === 'us_daily_adj');
   return /^[a-f0-9]{64}$/.test(provenance?.contextSourceRoot || '') &&
-    provenance?.contextScope === 'named_index_series_broadcast_by_date' &&
-    provenance?.contextObservationClock === 'after_daily_publication_before_next_open' &&
+    provenance?.contextScope === (foreign ? 'named_market_series_asof_broadcast_by_date' : 'named_index_series_broadcast_by_date') &&
+    provenance?.contextObservationClock === (foreign ? 'source_session_publication_before_cn_origin' : 'after_daily_publication_before_next_open') &&
     Array.isArray(provenance?.contextSources) && provenance.contextSources.length > 0 &&
     fields.every(field => contextSources.has(field) && provenance.contextSources.some(source => source?.params?.ts_code === contextSources.get(field) &&
       Array.isArray(source?.records) && source.records.length > 0));
@@ -58,6 +59,8 @@ export function stepErrors(strategy, step, options = {}) {
       errors.push('计算节点暂不支持自动因子处理，请稍后重试。');
     if (fields.length && options.session?.runner && !supports(options.session.runner, 'contextSourceFormats', 'named-index-history/1'))
       errors.push('计算节点暂不支持指数数据，请稍后重试。');
+    if (fields.some(field => /^ext_ctx_[a-z]/.test(field)) && options.session?.runner && !supports(options.session.runner, 'contextSourceFormats', 'named-market-history/2'))
+      errors.push('计算节点暂不支持跨市场ETF数据，请稍后重试。');
     if (fields.length && options.dataSource === 'demo')
       errors.push('指数因子请选择 Tushare 或导入对应指数数据。');
     if (fields.length && options.dataSource === 'upload' && !hasUploadedContext(options.dataset, fields))

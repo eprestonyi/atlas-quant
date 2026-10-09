@@ -14,8 +14,8 @@ const C={state:{catalog:{factors:[{id:'size',name:'总市值',expression:'total_
 const F=createForms(C),a=await v2Fixture(),frozen=JSON.stringify(a);
 main.innerHTML=renderSavedModel(C,F,{functionArtifact:a});
 assert(main.querySelector('[data-saved-function]').textContent.includes('fₕ(X) = 0.2 + 3 × X₁'));
-assert(main.querySelector('[data-saved-function]').textContent.includes('fₕ(X) = (V̂future − P) / scale'));
-assert(main.querySelector('[data-saved-function]').textContent.includes('Fₕ(X) = V̂future = P + scale × fₕ(X)'));
+assert(main.querySelector('[data-saved-function]').textContent.includes('fₕ(X) = V̂future / P − 1'));
+assert(main.querySelector('[data-saved-function]').textContent.includes('Fₕ(X) = V̂future = P × (1 + fₕ(X))'));
 assert.equal(modelFormula(a),'0.2 + 3 × X₁');
 const input=main.querySelector('[data-model-input="factor:size"]');
 assert.equal(input.open,false);
@@ -34,6 +34,7 @@ assert(!transform.includes('ln('),'economic log is not repeated in the portable 
 input.querySelector('summary').click();assert.equal(input.open,true);
 assert.equal(JSON.stringify(a),frozen);
 
+const basket=structuredClone(a);basket.scope.targetKind='frozen_basket';main.innerHTML=renderSavedModel(C,F,{functionArtifact:basket});assert(main.textContent.includes('scale = Σ |qⱼ pⱼ,ₜ|'));assert(main.textContent.includes('Fₕ(X) = V̂future = P + scale × fₕ(X)'));
 const global=structuredClone(a);global.featureConstruction.automatic.factors[0].scope='global';global.featureConstruction.automatic.factors[0].aggregation='global_once';
 main.innerHTML=renderSavedModel(C,F,{functionArtifact:global});
 assert(main.querySelector('[data-input-construction]').textContent.includes('R₁ = -1 × gₜ'));

@@ -1,0 +1,725 @@
+{
+  "schema": "industry-proxies/1",
+  "items": [
+    {
+      "id": "us_etf_xle",
+      "market": "US",
+      "symbol": "XLE",
+      "name": "能源 · XLE",
+      "englishName": "Energy",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_10"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xlb",
+      "market": "US",
+      "symbol": "XLB",
+      "name": "材料 · XLB",
+      "englishName": "Materials",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_15"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xli",
+      "market": "US",
+      "symbol": "XLI",
+      "name": "工业 · XLI",
+      "englishName": "Industrials",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_20"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xly",
+      "market": "US",
+      "symbol": "XLY",
+      "name": "可选消费 · XLY",
+      "englishName": "Consumer Discretionary",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_25"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xlp",
+      "market": "US",
+      "symbol": "XLP",
+      "name": "必需消费 · XLP",
+      "englishName": "Consumer Staples",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_30"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xlv",
+      "market": "US",
+      "symbol": "XLV",
+      "name": "医疗保健 · XLV",
+      "englishName": "Health Care",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_35"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xlf",
+      "market": "US",
+      "symbol": "XLF",
+      "name": "金融 · XLF",
+      "englishName": "Financials",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_40"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xlk",
+      "market": "US",
+      "symbol": "XLK",
+      "name": "信息技术 · XLK",
+      "englishName": "Information Technology",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_45"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xlc",
+      "market": "US",
+      "symbol": "XLC",
+      "name": "通信服务 · XLC",
+      "englishName": "Communication Services",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_50"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xlu",
+      "market": "US",
+      "symbol": "XLU",
+      "name": "公用事业 · XLU",
+      "englishName": "Utilities",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_55"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xlre",
+      "market": "US",
+      "symbol": "XLRE",
+      "name": "房地产 · XLRE",
+      "englishName": "Real Estate",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/us/en/intermediary/capabilities/equities/sector-investing/select-sector-etfs",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_60"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_kbe",
+      "market": "US",
+      "symbol": "KBE",
+      "name": "银行 · KBE",
+      "englishName": "Banks",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_401010"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_kre",
+      "market": "US",
+      "symbol": "KRE",
+      "name": "区域银行 · KRE",
+      "englishName": "Regional Banks",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_40101015"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_kce",
+      "market": "US",
+      "symbol": "KCE",
+      "name": "资本市场 · KCE",
+      "englishName": "Capital Markets",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_402030"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_kie",
+      "market": "US",
+      "symbol": "KIE",
+      "name": "保险 · KIE",
+      "englishName": "Insurance",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_403010"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xar",
+      "market": "US",
+      "symbol": "XAR",
+      "name": "航空航天与国防 · XAR",
+      "englishName": "Aerospace & Defense",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_201010"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xtn",
+      "market": "US",
+      "symbol": "XTN",
+      "name": "运输 · XTN",
+      "englishName": "Transportation",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_2030"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xbi",
+      "market": "US",
+      "symbol": "XBI",
+      "name": "生物科技 · XBI",
+      "englishName": "Biotechnology",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_352010"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xph",
+      "market": "US",
+      "symbol": "XPH",
+      "name": "制药 · XPH",
+      "englishName": "Pharmaceuticals",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_352020"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xhe",
+      "market": "US",
+      "symbol": "XHE",
+      "name": "医疗设备 · XHE",
+      "englishName": "Health Care Equipment",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_35101010"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xhs",
+      "market": "US",
+      "symbol": "XHS",
+      "name": "医疗服务 · XHS",
+      "englishName": "Health Care Services",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_35102015"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xop",
+      "market": "US",
+      "symbol": "XOP",
+      "name": "油气勘探生产 · XOP",
+      "englishName": "Oil & Gas Exploration & Production",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_10102020"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xes",
+      "market": "US",
+      "symbol": "XES",
+      "name": "油气设备服务 · XES",
+      "englishName": "Oil & Gas Equipment & Services",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_10101020"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xme",
+      "market": "US",
+      "symbol": "XME",
+      "name": "金属采矿 · XME",
+      "englishName": "Metals & Mining",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_151040"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xrt",
+      "market": "US",
+      "symbol": "XRT",
+      "name": "零售 · XRT",
+      "englishName": "Retail",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_2550"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xhb",
+      "market": "US",
+      "symbol": "XHB",
+      "name": "住宅建造 · XHB",
+      "englishName": "Homebuilding",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_25201030"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xsd",
+      "market": "US",
+      "symbol": "XSD",
+      "name": "半导体 · XSD",
+      "englishName": "Semiconductors",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_45301020"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xsw",
+      "market": "US",
+      "symbol": "XSW",
+      "name": "软件服务 · XSW",
+      "englishName": "Software & Services",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_4510"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xtl",
+      "market": "US",
+      "symbol": "XTL",
+      "name": "电信 · XTL",
+      "englishName": "Telecommunication Services",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_5010"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    },
+    {
+      "id": "us_etf_xth",
+      "market": "US",
+      "symbol": "XTH",
+      "name": "技术硬件 · XTH",
+      "englishName": "Technology Hardware",
+      "sourceKind": "etf_proxy",
+      "sourceUrl": "https://www.ssga.com/library-content/pdfs/etf/us/spdr-etf-listing.pdf",
+      "issuer": "State Street Investment Management",
+      "currency": "USD",
+      "classificationIds": [
+        "gics2023_4520"
+      ],
+      "mappingKind": "research_proxy_not_equivalent",
+      "historyStatus": "not_connected",
+      "requiredData": [
+        "adjusted_etf_history",
+        "corporate_actions",
+        "exchange_calendar",
+        "asof_timestamp"
+      ],
+      "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
+      "isOfficialIndex": false
+    }
+  ]
+}

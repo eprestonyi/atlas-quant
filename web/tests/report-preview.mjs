@@ -12,7 +12,10 @@ const input = JSON.parse(await fs.readFile(process.argv[2], 'utf8'));
 const report = input.result || input.report || input;
 const assets = await loadWebAssets(web);
 const catalog = JSON.parse(await fs.readFile(new URL('../../engine/atlas_quant/catalog.json', import.meta.url), 'utf8'));
-const functionFixtures = JSON.parse(await fs.readFile(new URL('../../engine/tests/fixtures/model-function-golden-v1.json', import.meta.url), 'utf8')).cases;
+const functionFixtures = [
+  ...JSON.parse(await fs.readFile(new URL('../../engine/tests/fixtures/model-function-golden-v1.json', import.meta.url), 'utf8')).cases,
+  ...JSON.parse(await fs.readFile(new URL('../../engine/tests/fixtures/model-function-v3-golden.json', import.meta.url), 'utf8')).cases,
+];
 const visualBanner = '<div style="position:fixed;bottom:8px;right:8px;z-index:10000;padding:5px 10px;background:#283021;color:#eef0e7;border:1px solid #849271;font:11px monospace" data-visual-fixture>visualFixtureOnly · 冻结数据 / 只读接口模拟</div>';
 const bundleId = 'b'.repeat(64);
 const source = report.forecasts;

@@ -180,7 +180,7 @@ export function createForecastReports(C, F) {
         query: '',
         target: '',
         targetLabel: '',
-        status: 'all',
+        status: r.forecasts.factorResearch || factorOnlyReport(r) ? 'mature' : 'all',
         scope: r.forecasts.factorResearch || factorOnlyReport(r) ? 'all' : 'latest',
         tradePage: 1,
         riskPage: 1,
@@ -268,7 +268,7 @@ export function createForecastReports(C, F) {
       names = [...new Set(r.forecasts.targetDefinitions.map((x) => targetName(x.id, r)))];
     return F.panel(
       '每一条预测都可核对',
-      forecastCharts(rows, { esc: e, scope: `当前筛选全部 ${rows.length} 条记录` }) + `<div class="sq-report-controls"><label class="sq-search">${C.icon('search')}<input id="sq-forecast-search" aria-label="搜索预测记录" value="${e(ui.query)}" placeholder="日期、标的、forecastId"></label><select id="sq-forecast-scope" aria-label="预测时间范围"><option value="latest" ${ui.scope === 'latest' ? 'selected' : ''}>每组目标最新记录</option><option value="all" ${ui.scope === 'all' ? 'selected' : ''}>全部历史记录</option></select><select id="sq-forecast-status" aria-label="预测状态">${Object.entries(
+      forecastCharts(rows, { esc: e, scope: `${ui.status === 'mature' ? '标签已成熟 · ' : ''}当前筛选全部 ${rows.length} 条记录` }) + `<div class="sq-report-controls"><label class="sq-search">${C.icon('search')}<input id="sq-forecast-search" aria-label="搜索预测记录" value="${e(ui.query)}" placeholder="日期、标的、forecastId"></label><select id="sq-forecast-scope" aria-label="预测时间范围"><option value="latest" ${ui.scope === 'latest' ? 'selected' : ''}>每组目标最新记录</option><option value="all" ${ui.scope === 'all' ? 'selected' : ''}>全部历史记录</option></select><select id="sq-forecast-status" aria-label="预测状态">${Object.entries(
         {
           all: '所有状态',
           valid: '有效预测',
@@ -336,7 +336,7 @@ export function createForecastReports(C, F) {
       )}</select></label></div>${lookup}${ui.target ? `<div class="sq-actions"><span class="sq-subtle">当前目标：${e(ui.targetLabel || '已定位的目标定义')}</span>${F.button('forecast-clear-target', '清除目标筛选', { small: true })}</div>` : ''}`;
     return F.panel(
       '每一条预测都可核对',
-      forecastCharts(page.items, { esc: e, scope: `当前页 ${page.items.length} / ${page.total ?? '—'} 条记录的预览` }) + F.advanced('筛选记录', controls) +
+      forecastCharts(page.items, { esc: e, scope: `${ui.status === 'mature' ? '标签已成熟 · ' : ''}当前页 ${page.items.length} / ${page.total ?? '—'} 条记录的预览` }) + F.advanced('筛选记录', controls) +
         remoteState(
           page,
           table(

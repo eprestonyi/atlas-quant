@@ -25,6 +25,10 @@ assert(main.textContent.includes('不等同于官方行业指数'));
 for(const button of main.querySelectorAll('[data-v2="add-factor"]'))assert(catalog.proxies.some(p=>p.factorId===button.dataset.id&&p.historyStatus==='adapter_supported_requires_observations'));
 browser.state.query='unlikely-nonexistent';C.render();assert(main.textContent.includes('没有匹配来源'));
 assert(!main.querySelector('[data-v2="add-factor"]'));
+// An implemented adapter without observed history is not yet selectable.
+C.state.catalog.industrySources={items:[],proxies:[{id:'unverified-etf',market:'US',name:'History probe',symbol:'XSD',sourceKind:'etf_proxy',factorId:'xsd_return',historyStatus:'adapter_supported_history_unverified'}]};
+Object.assign(browser.state,{query:'',market:'US',kind:'etf'});C.render();
+assert(main.textContent.includes('历史待验'));assert(!main.querySelector('[data-v2="add-factor"]'));assert(main.querySelector('footer button').disabled);
 // Unknown links and executable-looking names stay inert in the displayed catalog.
 C.state.catalog.industrySources={items:[{id:'unsafe',market:'CN',name:'<img src=x onerror=alert(1)>',sourceUrl:'javascript:alert(1)',historyStatus:'not_connected'}],proxies:[]};
 Object.assign(browser.state,{query:'',market:'CN',kind:'all'});C.render();assert(!main.querySelector('img'));assert(!main.querySelector('a'));assert(main.textContent.includes('<img'));

@@ -445,13 +445,13 @@ class BundleReader:
             if h.hexdigest() != document["sha256"]:
                 fail("BUNDLE_INTEGRITY", "文档不是原v1规范数值与键顺序编码。")
         if 'snapshotContextSources' in self.collections:
+            from .context_sources import source_clock
             report = document_skeleton(self.manifest, 'report')['provenance']
             snapshot = document_skeleton(self.manifest, 'snapshot')['provenance']
             summaries = report.get('contextSources')
             if (not isinstance(summaries, list)
                     or len(summaries) != self.collections['snapshotContextSources']['rowCount']
-                    or snapshot.get('contextScope') != 'named_index_series_broadcast_by_date'
-                    or snapshot.get('contextObservationClock') != 'after_daily_publication_before_next_open'
+                    or any(snapshot.get(key) != value for key, value in source_clock(summaries or []).items())
                     or report.get('contextScope') != snapshot.get('contextScope')
                     or report.get('contextObservationClock') != snapshot.get('contextObservationClock')):
                 fail('BUNDLE_INTEGRITY', '独立指数来源摘要数量不一致。')

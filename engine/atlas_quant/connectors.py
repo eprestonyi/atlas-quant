@@ -46,6 +46,7 @@ FINANCIAL_FIELDS = {
 FINANCIAL_ALIASES = {"fd_" + field: field for field in FINANCIAL_FIELDS}
 
 EXTRA_DATASETS = {
+    "us_daily_adj": "ts_code,trade_date,close,adj_factor,vol,amount",
     "index_daily": "ts_code,trade_date,close,vol,amount",
     "sw_daily": "ts_code,trade_date,close,vol,amount,pe,pb,total_mv,float_mv",
     "stock_basic": "ts_code,symbol,name,area,industry,market,exchange,list_status,list_date,delist_date,is_hs",
@@ -59,6 +60,7 @@ EXTRA_DATASETS = {
     "cashflow": "ts_code,ann_date,f_ann_date,end_date,report_type,comp_type,update_flag,n_cashflow_act,n_cashflow_inv_act,n_cash_flows_fnc_act,c_pay_acq_const_fiolta,free_cashflow,net_profit",
 }
 ENDPOINT_PARAMS = {
+    "us_daily_adj": {"ts_code", "start_date", "end_date"},
     "index_daily": {"ts_code", "start_date", "end_date"},
     "sw_daily": {"ts_code", "start_date", "end_date"},
     "stock_basic": {"ts_code", "name", "exchange", "market", "is_hs", "list_status"},
@@ -70,7 +72,7 @@ ENDPOINT_PARAMS = {
     **{api: {"ts_code", "ann_date", "start_date", "end_date", "period", "report_type", "comp_type"}
        for api in ("income", "balancesheet", "cashflow")},
 }
-RESPONSE_LIMITS = {"index_daily": 6000, "sw_daily": 4000, "stock_basic": 6000, "index_member_all": 2000, "fina_indicator": 100,
+RESPONSE_LIMITS = {"us_daily_adj": 8000, "index_daily": 6000, "sw_daily": 4000, "stock_basic": 6000, "index_member_all": 2000, "fina_indicator": 100,
                    "income": 1000, "balancesheet": 1000, "cashflow": 1000}
 
 
@@ -80,7 +82,7 @@ def validate_endpoint(api, params):
         raise ProviderError("PROVIDER_PARAMS", "数据接口参数超出已登记的只读范围。")
     if not isinstance(params, dict) or set(params) - ENDPOINT_PARAMS[api]:
         invalid()
-    if api in {"index_daily", "sw_daily"}:
+    if api in {"index_daily", "sw_daily", "us_daily_adj"}:
         from .context_sources import REGISTRY
         if set(params) != ENDPOINT_PARAMS[api] or not any(s['api'] == api and s['ts_code'] == params.get('ts_code') for s in REGISTRY['items']):
             invalid()
@@ -89,14 +91,14 @@ def validate_endpoint(api, params):
             invalid()
         if key in {"start_date", "end_date", "trade_date", "ann_date", "period"}:
             parse_date(value)
-        if key == "ts_code" and api not in {"index_basic", "index_daily", "sw_daily"} and not SYMBOL_RE.fullmatch(value):
+        if key == "ts_code" and api not in {"index_basic", "index_daily", "sw_daily", "us_daily_adj"} and not SYMBOL_RE.fullmatch(value):
             invalid()
         if key in {"index_code", "l1_code", "l2_code", "l3_code"} and not re.fullmatch(r"\d{6}\.(?:SH|SZ|SI|CSI|CNI)", value):
             invalid()
     if "start_date" in params or "end_date" in params:
         if not {"start_date", "end_date"}.issubset(params) or params["start_date"] > params["end_date"]:
             invalid()
-        if api in {"index_daily", "sw_daily"} and (parse_date(params['end_date'])-parse_date(params['start_date'])).days > 366*8:
+        if api in {"index_daily", "sw_daily", "us_daily_adj"} and (parse_date(params['end_date'])-parse_date(params['start_date'])).days > 366*8:
             invalid()
     if api == "stock_basic":
         if params.get("list_status", "L") not in {"L", "D", "P", "G", "UN"} or params.get("exchange", "") not in {"", "SSE", "SZSE", "BSE"}:

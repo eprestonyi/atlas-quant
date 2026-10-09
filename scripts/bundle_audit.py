@@ -6,7 +6,7 @@ No imports from the engine, provider, or production transport implementation.
 """
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import json
 import math
@@ -186,8 +186,9 @@ class BundleAudit:
     def validate_context_sources(self, provenance):
         """Verify frozen values and broadcast consistency, not provider authenticity."""
         report = self.documents["report"]["provenance"]
-        require(provenance.get("contextScope") == "named_index_series_broadcast_by_date"
-                and provenance.get("contextObservationClock") == "after_daily_publication_before_next_open",
+        foreign = any(source.get('api') == 'us_daily_adj' for source in report.get('contextSources', []) if isinstance(source, dict))
+        require(provenance.get("contextScope") == ("named_market_series_asof_broadcast_by_date" if foreign else "named_index_series_broadcast_by_date")
+                and provenance.get("contextObservationClock") == ("source_session_publication_before_cn_origin" if foreign else "after_daily_publication_before_next_open"),
                 "Context source clock/scope mismatch")
         summaries = report.get("contextSources")
         count = self.collections["snapshotContextSources"]["rowCount"]
@@ -196,7 +197,7 @@ class BundleAudit:
         self.db.execute("CREATE TABLE context_values(alias TEXT,date TEXT,value REAL,PRIMARY KEY(alias,date))")
         mappings = provenance.get("externalFields", {})
         root = hashlib.sha256(b"[")
-        previous_source, aliases = None, set()
+        previous_source, aliases, foreign_aliases = None, set(), set()
         def date(value):
             require(isinstance(value, str) and re.fullmatch(r"[0-9]{8}", value), "Invalid context date")
             datetime.strptime(value, "%Y%m%d")
@@ -208,19 +209,21 @@ class BundleAudit:
                     and source["historicalRevisionVerified"] is False, "Invalid context evidence classification")
             params, api, fields, records = source["params"], source["api"], source["fields"], source["records"]
             require(isinstance(params, dict) and set(params) == {"ts_code", "start_date", "end_date"}
-                    and api in {"index_daily", "sw_daily"}, "Invalid context source request")
+                    and api in {"index_daily", "sw_daily", "us_daily_adj"}, "Invalid context source request")
             code = params["ts_code"]
-            require(isinstance(code, str) and re.fullmatch(r"[0-9]{6}\.(?:SH|SZ|SI)", code)
-                    and (code.endswith(".SI") == (api == "sw_daily")), "Invalid context source identity")
+            require(isinstance(code, str) and (bool(re.fullmatch(r"[A-Z]{1,8}", code)) if api == 'us_daily_adj'
+                    else bool(re.fullmatch(r"[0-9]{6}\.(?:SH|SZ|SI)", code)) and (code.endswith(".SI") == (api == "sw_daily"))),
+                    "Invalid context source identity")
             identity = (api, code)
             require(previous_source is None or previous_source < identity, "Duplicate/unsorted context sources")
             previous_source = identity
             start, end = date(params["start_date"]), date(params["end_date"])
             require(start <= end, "Invalid context request interval")
-            allowed = {"close", "vol", "amount"} | ({"pe", "pb", "total_mv", "float_mv"} if api == "sw_daily" else set())
+            allowed = {"close", "vol", "amount"} | ({"pe", "pb", "total_mv", "float_mv"} if api == "sw_daily" else {'adj_factor'} if api == 'us_daily_adj' else set())
             require(isinstance(fields, list) and all(isinstance(f, str) for f in fields)
                     and len(fields) >= 3 and fields[:2] == ["ts_code", "trade_date"]
-                    and fields[2:] == sorted(set(fields[2:])) and set(fields[2:]) <= allowed,
+                    and fields[2:] == sorted(set(fields[2:])) and set(fields[2:]) <= allowed
+                    and (api != 'us_daily_adj' or 'close' not in fields or 'adj_factor' in fields),
                     "Invalid context source fields")
             require(isinstance(records, list) and 1 <= len(records) <= 4000
                     and source["sha256"] == sha(canonical(records)), "Context source records hash/count mismatch")
@@ -241,19 +244,32 @@ class BundleAudit:
                 for field in fields[2:]:
                     value = row[field]
                     require(value is None or (type(value) in (int, float) and math.isfinite(value)
-                            and (field != "close" or value > 0)
+                            and (field not in {"close", "adj_factor"} or value > 0)
                             and (field not in {"vol", "amount", "total_mv", "float_mv"} or value >= 0)),
                             "Invalid context observation")
+                    if field == 'adj_factor':
+                        continue
+                    if api == 'us_daily_adj' and field == 'close':
+                        adjustment = row['adj_factor']
+                        require(adjustment is None or type(adjustment) in (int, float) and math.isfinite(adjustment) and adjustment > 0,
+                                'Invalid ETF adjustment')
+                        value = value*adjustment if value is not None and adjustment is not None else None
                     alias = "ext_ctx_" + code.lower().replace(".", "_") + "_" + field
                     aliases.add(alias)
+                    if api == 'us_daily_adj':
+                        foreign_aliases.add(alias)
                     self.db.execute("INSERT INTO context_values VALUES(?,?,?)", (alias, day, value))
                 self.checks += 1
             for field in fields[2:]:
+                if field == 'adj_factor':
+                    continue
                 alias = "ext_ctx_" + code.lower().replace(".", "_") + "_" + field
                 unit = {"close": "index_points", "pe": "ratio", "pb": "ratio",
                         "total_mv": "CNY_10000", "float_mv": "CNY_10000"}.get(field)
                 unit = unit or ({"vol": "shares_10000", "amount": "CNY_10000"} if api == "sw_daily"
                                 else {"vol": "hands", "amount": "CNY_thousands"})[field]
+                if api == 'us_daily_adj':
+                    unit = {'close': 'adjusted_USD_per_share', 'vol': 'shares', 'amount': 'USD'}[field]
                 expected = {"source": "TUSHARE_PRO", "path": api+"/"+code+"/"+field, "dataType": "number",
                             "unit": unit, "availabilityPolicy": "point_in_time_asof", "availableDateColumn": alias+"__available_date"}
                 require(mappings.get(alias) == expected, "Context mapping differs from source")
@@ -263,12 +279,20 @@ class BundleAudit:
         for row in self.rows("snapshotRows"):
             for alias in aliases:
                 require(alias in row and alias+"__available_date" in row, "Context field missing from snapshot row")
-                observed = self.db.execute("SELECT value FROM context_values WHERE alias=? AND date=?",
-                                           (alias, row["trade_date"])).fetchone()
-                value = observed[0] if observed else None
+                if alias in foreign_aliases:
+                    observed = self.db.execute("SELECT value,date FROM context_values WHERE alias=? AND date<? ORDER BY date DESC LIMIT 1",
+                                               (alias, row['trade_date'])).fetchone()
+                    age = (datetime.strptime(row['trade_date'], '%Y%m%d')-datetime.strptime(observed[1], '%Y%m%d')).days if observed else None
+                    value = observed[0] if observed and age <= 7 else None
+                    expected_available = (datetime.strptime(observed[1], '%Y%m%d')+timedelta(days=1)).strftime('%Y%m%d') if value is not None else None
+                else:
+                    observed = self.db.execute("SELECT value FROM context_values WHERE alias=? AND date=?",
+                                               (alias, row["trade_date"])).fetchone()
+                    value = observed[0] if observed else None
+                    expected_available = row['trade_date'] if value is not None else None
                 actual, available = row[alias], row[alias+"__available_date"]
                 require((actual is None if value is None else type(actual) in (int, float) and actual == value)
-                        and (available in (None, "") if value is None else available == row["trade_date"]),
+                        and (available in (None, "") if value is None else available == expected_available),
                         "Context snapshot broadcast mismatch")
                 self.checks += 1
 

@@ -28,9 +28,10 @@ function summary(value) {
       || !Number.isSafeInteger(value.rowCount) || value.rowCount<1 || value.rowCount>4000
       || !Array.isArray(value.fields) || value.fields.length<3
       || value.fields[0]!=='ts_code' || value.fields[1]!=='trade_date') fail();
-  const valid = ['close','vol','amount',...(value.api==='sw_daily'?['pe','pb','total_mv','float_mv']:[])];
+  const valid = ['close','vol','amount',...(value.api==='sw_daily'?['pe','pb','total_mv','float_mv']:value.api==='us_daily_adj'?['adj_factor']:[])];
   const fields = value.fields.slice(2);
-  if (fields.some(field=>!valid.includes(field)) || !same(fields,[...new Set(fields)].sort())) fail();
+  if (fields.some(field=>!valid.includes(field)) || !same(fields,[...new Set(fields)].sort())
+      || (value.api==='us_daily_adj' && fields.includes('close') && !fields.includes('adj_factor'))) fail();
   return value;
 }
 
@@ -42,13 +43,14 @@ export function assertContextManifest(parsed) {
     return;
   }
   const report = parsed.metadata.report.provenance, snapshot = parsed.metadata.snapshot?.provenance;
+  const foreign = report?.contextSources?.some(source=>source?.api==='us_daily_adj');
   if (parsed.manifest.kind!=='forecast' || collection.rowCount<1 || collection.rowCount>16
       || parsed.metadata.snapshot.fingerprintVersion!=='research_input_context_v1'
       || !object(snapshot) || !HASH.test(snapshot.contextSourceRoot)
       || snapshot.contextSourceRoot!==report.contextSourceRoot
       || !Array.isArray(report.contextSources) || report.contextSources.length!==collection.rowCount
-      || snapshot.contextScope!=='named_index_series_broadcast_by_date'
-      || snapshot.contextObservationClock!=='after_daily_publication_before_next_open'
+      || snapshot.contextScope!==(foreign?'named_market_series_asof_broadcast_by_date':'named_index_series_broadcast_by_date')
+      || snapshot.contextObservationClock!==(foreign?'source_session_publication_before_cn_origin':'after_daily_publication_before_next_open')
       || report.contextScope!==snapshot.contextScope
       || report.contextObservationClock!==snapshot.contextObservationClock) fail();
   let previous = '';
@@ -97,7 +99,7 @@ export async function validateContextChunk(text, rows, start, summaries) {
       for(const field of row.fields.slice(2)) {
         const value=record[field];
         if(value!==null && (typeof value!=='number' || !Number.isFinite(value)
-            || (field==='close'&&value<=0) || (['vol','amount','total_mv','float_mv'].includes(field)&&value<0))) fail();
+            || (['close','adj_factor'].includes(field)&&value<=0) || (['vol','amount','total_mv','float_mv'].includes(field)&&value<0))) fail();
       }
     }
     // In the exact, sorted source object records is followed by sha256; nested
