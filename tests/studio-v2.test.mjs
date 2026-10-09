@@ -8,7 +8,7 @@ import {ApiError, validateBindings, validateExpression, validateStrategy} from '
 
 const models=['factor_score','ridge','elastic_net','hist_gradient_boosting','bayesian_ridge','huber','random_forest','extra_trees'];
 const strategy={schemaVersion:1,name:'Studio validation',universe:{symbols:['000001.SZ','000002.SZ','600000.SH'],start:'20230101',end:'20260930'},factors:[{id:'momentum_20',expression:'returns(close,20)',direction:1}],preprocess:{winsorize:true,standardize:true},model:{mode:'auto',candidates:models,horizon:5,target:'forward_return',metric:'rank_ic'},portfolio:{topN:2,maxWeight:.4,rebalanceDays:5,initialCapital:1000000},costs:{commissionBps:3,slippageBps:10,sellTaxBps:5},graph:{nodes:[],edges:[]}};
-const factorFixtures=[{id:'builtin_market',name:'Market factor',description:'Price returns',expression:'returns(close,20)',requiredFields:['close'],category:'动量',family:'momentum',direction:1,lookback:20},{id:'builtin_financial',name:'Financial factor',description:'Announced profitability',expression:'fd_roe',requiredFields:['fd_roe'],category:'财务质量',family:'financial_level',direction:1,lookback:0},{id:'unverified_etf',name:'ETF history probe',expression:'ext_ctx_xsd_close',requiredFields:['ext_ctx_xsd_close'],category:'美国行业ETF',family:'context',direction:1,lookback:0,historyStatus:'adapter_supported_history_unverified',historyAvailabilityReason:'ETF 历史待验；真实样本未返回记录。'}];
+const factorFixtures=[{id:'builtin_market',name:'Market factor',description:'Price returns',expression:'returns(close,20)',requiredFields:['close'],category:'动量',family:'momentum',direction:1,lookback:20},{id:'builtin_financial',name:'Financial factor',description:'Announced profitability',expression:'fd_roe',requiredFields:['fd_roe'],category:'财务质量',family:'financial_level',direction:1,lookback:0},{id:'unverified_etf',name:'ETF history probe',expression:'ext_ctx_yf_xlk_close',requiredFields:['ext_ctx_yf_xlk_close'],provider:'YAHOO_YFINANCE',providerApi:'yfinance_history',category:'美国行业ETF',family:'context',direction:1,lookback:0,historyStatus:'adapter_supported_history_unverified',historyAvailabilityReason:'ETF 历史待验；真实样本未返回记录。'},{id:'observed_yahoo_etf',name:'Observed Yahoo ETF sample',expression:'ext_ctx_yf_xsd_close',requiredFields:['ext_ctx_yf_xsd_close'],category:'美国行业ETF',provider:'YAHOO_YFINANCE',providerApi:'yfinance_history',historyStatus:'adapter_supported_requires_observations',dataRequirement:'named_index_history',direction:1,lookback:0}];
 // Only the provider transport is mocked. Tests dispatch through the complete
 // production HTTP router, session/auth, review parser, patch filter and audit.
 const providerWrapper=`
@@ -134,14 +134,23 @@ test('China context fields retain adapter readiness and their source metadata',a
  });
 });
 
+test('Yahoo raw field metadata keeps its provider and individual history status',async()=>{
+ const field={id:'MKT.ext_ctx_yf_xsd_close',alias:'ext_ctx_yf_xsd_close',provider:'YAHOO_YFINANCE',providerApi:'yfinance_history',historyStatus:'adapter_supported_requires_observations'};
+ try {
+  await db.prepare('INSERT INTO data_fields(id,database_key,data_type,numeric_eligible,alias,search_text,metadata) VALUES(?,?,?,?,?,?,?)').bind(field.id,'MKT','number',1,field.alias,field.alias,JSON.stringify(field)).run();
+  const response=await (await request('/fields?availability=ready&q=ext_ctx_yf_xsd')).json();
+  assert.equal(response.total,1);assert.equal(response.items[0].source,'Yahoo Finance / yfinance');assert.equal(response.items[0].providerApi,'yfinance_history');
+ } finally {await db.prepare('DELETE FROM data_fields WHERE id=?').bind(field.id).run();}
+});
+
 test('factor paging crosses builtin-to-derived boundary without duplicates or text recipes',async()=>{
- const all=[];for(let page=1;page<=4;page++){const body=await (await request(`/factor-catalog?page=${page}&pageSize=4`)).json();assert.equal(body.total,15);all.push(...body.items);}
- assert.equal(all.length,15);assert.equal(new Set(all.map(f=>f.id)).size,15);
+ const all=[];for(let page=1;page<=4;page++){const body=await (await request(`/factor-catalog?page=${page}&pageSize=4`)).json();assert.equal(body.total,16);all.push(...body.items);}
+ assert.equal(all.length,16);assert.equal(new Set(all.map(f=>f.id)).size,16);
  const derived=all.filter(f=>f.status==='schema_recipe');assert.equal(derived.length,12);assert.ok(derived.every(f=>f.availability.status==='needs_mapping'));assert.ok(!derived.some(f=>f.expression.includes('pcd_narrative')));
  for(const f of derived){assert.match(f.id,/^[A-Za-z0-9_-]{1,100}$/);assert.equal(validateStrategy({...strategy,factors:[f]}).factors[0].id,f.id);const detail=await request('/factors/'+encodeURIComponent(f.id));assert.equal(detail.status,200);assert.equal((await detail.json()).item.expression,f.expression);}
- const ready=await (await request('/factor-catalog?availability=ready')).json();assert.equal(ready.total,2);
+ const ready=await (await request('/factor-catalog?availability=ready')).json();assert.equal(ready.total,3);assert.equal(ready.items.find(f=>f.id==='observed_yahoo_etf').source,'Yahoo Finance / yfinance');
  const mapping=await (await request('/factor-catalog?availability=needs_mapping')).json();assert.equal(mapping.total,12);assert.ok(mapping.items.every(f=>f.availability.status==='needs_mapping'));
- const unavailable=await (await request('/factor-catalog?availability=unavailable')).json();assert.equal(unavailable.total,1);assert.equal(unavailable.items[0].id,'unverified_etf');assert.equal(unavailable.items[0].availability.status,'unavailable');assert.match(unavailable.items[0].availability.reason,/ETF 历史待验/);assert.ok(!ready.items.some(f=>f.id==='unverified_etf'));
+ const unavailable=await (await request('/factor-catalog?availability=unavailable')).json();assert.equal(unavailable.total,1);assert.equal(unavailable.items[0].id,'unverified_etf');assert.equal(unavailable.items[0].availability.status,'unavailable');assert.equal(unavailable.items[0].source,'Yahoo Finance / yfinance');assert.match(unavailable.items[0].availability.reason,/ETF 历史待验/);assert.ok(!ready.items.some(f=>f.id==='unverified_etf'));
  const fd=await (await request('/factor-catalog?database=FD')).json();assert.equal(fd.total,1);assert.equal(fd.items[0].id,'builtin_financial');
  assert.equal((await request('/factors/field_rank_pcd_narrative')).status,404);
  assert.equal((await request('/factor-catalog?availability=imaginary')).status,400);

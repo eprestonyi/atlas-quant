@@ -6,6 +6,7 @@ import { createFactorDiagnostics } from './factor-diagnostics.js';
 import { renderSavedModel } from './report-model.js';
 import { createModelCandidates } from './model-candidates.js';
 import { forecastCharts } from './report-charts.js';
+import { renderContextSources } from './context-source-view.js';
 // Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
 import { ESTIMATORS } from './defaults.js';
 import { createReportSource } from './report-source.js';
@@ -739,7 +740,7 @@ export function createForecastReports(C, F) {
           (marketDownload ? `<a class="sq-button" href="${e(marketDownload)}" download>下载完整行情来源包</a>` : F.note('未返回有效的完整行情来源引用，不能补猜来源包。', 'warning')) +
           F.advanced('本报告保存的行情来源身份', JSONView(marketSource))) : '';
     return (
-      (ui.downloads || '') + source +
+      (ui.downloads || '') + source + renderContextSources(C, F, r.provenance) +
       (r.warnings?.length ? F.advanced('研究状态与限制', `<ul>${r.warnings.map(x => `<li>${e(typeof x === 'string' ? x : x.message || JSON.stringify(x))}</li>`).join('')}</ul>`) : '') +
       F.panel(
         '数据与研究身份',
