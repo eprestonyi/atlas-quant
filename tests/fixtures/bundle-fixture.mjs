@@ -23,6 +23,7 @@ export function bundleFixture({
   mutate = null,
   execution = false,
   sourceForecast = null,
+  collectionPaths = COLLECTION_PATHS,
 } = {}) {
   const strategy = validateStatisticalQuant({
     schemaVersion: 2,
@@ -151,7 +152,7 @@ export function bundleFixture({
       else parts.push({ literal: text });
     };
     function visit(node, path = "") {
-      const entry = Object.entries(COLLECTION_PATHS).find(
+      const entry = Object.entries(collectionPaths).find(
         ([, x]) => x[0] === name && x[1] === path,
       );
       if (entry && Array.isArray(node)) {

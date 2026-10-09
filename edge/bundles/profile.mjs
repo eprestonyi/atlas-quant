@@ -38,6 +38,9 @@ export const COLLECTION_PATHS = Object.freeze({
   snapshotRows: ['snapshot', '/rows'],
   plannedOrigins: ['coverage', '/origins']
 });
+export const OPTIONAL_CONTEXT_PATHS = Object.freeze({
+  snapshotContextSources: ['snapshot', '/provenance/contextSources']
+});
 export const HASH = /^[a-f0-9]{64}$/;
 export const DATE = /^\d{8}$/;
 export const SENSITIVE_KEY = /^(?:token|serviceToken|api_key|password|authorization)$/i;

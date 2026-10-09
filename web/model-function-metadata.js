@@ -8,6 +8,7 @@ export function validateMetadata(a, {require: ok, keys, number, equal}) {
     ok(Number.isFinite(d.valueOf()) && d.toISOString().slice(0,10) === iso, '训练日期不存在');
   };
   const {training: t, scope: s, featureConstruction: c, lineage: l} = a;
+  const automatic = a.schema === 'atlas-model-function/2';
   keys(t, ['trainStart','trainEnd','informationCutoff','labelEndMax','trainRows','trainDates'], '训练范围');
   for (const k of ['trainStart','trainEnd','informationCutoff','labelEndMax']) date(t[k]);
   ok(t.trainStart <= t.trainEnd && t.trainEnd <= t.labelEndMax && t.labelEndMax < t.informationCutoff && int(t.trainRows,1,10000000) && int(t.trainDates,1,t.trainRows), '训练时间或数量无效');
@@ -15,8 +16,8 @@ export function validateMetadata(a, {require: ok, keys, number, equal}) {
   ok(['mean_reversion','pair_reversion','trend','fundamental','event'].includes(s.family) && ['asset_price','frozen_basket'].includes(s.targetKind) && int(s.horizonSessions,1,60) && int(s.observationDays,1,60) && s.generalizationOutsideScopeValidated === false, '函数适用范围无效');
   ok(Array.isArray(s.symbols) && s.symbols.length > 0 && s.symbols.length <= 10000 && s.symbols.every(x => typeof x === 'string' && /^[0-9]{6}\.(SH|SZ)$/.test(x)) && new Set(s.symbols).size === s.symbols.length, '函数证券范围无效');
   date(s.researchStart); date(s.researchEnd); ok(s.researchStart < s.researchEnd, '研究区间倒置');
-  keys(c, ['schema','family','factors','preprocess','targetSpecification','quantityPolicy'], '特征构建');
-  ok(c.schema === 'origin-state-features/1' && c.family === s.family && c.quantityPolicy === 'origin_specific_frozen_quantities', '特征构建协议无效');
+  keys(c, ['schema','family','factors','preprocess','targetSpecification','quantityPolicy', ...(automatic ? ['automatic'] : [])], '特征构建');
+  ok(c.schema === (automatic ? 'origin-state-features/2' : 'origin-state-features/1') && c.family === s.family && c.quantityPolicy === 'origin_specific_frozen_quantities', '特征构建协议无效');
   ok(Array.isArray(c.factors) && c.factors.length <= 32, '因子定义数量无效');
   const ids = new Set();
   for (const f of c.factors) {
@@ -25,8 +26,43 @@ export function validateMetadata(a, {require: ok, keys, number, equal}) {
     ids.add(f.id);
   }
   const p = c.preprocess;
-  keys(p, ['winsorize','standardize','decorrelation','correlationThreshold'], '预处理');
+  keys(p, ['winsorize','standardize','decorrelation','correlationThreshold', ...(automatic ? ['automatic'] : [])], '预处理');
   ok(typeof p.winsorize === 'boolean' && typeof p.standardize === 'boolean' && ['none','drop_correlated'].includes(p.decorrelation) && number(p.correlationThreshold) && p.correlationThreshold >= .5 && p.correlationThreshold <= 1, '预处理元数据无效');
+  if (automatic) {
+    if (a.estimator.kind !== 'constant') {
+      ok((a.transforms.winsorLower !== null) === p.winsorize && (a.transforms.scaleMean !== null) === p.standardize, '训练变换与自动预处理声明不一致');
+    }
+    keys(p.automatic, ['schema'], '自动预处理声明');
+    ok(p.automatic.schema === 'auto-factor-preprocess/1', '自动预处理版本无效');
+    const policy = c.automatic;
+    keys(policy, ['schema','inputStage','scaling','fitPopulation','factors'], '自动因子构建');
+    ok(policy.schema === 'auto-factor-preprocess/1' && policy.inputStage === 'after_per_leg_semantic_transform_and_origin_aggregation' && policy.scaling === 'train_fold_median_iqr' && policy.fitPopulation === 'asset_rows_global_dates', '自动因子构建口径无效');
+    const factors = c.factors.filter(f => f.role !== 'hedge');
+    ok(Array.isArray(policy.factors) && policy.factors.length === factors.length, '自动因子定义数量无效');
+    const variants = {
+      identity: {kind:'identity'},
+      log_positive: {kind:'log_positive',invalid:'missing'},
+      log1p_nonnegative: {kind:'log1p_nonnegative',invalid:'missing'},
+      reciprocal_nonzero: {kind:'reciprocal_nonzero',invalid:'missing'},
+      percent_to_fraction: {kind:'percent_to_fraction',divisor:100},
+      return_over_trailing_volatility: {kind:'return_over_trailing_volatility',returnLag:1,volatilityWindow:20,volatilityLag:1,ddof:1,minVolatility:1e-8,invalid:'missing'}
+    };
+    const features = [];
+    policy.factors.forEach((f, index) => {
+      keys(f, ['feature','expression','direction','scope','transform','aggregation'], '自动因子');
+      const original = factors[index];
+      ok(f.feature === 'factor:' + original.id && f.expression === original.expression && f.direction === original.direction && ['asset','global'].includes(f.scope) && f.aggregation === (f.scope === 'global' ? 'global_once' : 'signed_origin_dollar_over_gross'), '自动因子来源不一致');
+      const variant = Object.hasOwn(variants, f.transform?.kind) ? variants[f.transform.kind] : null;
+      ok(!!variant, '不支持的经济变换');
+      keys(f.transform, Object.keys(variant), '经济变换');
+      ok(Object.keys(variant).every(key => f.transform[key] === variant[key]), '经济变换参数无效');
+      features.push(f.feature);
+    });
+    const builtins = ['volatility20', ...(['mean_reversion','pair_reversion'].includes(s.family)
+      ? ['state_deviation20','state_deviation60','change1'] : s.family === 'trend'
+        ? ['trend1','trend5','trend20','trend60'] : ['change1','change5'])];
+    ok(a.inputSchema.every(input => [...features, ...builtins].includes(input.name)), '函数输入缺少原始构建定义');
+  }
   const target = c.targetSpecification;
   keys(target, ['kind','horizonSessions', ...(Object.hasOwn(target ?? {},'basket') ? ['basket'] : [])], '研究目标');
   ok(target.kind === s.targetKind && target.horizonSessions === s.horizonSessions, '研究目标与适用范围不一致');

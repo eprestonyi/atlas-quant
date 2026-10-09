@@ -18,6 +18,7 @@ class Samples:
     start_index: int
     dates: list
     hedge_fits: list
+    automatic_preprocessing: dict | None = None
 
 
 def _definition(kind, symbols, q, construction, start=None, end=None, audit=None):
@@ -70,7 +71,7 @@ def _construct(strategy, closes, factors, dates, t):
     return definitions
 
 
-def _features(prices, q, scale, factor_values, strategy):
+def _features(prices, q, scale, factor_values, strategy, automatic=None):
     state = prices @ q
     changes = np.diff(state)
     feature = {"volatility20": float(np.std(changes[-20:], ddof=1)/scale)}
@@ -91,7 +92,10 @@ def _features(prices, q, scale, factor_values, strategy):
         values = factor_values[f["id"]]
         finite = np.isfinite(values)
         # Partial legs must not silently change the factor's target definition.
-        value = float(dollar @ values) if finite.all() else np.nan
+        global_factor = automatic is not None and any(item["feature"] == "factor:" + f["id"] and item["scope"] == "global" for item in automatic["factors"])
+        if global_factor and finite.all() and not np.equal(values, values[0]).all():
+            fail("CONFLICTING_GLOBAL_FACTOR", "全局因子聚合需要相同的逐腿输入")
+        value = float(values[0] if global_factor else dollar @ values) if finite.all() else np.nan
         feature["factor:"+f["id"]] = value
         if f["role"] == "event" and finite.all() and np.any(np.abs(values) > 1e-12):
             event = True
@@ -102,8 +106,13 @@ def build_samples(panel, dates, strategy):
     symbols = sorted(strategy["universe"]["symbols"])
     closes = panel.close.unstack("ts_code").reindex(index=dates, columns=symbols)
     opens = panel.open.unstack("ts_code").reindex(index=dates, columns=symbols)
-    factor_values = {f["id"]: (evaluate_expression(f["expression"], panel)*f["direction"]).unstack("ts_code").reindex(index=dates, columns=symbols)
-                     for f in strategy["factors"]}
+    automatic = None
+    if "automatic" in strategy["preprocess"]:
+        from .preprocessing import evaluate_factors
+        factor_values, automatic = evaluate_factors(panel, dates, symbols, strategy)
+    else:
+        factor_values = {f["id"]: (evaluate_expression(f["expression"], panel)*f["direction"]).unstack("ts_code").reindex(index=dates, columns=symbols)
+                         for f in strategy["factors"]}
     financial_predictors = [f["id"] for f in strategy["factors"] if f["role"] == "predictor" and
                             any(is_fundamental_field(x)
                                 for x in validate_expression(f["expression"])["fields"])]
@@ -130,7 +139,7 @@ def build_samples(panel, dates, strategy):
             scale = float(np.abs(history[-1]*q).sum()) if usable else np.nan
             usable = usable and scale > 1e-12
             factor_at_t = {key: table.loc[dates[t], members].to_numpy() for key, table in factor_values.items()}
-            feat, event = _features(history, q, scale, factor_at_t, strategy) if usable else ({}, False)
+            feat, event = _features(history, q, scale, factor_at_t, strategy, automatic) if usable else ({}, False)
             entry_i, exit_i = t+1, t+1+horizon
             entry_date = dates[entry_i] if entry_i < len(dates) else None
             exit_date = dates[exit_i] if exit_i < len(dates) else None
@@ -156,4 +165,4 @@ def build_samples(panel, dates, strategy):
     if not rows:
         fail("INSUFFICIENT_FORECAST_DATA", "预热后没有预测观察日期")
     return Samples(pd.DataFrame(features).astype(float), pd.DataFrame(labels, columns=["entry", "exit"]),
-                   pd.DataFrame(rows), definitions, start, list(dates), fits)
+                   pd.DataFrame(rows), definitions, start, list(dates), fits, automatic)

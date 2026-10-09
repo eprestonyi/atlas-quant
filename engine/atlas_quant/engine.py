@@ -79,6 +79,8 @@ def validate_strategy(strategy):
         raise ResearchError("INVALID_STRATEGY", "需要 schemaVersion=1 的策略")
     s = copy.deepcopy(strategy)
     s["schemaVersion"] = 1
+    if (isinstance(s.get("preprocess"), dict) and "automatic" in s["preprocess"]) or any(isinstance(f, dict) and "ext_ctx_" in str(f.get("expression", "")) for f in (s.get("factors") if isinstance(s.get("factors"), list) else [])):
+        raise ResearchError("INVALID_STRATEGY", "自动因子与指数上下文仅用于新版因子研究")
     for section in ("universe", "preprocess", "model", "portfolio", "costs", "research"):
         if section in s and not isinstance(s[section], dict):
             raise ResearchError("INVALID_STRATEGY", f"{section} 须为对象")
@@ -262,10 +264,19 @@ def _prepare_data(data, strategy, provenance, *, capacity_profile=None):
         fingerprint_bytes += b"\nfinancial:" + json.dumps(
             financial_commitment, sort_keys=True, ensure_ascii=False,
             separators=(",", ":"), allow_nan=False).encode()
-    digest = hashlib.sha256(fingerprint_bytes).hexdigest()
     idx = pd.MultiIndex.from_product([dates, sorted(u["symbols"])], names=["trade_date", "ts_code"])
     panel = df.set_index(["trade_date", "ts_code"])[numeric].reindex(idx)
+    from .context_sources import restore_context_fields
+    from .provider import ProviderError
+    try:
+        context_audit = restore_context_fields(panel, df, provenance, factor_fields, dates, u["start"], u["end"])
+    except ProviderError as error:
+        raise ResearchError(error.code, str(error)) from None
+    if context_audit:
+        fingerprint_bytes += b"\ncontext:" + context_audit["contextSourceRoot"].encode()
+    digest = hashlib.sha256(fingerprint_bytes).hexdigest()
     audit = {"dataSha256": digest, "calendarSha256": hashlib.sha256(calendar_bytes).hexdigest(), "observedRows": len(df), "expectedRows": len(panel), "calendarProvided": calendar_verified, "externalFieldAudit": external_audit}
+    audit.update(context_audit)
     if financial_commitment is not None:
         audit["financialSourceCommitment"] = financial_commitment
     return panel, dates, audit

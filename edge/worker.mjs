@@ -1,3 +1,4 @@
+import {assertFactorCapabilities, needsAutomaticFactors, needsContextSources} from './factor-capabilities.mjs';
 import {marketResearchApi} from './market-preparation/research-reader.mjs';
 import {admitMarketResearch} from './market-preparation/research.mjs';
 import {recordRunnerCapabilities} from './runner-capabilities.mjs';
@@ -61,6 +62,15 @@ async function enqueue(env,owner,input,internal=false,researchLink=null) {
   if(ds==='ready_dataset'&&(internal||replay)) throw new ApiError('DATASET_RESEARCH_PROFILE','财务数据集仅支持明确的工作区预测实验');
   if(ds!=='ready_market'&&input.marketDatasetRef!==undefined)throw new ApiError('MARKET_RESEARCH_SOURCE','市场来源引用必须使用 ready_market');
   if(ds==='ready_market'&&(internal||replay||!frozenScope))throw new ApiError('MARKET_RESEARCH_PROFILE','市场完整池仅支持绑定范围的工作区预测研究');
+  if (!replay && (needsAutomaticFactors(strategy) || needsContextSources(strategy))) {
+    if (['ready_dataset', 'ready_market'].includes(ds))
+      throw new ApiError('AUTOMATIC_SOURCE_PROFILE_REQUIRED', '此冻结数据来源尚未开放自动因子处理', 409);
+    const runner = await runnerState(env);
+    if (!runner.online) throw new ApiError('RUNNER_OFFLINE', '计算服务暂未就绪', 503);
+    assertFactorCapabilities(strategy, runner);
+    if (needsContextSources(strategy) && ds === 'demo')
+      throw new ApiError('CONTEXT_SOURCE_REQUIRED', '指数因子请选择 Tushare 或导入对应指数数据', 409);
+  }
   const marketAdmitted=ds==='ready_market'?await admitMarketResearch(env,owner,strategy,input):null;
   const admitted=ds==='ready_dataset'?await admitDatasetResearch(env,owner,strategy,input):null;
   await rate(env,'runs:'+owner,20,86400);

@@ -50,3 +50,21 @@ for(const [name,change] of Object.entries(changes))test(`self-valid F rejects mi
   const {fit,strategy}=structuredClone(fixture);change(fit,strategy);
   assert.throws(()=>assertFunctionSource(artifact,fit,strategy),e=>e.code==='FUNCTION_SOURCE_MISMATCH'&&e.status===503);
 });
+
+const automaticGolden=JSON.parse(await fs.readFile(new URL('./fixtures/model-function-v2-golden.json',import.meta.url),'utf8'));
+for(const example of automaticGolden.cases) {
+  test(`actual Python automatic ${example.name} binds construction and fold transforms`,async()=>{
+    const checked=await validateFunction(example.artifact);
+    assert.doesNotThrow(()=>assertFunctionSource(checked,example.sourceFit,example.sourceStrategy));
+    for(const mutate of [
+      f=>delete f.automaticPreprocessing,
+      f=>f.automaticPreprocessing.fitPopulation='all_rows',
+      f=>f.automaticPreprocessing.factors[0].transform={kind:'identity'},
+      f=>f.automaticPreprocessing.factors[0].scope='global',
+      ...(checked.estimator.kind==='constant'?[]:[f=>f.scalerMethod='standard_deviation',f=>f.scalerMean[0]+=.1])
+    ]) {
+      const fit=structuredClone(example.sourceFit);mutate(fit);
+      assert.throws(()=>assertFunctionSource(checked,fit,example.sourceStrategy),e=>e.code==='FUNCTION_SOURCE_MISMATCH');
+    }
+  });
+}

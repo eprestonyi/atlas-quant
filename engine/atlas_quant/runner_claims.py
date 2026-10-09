@@ -20,7 +20,9 @@ def _error(code, message):
 def claim_request(request_id, *, financial_datasets=False, market_datasets=False, financial_graphs=False, market_trend_auto=False):
     from . import __version__
     request = {"requestId": request_id, "runnerVersion": "atlas-quant-runner/" + __version__,
-            "engineVersion": __version__, "transportFormats": ["atlas.quant.bundle/1"]}
+            "engineVersion": __version__, "transportFormats": ["atlas.quant.bundle/1"],
+            "factorPreprocessFormats": ["auto-factor-preprocess/1"],
+            "contextSourceFormats": ["named-index-history/1"]}
     if financial_datasets is True:
         request["transportFormats"].append("atlas.quant.financial_bundle/1")
         request["datasetFormats"] = ["atlas.quant.research_dataset/2"]

@@ -3,10 +3,12 @@ import { ApiError } from '../errors.mjs';
 import { BUNDLE_PROFILE, COLLECTION_PATHS } from './profile.mjs';
 import { readChunk } from './storage.mjs';
 import { FINANCIAL_GRAPH_PROTOCOL } from '../financial-graph-bundles/manifest.mjs';
+import { LEGACY_PROTOCOL } from './manifest.mjs';
 const archivePaths = (parsed) =>
   parsed.manifest.format === FINANCIAL_GRAPH_PROTOCOL.format && parsed.manifest.version === 2
     ? FINANCIAL_GRAPH_PROTOCOL.collectionPaths
-    : COLLECTION_PATHS;
+    : parsed.manifest.format === LEGACY_PROTOCOL.format && parsed.manifest.version === 1
+      ? LEGACY_PROTOCOL.collectionPaths : COLLECTION_PATHS;
 
 const encoder = new TextEncoder();
 const block = 512;

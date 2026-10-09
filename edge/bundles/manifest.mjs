@@ -1,7 +1,8 @@
 import { ApiError } from '../errors.mjs';
 import { sha } from '../runtime.mjs';
-import { BUNDLE_PROFILE, COLLECTION_PATHS, HASH } from './profile.mjs';
+import { BUNDLE_PROFILE, COLLECTION_PATHS, OPTIONAL_CONTEXT_PATHS, HASH } from './profile.mjs';
 import { byteLength, keys, object, parseStrictJson } from './json.mjs';
+import { assertContextManifest } from './context-sources.mjs';
 
 const MARKER = '__atlas_quant_bundle_marker__';
 const fail = (message, code = 'BUNDLE_MANIFEST', status = 400) => {
@@ -101,7 +102,8 @@ export const LEGACY_PROTOCOL = Object.freeze({
   kinds: ['forecast', 'execution'],
   extraKeys: [],
   codecs: null,
-  snapshotVersion: 1
+  snapshotVersion: 1,
+  collectionPaths: Object.freeze({...COLLECTION_PATHS, ...OPTIONAL_CONTEXT_PATHS})
 });
 /** Mechanical layout verifier. Callers provide a server-registered protocol;
  * request data cannot select or override these format rules. */
@@ -304,7 +306,9 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
         : collections.get(snapshotCollection).rowCount) < 1)
   )
     fail('冻结数据格式或指纹无效');
-  return { manifest, manifestText, bundleId, collections, metadata, rowCount };
+  const parsed = { manifest, manifestText, bundleId, collections, metadata, rowCount };
+  if (protocol === LEGACY_PROTOCOL) assertContextManifest(parsed);
+  return parsed;
 }
 
 export async function validateChunk(text, descriptor, codec = 'forecast_json_v1') {

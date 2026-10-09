@@ -126,7 +126,7 @@ s.strategy.execution.enabled = true;
 s.strategy.model.estimator = 'ridge';
 await q.workspace.save();
 assert.equal(saved.execution.enabled, false);
-assert.equal(saved.model.estimator, 'auto');
+assert.equal(saved.model.estimator, 'ridge', 'saving an existing explicit model in Easy does not replace its estimator');
 assert.equal(saved.universe.symbols.length, 1000);
 assert.equal(savedPayload.universeScopeRef.scopeId, 'scope-1');
 await route('easy/universe');

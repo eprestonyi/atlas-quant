@@ -1,0 +1,270 @@
+{
+  "schemaVersion": 1,
+  "identitySource": {
+    "path": "data/universes.json",
+    "sha256": "3b768bc76a07d4344778c8284b0d1c31e3a901d55296e38e28eba6ccf8486192",
+    "asOf": "2026-10-07T10:45:19.880896+00:00",
+    "historicalConstituentsUsed": false
+  },
+  "items": [
+    {
+      "ts_code": "000016.SH",
+      "name": "上证50",
+      "api": "index_daily",
+      "category": "大盘指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "000300.SH",
+      "name": "沪深300",
+      "api": "index_daily",
+      "category": "大盘指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "000688.SH",
+      "name": "科创50",
+      "api": "index_daily",
+      "category": "大盘指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "000852.SH",
+      "name": "中证1000",
+      "api": "index_daily",
+      "category": "大盘指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "000905.SH",
+      "name": "中证500",
+      "api": "index_daily",
+      "category": "大盘指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "399006.SZ",
+      "name": "创业板指",
+      "api": "index_daily",
+      "category": "大盘指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801010.SI",
+      "name": "农林牧渔",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801030.SI",
+      "name": "基础化工",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801040.SI",
+      "name": "钢铁",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801050.SI",
+      "name": "有色金属",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801080.SI",
+      "name": "电子",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801110.SI",
+      "name": "家用电器",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801120.SI",
+      "name": "食品饮料",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801130.SI",
+      "name": "纺织服饰",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801140.SI",
+      "name": "轻工制造",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801150.SI",
+      "name": "医药生物",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801160.SI",
+      "name": "公用事业",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801170.SI",
+      "name": "交通运输",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801180.SI",
+      "name": "房地产",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801200.SI",
+      "name": "商贸零售",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801210.SI",
+      "name": "社会服务",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801230.SI",
+      "name": "综合",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801710.SI",
+      "name": "建筑材料",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801720.SI",
+      "name": "建筑装饰",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801730.SI",
+      "name": "电力设备",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801740.SI",
+      "name": "国防军工",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801750.SI",
+      "name": "计算机",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801760.SI",
+      "name": "传媒",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801770.SI",
+      "name": "通信",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801780.SI",
+      "name": "银行",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801790.SI",
+      "name": "非银金融",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801880.SI",
+      "name": "汽车",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801890.SI",
+      "name": "机械设备",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801950.SI",
+      "name": "煤炭",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801960.SI",
+      "name": "石油石化",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801970.SI",
+      "name": "环保",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    },
+    {
+      "ts_code": "801980.SI",
+      "name": "美容护理",
+      "api": "sw_daily",
+      "category": "行业指数",
+      "scope": "global"
+    }
+  ]
+}

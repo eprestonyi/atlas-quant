@@ -10,7 +10,7 @@ import time
 import uuid
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from .bundle import (BundleReader, CHUNK_LIMIT, MANIFEST_LIMIT, COLLECTIONS,
+from .bundle import (BundleReader, CHUNK_LIMIT, MANIFEST_LIMIT, COLLECTIONS, OPTIONAL_COLLECTIONS,
                      build_bundle, encode, sha, fail, validate_manifest)
 
 
@@ -47,7 +47,7 @@ class BundleSpool:
 
     @staticmethod
     def chunk_name(collection, ordinal):
-        if collection not in COLLECTIONS or not isinstance(ordinal, int) or isinstance(ordinal, bool) or not 0 <= ordinal < 256:
+        if collection not in (COLLECTIONS | OPTIONAL_COLLECTIONS) or not isinstance(ordinal, int) or isinstance(ordinal, bool) or not 0 <= ordinal < 256:
             fail("BUNDLE_FORMAT", "分片引用无效。")
         return f"{collection}-{ordinal}"
 

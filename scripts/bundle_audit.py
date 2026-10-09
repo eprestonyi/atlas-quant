@@ -6,6 +6,7 @@ No imports from the engine, provider, or production transport implementation.
 """
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 import hashlib
 import json
 import math
@@ -39,6 +40,7 @@ PATHS = {
     "riskLedger": ("report", "/execution/ledger"),
     "decisions": ("report", "/execution/decisions"),
     "snapshotRows": ("snapshot", "/rows"),
+    "snapshotContextSources": ("snapshot", "/provenance/contextSources"),
     "plannedOrigins": ("coverage", "/origins"),
 }
 IDENTITIES = {"forecasts": "forecastId", "baselineRows": "forecastId",
@@ -119,6 +121,9 @@ class BundleAudit:
         for collection in m["collections"]:
             name = collection["id"]
             require(name in PATHS and name not in self.collections, "Unknown or duplicate collection")
+            if name == "snapshotContextSources":
+                require(m.get("format") == "atlas.quant.bundle" and m["kind"] == "forecast",
+                        "Context sources require ordinary forecast transport")
             require((collection["document"], collection["path"]) == PATHS[name], "Collection path mismatch")
             require(collection["document"] in expected_docs, "Collection has no document")
             self.collections[name] = collection
@@ -166,10 +171,106 @@ class BundleAudit:
 
     def validate_snapshot(self):
         snapshot = self.documents["snapshot"]
-        require(snapshot["schemaVersion"] == 1 and snapshot["fingerprintVersion"] == "research_input_v1"
+        provenance = snapshot["provenance"]
+        contextual = "contextSourceRoot" in provenance
+        version = "research_input_context_v1" if contextual else "research_input_v1"
+        require(snapshot["schemaVersion"] == 1 and snapshot["fingerprintVersion"] == version
                 and snapshot["dataFingerprint"] == self.manifest["dataFingerprint"]
-                and snapshot["sourceDataFingerprint"] == snapshot["provenance"]["dataFingerprint"],
+                and snapshot["sourceDataFingerprint"] == provenance["dataFingerprint"],
                 "Snapshot input metadata differs")
+        require(contextual == ("snapshotContextSources" in self.collections),
+                "Context source archive/version mismatch")
+        if contextual:
+            self.validate_context_sources(provenance)
+
+    def validate_context_sources(self, provenance):
+        """Verify frozen values and broadcast consistency, not provider authenticity."""
+        report = self.documents["report"]["provenance"]
+        require(provenance.get("contextScope") == "named_index_series_broadcast_by_date"
+                and provenance.get("contextObservationClock") == "after_daily_publication_before_next_open",
+                "Context source clock/scope mismatch")
+        summaries = report.get("contextSources")
+        count = self.collections["snapshotContextSources"]["rowCount"]
+        require(1 <= count <= 16 and isinstance(summaries, list) and len(summaries) == count,
+                "Context source summary count mismatch")
+        self.db.execute("CREATE TABLE context_values(alias TEXT,date TEXT,value REAL,PRIMARY KEY(alias,date))")
+        mappings = provenance.get("externalFields", {})
+        root = hashlib.sha256(b"[")
+        previous_source, aliases = None, set()
+        def date(value):
+            require(isinstance(value, str) and re.fullmatch(r"[0-9]{8}", value), "Invalid context date")
+            datetime.strptime(value, "%Y%m%d")
+            return value
+        for index, source in enumerate(self.rows("snapshotContextSources")):
+            require(set(source) == {"api", "params", "fields", "records", "sha256", "classification",
+                                    "notWireBytes", "historicalRevisionVerified"}, "Invalid context source envelope")
+            require(source["classification"] == "PARSED_PROVIDER_RESPONSE" and source["notWireBytes"] is True
+                    and source["historicalRevisionVerified"] is False, "Invalid context evidence classification")
+            params, api, fields, records = source["params"], source["api"], source["fields"], source["records"]
+            require(isinstance(params, dict) and set(params) == {"ts_code", "start_date", "end_date"}
+                    and api in {"index_daily", "sw_daily"}, "Invalid context source request")
+            code = params["ts_code"]
+            require(isinstance(code, str) and re.fullmatch(r"[0-9]{6}\.(?:SH|SZ|SI)", code)
+                    and (code.endswith(".SI") == (api == "sw_daily")), "Invalid context source identity")
+            identity = (api, code)
+            require(previous_source is None or previous_source < identity, "Duplicate/unsorted context sources")
+            previous_source = identity
+            start, end = date(params["start_date"]), date(params["end_date"])
+            require(start <= end, "Invalid context request interval")
+            allowed = {"close", "vol", "amount"} | ({"pe", "pb", "total_mv", "float_mv"} if api == "sw_daily" else set())
+            require(isinstance(fields, list) and all(isinstance(f, str) for f in fields)
+                    and len(fields) >= 3 and fields[:2] == ["ts_code", "trade_date"]
+                    and fields[2:] == sorted(set(fields[2:])) and set(fields[2:]) <= allowed,
+                    "Invalid context source fields")
+            require(isinstance(records, list) and 1 <= len(records) <= 4000
+                    and source["sha256"] == sha(canonical(records)), "Context source records hash/count mismatch")
+            summary = {k: source[k] for k in ("api", "params", "fields", "sha256")}
+            summary["rowCount"] = len(records)
+            require(summary == summaries[index], "Context source summary differs from frozen source")
+            if index:
+                root.update(b",")
+            root.update(canonical(source))
+            previous_date = None
+            for row in records:
+                require(isinstance(row, dict) and set(row) == set(fields) and row["ts_code"] == code,
+                        "Context row identity mismatch")
+                day = date(row["trade_date"])
+                require(start <= day <= end and (previous_date is None or previous_date < day),
+                        "Duplicate/unsorted/out-of-range context date")
+                previous_date = day
+                for field in fields[2:]:
+                    value = row[field]
+                    require(value is None or (type(value) in (int, float) and math.isfinite(value)
+                            and (field != "close" or value > 0)
+                            and (field not in {"vol", "amount", "total_mv", "float_mv"} or value >= 0)),
+                            "Invalid context observation")
+                    alias = "ext_ctx_" + code.lower().replace(".", "_") + "_" + field
+                    aliases.add(alias)
+                    self.db.execute("INSERT INTO context_values VALUES(?,?,?)", (alias, day, value))
+                self.checks += 1
+            for field in fields[2:]:
+                alias = "ext_ctx_" + code.lower().replace(".", "_") + "_" + field
+                unit = {"close": "index_points", "pe": "ratio", "pb": "ratio",
+                        "total_mv": "CNY_10000", "float_mv": "CNY_10000"}.get(field)
+                unit = unit or ({"vol": "shares_10000", "amount": "CNY_10000"} if api == "sw_daily"
+                                else {"vol": "hands", "amount": "CNY_thousands"})[field]
+                expected = {"source": "TUSHARE_PRO", "path": api+"/"+code+"/"+field, "dataType": "number",
+                            "unit": unit, "availabilityPolicy": "point_in_time_asof", "availableDateColumn": alias+"__available_date"}
+                require(mappings.get(alias) == expected, "Context mapping differs from source")
+        root.update(b"]")
+        require(root.hexdigest() == provenance["contextSourceRoot"] == report.get("contextSourceRoot"),
+                "Context source root mismatch")
+        for row in self.rows("snapshotRows"):
+            for alias in aliases:
+                require(alias in row and alias+"__available_date" in row, "Context field missing from snapshot row")
+                observed = self.db.execute("SELECT value FROM context_values WHERE alias=? AND date=?",
+                                           (alias, row["trade_date"])).fetchone()
+                value = observed[0] if observed else None
+                actual, available = row[alias], row[alias+"__available_date"]
+                require((actual is None if value is None else type(actual) in (int, float) and actual == value)
+                        and (available in (None, "") if value is None else available == row["trade_date"]),
+                        "Context snapshot broadcast mismatch")
+                self.checks += 1
 
     def read_file(self, relative, maximum):
         candidate = self.directory / relative

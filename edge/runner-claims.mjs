@@ -1,3 +1,4 @@
+import {supportsAutomaticFactors, supportsContextSources, assertFactorCapabilities} from './factor-capabilities.mjs';
 import {
   assertRunMarket,
   MARKET_RESEARCH_PROFILES,
@@ -85,6 +86,9 @@ export async function claimRunnerJob(env, input, now) {
   const supportsBundle = Number(
     Array.isArray(input.transportFormats) && input.transportFormats.includes('atlas.quant.bundle/1')
   );
+  const supportsAutomatic = Number(supportsAutomaticFactors(input));
+  const supportsContext = Number(supportsContextSources(input));
+  const factorGuard = `(?=1 OR json_type(spec,'$.preprocess.automatic') IS NULL) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE instr(json_extract(f.value,'$.expression'),'ext_ctx_')>0))`;
   const acceptedFinancial = acceptedFinancialProfiles(env, input);
   const acceptedMarket = MARKET_RESEARCH_PROFILES.filter(
     (p) => marketEnabled(env, p) && supportsMarket(input, p)
@@ -107,7 +111,7 @@ export async function claimRunnerJob(env, input, now) {
   if (requestId === undefined) {
     // Compatibility for pre-0.4 runtimes; no durable request identity was sent.
     const row = await env.DB.prepare(
-      `UPDATE jobs SET status='running',lease_token=?,lease_until=?,updated_at=? WHERE id=(SELECT id FROM jobs WHERE status='queued' AND NOT EXISTS(SELECT 1 FROM meta WHERE key='runner_maintenance' AND value='paused') AND (?=1 OR COALESCE(json_extract(spec,'$.schemaVersion'),1)<2) AND ${bundleGuard} AND ${datasetGuard} AND ${marketGuard} ORDER BY created_at,id LIMIT 1) AND status='queued' RETURNING *`
+      `UPDATE jobs SET status='running',lease_token=?,lease_until=?,updated_at=? WHERE id=(SELECT id FROM jobs WHERE status='queued' AND NOT EXISTS(SELECT 1 FROM meta WHERE key='runner_maintenance' AND value='paused') AND (?=1 OR COALESCE(json_extract(spec,'$.schemaVersion'),1)<2) AND ${bundleGuard} AND ${datasetGuard} AND ${marketGuard} AND ${factorGuard} ORDER BY created_at,id LIMIT 1) AND status='queued' RETURNING *`
     )
       .bind(
         lease,
@@ -116,7 +120,9 @@ export async function claimRunnerJob(env, input, now) {
         supportsForecast,
         supportsBundle,
         JSON.stringify(acceptedFinancial),
-        JSON.stringify(acceptedMarket)
+        JSON.stringify(acceptedMarket),
+        supportsAutomatic,
+        supportsContext
       )
       .first();
     return { job: row ? await jobPayload(env, row, supportsBundle) : null };
@@ -133,7 +139,7 @@ export async function claimRunnerJob(env, input, now) {
         AND NOT EXISTS(SELECT 1 FROM runner_claims WHERE request_id=?)
         AND NOT EXISTS(SELECT 1 FROM meta WHERE key='runner_maintenance' AND value='paused')
         AND (?=1 OR COALESCE(json_extract(spec,'$.schemaVersion'),1)<2)
-        AND ${bundleGuard} AND ${datasetGuard} AND ${marketGuard}
+        AND ${bundleGuard} AND ${datasetGuard} AND ${marketGuard} AND ${factorGuard}
       ORDER BY created_at,id LIMIT 1`
     ).bind(
       requestId,
@@ -142,7 +148,9 @@ export async function claimRunnerJob(env, input, now) {
       supportsForecast,
       supportsBundle,
       JSON.stringify(acceptedFinancial),
-      JSON.stringify(acceptedMarket)
+      JSON.stringify(acceptedMarket),
+        supportsAutomatic,
+        supportsContext
     ),
     env.DB.prepare(
       `UPDATE jobs SET status='running',lease_token=?,lease_until=?,updated_at=?
@@ -160,6 +168,7 @@ export async function claimRunnerJob(env, input, now) {
   if (row.status !== 'running' || !row.lease_token) {
     throw new ApiError('CLAIM_STATE_CONFLICT', '领取记录状态不一致，停止领取并检查记录', 409);
   }
+  assertFactorCapabilities(parse(row.spec), input);
   if (row.data_source === 'ready_market') {
     const r = await env.DB.prepare(
       'SELECT profile FROM quant_run_market_datasets WHERE job_id=? AND owner=?'

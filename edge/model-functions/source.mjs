@@ -36,6 +36,15 @@ export function assertFunctionSource(artifact, fit, strategy) {
   requireSame(artifact.outputs, fit.outputs, '输出定义');
   requireSame(artifact.featureConstruction.factors, strategy?.factors, '因子定义');
   requireSame(artifact.featureConstruction.preprocess, strategy?.preprocess, '预处理声明');
+  if (strategy?.preprocess?.automatic) {
+    requireSame(artifact.schema, 'atlas-model-function/2', '自动因子函数版本');
+    requireSame(artifact.featureConstruction.automatic, fit.automaticPreprocessing, '因子经济变换与作用域');
+    if (!['no_change', 'historical_drift'].includes(fit.estimator) && strategy.preprocess.standardize)
+      requireSame(fit.scalerMethod, 'median_iqr', '训练集稳健尺度');
+  } else {
+    requireSame(artifact.schema, 'atlas-model-function/1', '传统函数版本');
+    requireSame(artifact.featureConstruction.automatic === undefined, true, '传统因子构造');
+  }
   requireSame(artifact.featureConstruction.targetSpecification, strategy?.target, '目标定义');
   requireSame(artifact.provenance.estimator, fit.estimator, '已选择估计器');
   requireSame(artifact.provenance.parameters, fit.params, '已选择参数');

@@ -47,6 +47,9 @@ COLLECTIONS = {
     "snapshotRows": ("snapshot", "/rows"),
     "plannedOrigins": ("coverage", "/origins"),
 }
+# Optional only for ordinary forecast snapshots. Existing financial protocols
+# keep their closed collection maps and unchanged document encodings.
+OPTIONAL_COLLECTIONS = {"snapshotContextSources": ("snapshot", "/provenance/contextSources")}
 
 
 def fail(code, message):
@@ -179,7 +182,7 @@ def build_bundle(report, snapshot, coverage, write_chunk, read_chunk, *, chunk_t
         documents["snapshot"] = snapshot
     elif manifest["kind"] == "forecast":
         fail("BUNDLE_FORMAT", "新预测分片缺少冻结输入。")
-    lookup = {pair: name for name, pair in COLLECTIONS.items()}
+    lookup = {pair: name for name, pair in (COLLECTIONS | OPTIONAL_COLLECTIONS).items()}
 
     def collection(name, document, pointer, values):
         if not isinstance(values, list):
@@ -278,7 +281,9 @@ def validate_manifest(raw, expected_id=None):
         for info in manifest["collections"]:
             if set(info) != {"id", "document", "path", "rowCount", "chunks"} or info["id"] in collections:
                 raise ValueError()
-            if COLLECTIONS.get(info["id"]) != (info["document"], info["path"]) or not _integer(info["rowCount"]) or not isinstance(info["chunks"], list):
+            if (COLLECTIONS | OPTIONAL_COLLECTIONS).get(info["id"]) != (info["document"], info["path"]) or not _integer(info["rowCount"]) or not isinstance(info["chunks"], list):
+                raise ValueError()
+            if info['id'] == 'snapshotContextSources' and not 1 <= info['rowCount'] <= 16:
                 raise ValueError()
             collections[info["id"]] = info
             total_rows += info["rowCount"]
@@ -337,6 +342,15 @@ def validate_manifest(raw, expected_id=None):
             required.add("snapshotRows")
         if not required <= set(collections) or manifest["documents"]["forecast"]["sha256"] != manifest["forecastArtifactId"]:
             raise ValueError()
+        if manifest['kind'] == 'forecast':
+            snapshot = document_skeleton(manifest, 'snapshot')
+            provenance = snapshot.get('provenance', {})
+            context = provenance.get('contextSources')
+            if context is not None and context != {'__bundle_collection__': 'snapshotContextSources'}:
+                raise ValueError()
+            archived = 'snapshotContextSources' in collections
+            if archived != (snapshot.get('fingerprintVersion') == 'research_input_context_v1') or archived != ('contextSourceRoot' in provenance):
+                raise ValueError()
         return manifest
     except (ValueError, KeyError, TypeError, AttributeError, RecursionError) as exc:
         if getattr(exc, "code", None):
@@ -430,6 +444,32 @@ class BundleReader:
                 h.update(raw)
             if h.hexdigest() != document["sha256"]:
                 fail("BUNDLE_INTEGRITY", "文档不是原v1规范数值与键顺序编码。")
+        if 'snapshotContextSources' in self.collections:
+            report = document_skeleton(self.manifest, 'report')['provenance']
+            snapshot = document_skeleton(self.manifest, 'snapshot')['provenance']
+            summaries = report.get('contextSources')
+            if (not isinstance(summaries, list)
+                    or len(summaries) != self.collections['snapshotContextSources']['rowCount']
+                    or snapshot.get('contextScope') != 'named_index_series_broadcast_by_date'
+                    or snapshot.get('contextObservationClock') != 'after_daily_publication_before_next_open'
+                    or report.get('contextScope') != snapshot.get('contextScope')
+                    or report.get('contextObservationClock') != snapshot.get('contextObservationClock')):
+                fail('BUNDLE_INTEGRITY', '独立指数来源摘要数量不一致。')
+            root = hashlib.sha256(b'[')
+            for index, source in enumerate(self.rows('snapshotContextSources')):
+                if index:
+                    root.update(b',')
+                root.update(encode(source))
+                if (not isinstance(source.get('records'), list)
+                        or source.get('sha256') != sha(encode(source['records']))):
+                    fail('BUNDLE_INTEGRITY', '独立指数来源记录哈希不一致。')
+                summary = {key: source.get(key) for key in ('api', 'params', 'fields', 'sha256')}
+                summary['rowCount'] = len(source['records'])
+                if summary != summaries[index]:
+                    fail('BUNDLE_INTEGRITY', '独立指数来源摘要与冻结记录不一致。')
+            root.update(b']')
+            if snapshot.get('contextSourceRoot') != root.hexdigest() or report.get('contextSourceRoot') != root.hexdigest():
+                fail('BUNDLE_INTEGRITY', '独立指数来源根哈希不一致。')
 
     def verify_integrity(self):
         self.verify_hashes()

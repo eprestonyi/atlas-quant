@@ -11,6 +11,15 @@
 .sq-model-hyperparameters dt { font: .75rem ui-monospace, monospace; color: var(--muted, #8d9788); }
 .sq-model-hyperparameters dd { margin: 0; font: .8rem ui-monospace, monospace; }
 .sq-model-transform { display: block; margin: 0 0 1rem; font-size: .9rem; }
+.sq-model-input { min-width: 0; border-bottom: 1px solid var(--line, #343c32); }
+.sq-model-input > summary { display: flex; align-items: baseline; gap: .6rem; padding: .8rem 0; cursor: pointer; font-size: .85rem; }
+.sq-model-input > summary > strong { flex: 0 0 2rem; font-family: ui-monospace, monospace; }
+.sq-model-input > summary > span { overflow-wrap: anywhere; min-width: 0; }
+.sq-model-input > summary > small { margin-left: auto; color: var(--muted, #8d9788); text-align: right; }
+.sq-model-input-body { padding: 0 0 .7rem; min-width: 0; }
+.sq-model-input-source { display: grid; grid-template-columns: minmax(4rem, auto) minmax(0, 1fr); gap: .4rem 1rem; font-size: .8rem; }
+.sq-model-input-source dt { color: var(--muted, #8d9788); }
+.sq-model-input-source dd { margin: 0; overflow-wrap: anywhere; }
 .sq-report-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
 .sq-report-heading h2 { font-size: 1.1rem; margin: 0; }
 .sq-report-heading .sq-status { white-space: normal; }

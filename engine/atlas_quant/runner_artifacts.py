@@ -50,7 +50,9 @@ def freeze_input(strategy, data, provenance, *, max_bytes=None):
     _, _, audit = _prepare_data(data, strategy, provenance)
     snapshot = {"schemaVersion": 1, "rows": rows,
                 "provenance": copy.deepcopy(provenance), "sourceDataFingerprint": fingerprint,
-                "dataFingerprint": audit["dataSha256"], "fingerprintVersion": "research_input_v1"}
+                "dataFingerprint": audit["dataSha256"],
+                "fingerprintVersion": ("research_input_context_v1" if audit.get("contextSourceRoot")
+                                       else "research_input_v1")}
     if len(_encode(snapshot)) > (MAX_SNAPSHOT_BYTES if max_bytes is None else max_bytes):
         _fail("SNAPSHOT_SIZE", "冻结行情超过独立产物大小限制。")
     return snapshot
@@ -67,7 +69,8 @@ def restore_input(strategy, snapshot, expected_fingerprint=None, *, max_bytes=No
     provenance = copy.deepcopy(snapshot["provenance"])
     fingerprint = snapshot.get("dataFingerprint")
     source_fingerprint = snapshot.get("sourceDataFingerprint")
-    if (snapshot.get("fingerprintVersion") != "research_input_v1"
+    version = "research_input_context_v1" if provenance.get("contextSourceRoot") else "research_input_v1"
+    if (snapshot.get("fingerprintVersion") != version
             or not isinstance(fingerprint, str) or not re.fullmatch(r"[a-f0-9]{64}", fingerprint)
             or provenance.get("dataFingerprint") != source_fingerprint
             or (expected_fingerprint is not None and expected_fingerprint != fingerprint)):

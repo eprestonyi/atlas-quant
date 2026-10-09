@@ -468,3 +468,20 @@ test("busy heartbeat preserves explicit capability, explicit empty/new version/l
   await claim();
   assert.deepEqual((await metadata()).financialResearchProfiles, []);
 });
+
+test('automatic and context jobs require exact capabilities before reserve and durable retry', async () => {
+  const spec={schemaVersion:2,name:'Auto capability fixture',universe:{symbols:['000001.SZ'],start:'20230101',end:'20250930'},research:{mode:'statistical_quant',observationDays:1},factors:[{id:'market',expression:'ext_ctx_000300_sh_close',direction:1,role:'predictor'}],preprocess:{automatic:{schema:'auto-factor-preprocess/1'}},target:{kind:'asset_price',horizonSessions:5},model:{family:'trend',estimator:'ridge'},execution:{enabled:false}};
+  const id=await seed('requires-auto-context',spec);
+  for (const capabilities of [{},{factorPreprocessFormats:['auto-factor-preprocess/1']},{factorPreprocessFormats:['auto-factor-preprocess/2'],contextSourceFormats:['named-index-history/1']}]) {
+    const r=await claim(randomUUID(),{engineVersion:'99.0.0',...capabilities});
+    assert.equal(r.status,200); assert.equal((await r.json()).job,null);
+    assert.equal((await read(id)).status,'queued');
+  }
+  const requestId=randomUUID(), capabilities={factorPreprocessFormats:['auto-factor-preprocess/1'],contextSourceFormats:['named-index-history/1']};
+  const response=await claim(requestId,capabilities);assert.equal(response.status,200);
+  const first=await response.json();assert.equal(first.job.id,id);
+  const missing=await claim(requestId);assert.equal(missing.status,409);
+  assert.equal((await missing.json()).error.code,'RUNNER_UPGRADE_REQUIRED');
+  const resumed=await (await claim(requestId,capabilities)).json();
+  assert.equal(resumed.job.leaseToken,first.job.leaseToken);
+});
