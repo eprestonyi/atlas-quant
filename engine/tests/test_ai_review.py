@@ -59,3 +59,34 @@ def test_high_then_max_shares_fixed_call_budget(tmp_path,monkeypatch):
     output=runtime.review_candidates(packet());assert [x['effort'] for x in output['receipt']['calls']]==['high','max']
     assert output['refinementCandidateIds']==['ridge:2']
     assert runtime.review_candidates(packet())['receipt']['status']=='call_budget_exhausted'
+
+
+def test_invoke_uses_isolated_transport_after_durable_intent(tmp_path, monkeypatch):
+    from atlas_quant.statistical_quant import ai_review
+    root = tmp_path / 'review'
+    observed = []
+
+    def transport(executable, directory, prompt, schema, **options):
+        assert (directory / 'intent.json').is_file()
+        assert directory.stat().st_mode & 0o077 == 0
+        assert options == {'model': 'gpt-6.1-sol', 'effort': 'high', 'timeout': 150}
+        assert 'outerFolds' not in prompt and 'PRIVATE_OUTER_VALUE' not in prompt
+        assert 'untrusted data' in prompt
+        observed.append(options)
+        value = decision()
+        value['needsRevision'] = False
+        return json.dumps(value), {'schema':'factor-model-app-server-transport/1',
+            'toolCallsObserved':0,'completedTextOnlyTurn':True,
+            'boundary':{'executionEnvironments':[], 'completeToolInventoryVerified':False}}
+
+    monkeypatch.setattr(ai_review, 'run_isolated_review', transport)
+    data = packet()
+    data['outerFolds'] = ['PRIVATE_OUTER_VALUE']
+    result = ReviewRuntime(root=root, enabled=True, executable='codex').review_candidates(data)
+    assert len(observed) == 1
+    record = result['receipt']['calls'][0]
+    assert record['transport']['boundary']['executionEnvironments'] == []
+    assert record['transport']['boundary']['completeToolInventoryVerified'] is False
+    directory = next(root.iterdir())
+    assert json.loads((directory / 'decision.json').read_text())['candidateId'] == 'no_change:0'
+    assert (directory / 'confirmed.json').is_file()
