@@ -48,7 +48,7 @@ def test_etf_proxy_metadata_never_masquerades_as_history_or_exact_classification
     for proxy in SOURCES['proxies']:
         assert proxy['sourceKind'] == 'etf_proxy' and proxy['isOfficialIndex'] is False
         assert proxy['mappingKind'] == 'research_proxy_not_equivalent'
-        assert proxy['historyStatus'] == 'adapter_supported_requires_observations'
+        assert proxy['historyStatus'] == 'adapter_supported_history_unverified'
         assert 'corporate_actions' in proxy['requiredData'] and 'asof_timestamp' in proxy['requiredData']
         assert any(source['ts_code'] == proxy['symbol'] and source['api'] == 'us_daily_adj' for source in REGISTRY['items'])
         for identity in proxy['classificationIds']:
@@ -77,3 +77,10 @@ def test_current_provider_identity_overrides_retired_document_code():
     snapshot = json.loads((ROOT/'data/sw2021-current-classification.json').read_text())
     assert len(snapshot['records']) == 480
     assert all(source['responseSha256'] and source['observedAt'] for source in snapshot['sources'])
+
+
+def test_empty_us_probe_does_not_promote_all_etf_adapters_to_ready():
+    xsd = next(proxy for proxy in SOURCES['proxies'] if proxy['symbol'] == 'XSD')
+    assert xsd['lastProbe']['outcome'] == 'empty_sample' and xsd['lastProbe']['rowCount'] == 0
+    assert all(factor.get('historyStatus') == 'adapter_supported_history_unverified'
+               for factor in build_catalog()['factors'] if 'us_daily_adj' in factor['sourceDatasets'])

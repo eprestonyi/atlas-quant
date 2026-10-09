@@ -74,6 +74,9 @@ def build_catalog():
         if any(dataset in {'index_daily', 'sw_daily', 'us_daily_adj'} for dataset in datasets):
             factors[-1].update(dataRequirement='named_index_history', scope='global' if all(field.startswith('ext_ctx_') for field in factors[-1]['requiredFields']) else 'asset',
                                automaticPreprocessingRequired=True, database='MKT')
+        if 'us_daily_adj' in datasets:
+            factors[-1].update(historyStatus='adapter_supported_history_unverified',
+                               historyAvailabilityReason='ETF 历史待验；当前 XSD 样本区间未返回记录。')
 
     # Easy users choose a familiar raw concept; the versioned automatic
     # preprocessing policy chooses its economic transform before fold fitting.

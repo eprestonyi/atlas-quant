@@ -15593,7 +15593,7 @@
         "gics2023_10"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15602,6 +15602,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xle_price",
       "providerApi": "us_daily_adj"
     },
@@ -15619,7 +15620,7 @@
         "gics2023_15"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15628,6 +15629,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xlb_price",
       "providerApi": "us_daily_adj"
     },
@@ -15645,7 +15647,7 @@
         "gics2023_20"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15654,6 +15656,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xli_price",
       "providerApi": "us_daily_adj"
     },
@@ -15671,7 +15674,7 @@
         "gics2023_25"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15680,6 +15683,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xly_price",
       "providerApi": "us_daily_adj"
     },
@@ -15697,7 +15701,7 @@
         "gics2023_30"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15706,6 +15710,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xlp_price",
       "providerApi": "us_daily_adj"
     },
@@ -15723,7 +15728,7 @@
         "gics2023_35"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15732,6 +15737,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xlv_price",
       "providerApi": "us_daily_adj"
     },
@@ -15749,7 +15755,7 @@
         "gics2023_40"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15758,6 +15764,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xlf_price",
       "providerApi": "us_daily_adj"
     },
@@ -15775,7 +15782,7 @@
         "gics2023_45"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15784,6 +15791,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xlk_price",
       "providerApi": "us_daily_adj"
     },
@@ -15801,7 +15809,7 @@
         "gics2023_50"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15810,6 +15818,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xlc_price",
       "providerApi": "us_daily_adj"
     },
@@ -15827,7 +15836,7 @@
         "gics2023_55"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15836,6 +15845,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xlu_price",
       "providerApi": "us_daily_adj"
     },
@@ -15853,7 +15863,7 @@
         "gics2023_60"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15862,6 +15872,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xlre_price",
       "providerApi": "us_daily_adj"
     },
@@ -15879,7 +15890,7 @@
         "gics2023_401010"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15888,6 +15899,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_kbe_price",
       "providerApi": "us_daily_adj"
     },
@@ -15905,7 +15917,7 @@
         "gics2023_40101015"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15914,6 +15926,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_kre_price",
       "providerApi": "us_daily_adj"
     },
@@ -15931,7 +15944,7 @@
         "gics2023_402030"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15940,6 +15953,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_kce_price",
       "providerApi": "us_daily_adj"
     },
@@ -15957,7 +15971,7 @@
         "gics2023_403010"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15966,6 +15980,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_kie_price",
       "providerApi": "us_daily_adj"
     },
@@ -15983,7 +15998,7 @@
         "gics2023_201010"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -15992,6 +16007,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xar_price",
       "providerApi": "us_daily_adj"
     },
@@ -16009,7 +16025,7 @@
         "gics2023_2030"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16018,6 +16034,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xtn_price",
       "providerApi": "us_daily_adj"
     },
@@ -16035,7 +16052,7 @@
         "gics2023_352010"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16044,6 +16061,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xbi_price",
       "providerApi": "us_daily_adj"
     },
@@ -16061,7 +16079,7 @@
         "gics2023_352020"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16070,6 +16088,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xph_price",
       "providerApi": "us_daily_adj"
     },
@@ -16087,7 +16106,7 @@
         "gics2023_35101010"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16096,6 +16115,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xhe_price",
       "providerApi": "us_daily_adj"
     },
@@ -16113,7 +16133,7 @@
         "gics2023_35102015"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16122,6 +16142,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xhs_price",
       "providerApi": "us_daily_adj"
     },
@@ -16139,7 +16160,7 @@
         "gics2023_10102020"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16148,6 +16169,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xop_price",
       "providerApi": "us_daily_adj"
     },
@@ -16165,7 +16187,7 @@
         "gics2023_10101020"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16174,6 +16196,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xes_price",
       "providerApi": "us_daily_adj"
     },
@@ -16191,7 +16214,7 @@
         "gics2023_151040"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16200,6 +16223,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xme_price",
       "providerApi": "us_daily_adj"
     },
@@ -16217,7 +16241,7 @@
         "gics2023_2550"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16226,6 +16250,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xrt_price",
       "providerApi": "us_daily_adj"
     },
@@ -16243,7 +16268,7 @@
         "gics2023_25201030"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16252,6 +16277,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xhb_price",
       "providerApi": "us_daily_adj"
     },
@@ -16269,7 +16295,7 @@
         "gics2023_45301020"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16278,6 +16304,22 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": {
+        "api": "us_daily_adj",
+        "symbol": "XSD",
+        "params": {
+          "end_date": "20240913",
+          "start_date": "20240903",
+          "ts_code": "XSD"
+        },
+        "observedAt": "2026-10-09T20:04:38.130637+00:00",
+        "responseSha256": "1cc2daca954522da5a0c342eb77b02572099582b47b47009ad42836f01129422",
+        "httpStatus": 200,
+        "providerCode": 0,
+        "rowCount": 0,
+        "outcome": "empty_sample",
+        "requests": 1
+      },
       "factorId": "context_xsd_price",
       "providerApi": "us_daily_adj"
     },
@@ -16295,7 +16337,7 @@
         "gics2023_4510"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16304,6 +16346,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xsw_price",
       "providerApi": "us_daily_adj"
     },
@@ -16321,7 +16364,7 @@
         "gics2023_5010"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16330,6 +16373,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xtl_price",
       "providerApi": "us_daily_adj"
     },
@@ -16347,7 +16391,7 @@
         "gics2023_4520"
       ],
       "mappingKind": "research_proxy_not_equivalent",
-      "historyStatus": "adapter_supported_requires_observations",
+      "historyStatus": "adapter_supported_history_unverified",
       "requiredData": [
         "adjusted_etf_history",
         "corporate_actions",
@@ -16356,6 +16400,7 @@
       ],
       "availabilityPolicy": "source_session_close_and_publication_before_research_origin",
       "isOfficialIndex": false,
+      "lastProbe": null,
       "factorId": "context_xth_price",
       "providerApi": "us_daily_adj"
     }
@@ -16368,5 +16413,55 @@
     "etfProxyIdentities": 30,
     "observedHistoryCount": null,
     "inventoryIsNotCoverage": true
-  }
+  },
+  "historyProbes": [
+    {
+      "api": "sw_daily",
+      "symbol": "801125.SI",
+      "params": {
+        "end_date": "20240913",
+        "start_date": "20240902",
+        "ts_code": "801125.SI"
+      },
+      "observedAt": "2026-10-09T20:04:34.007445+00:00",
+      "responseSha256": "16358c66b54de2f747ae7a5335ba79a5eac9f76fba3d9a45224968897ff5ee43",
+      "httpStatus": 200,
+      "providerCode": 0,
+      "rowCount": 10,
+      "outcome": "nonempty_sample",
+      "requests": 1
+    },
+    {
+      "api": "sw_daily",
+      "symbol": "850818.SI",
+      "params": {
+        "end_date": "20240913",
+        "start_date": "20240902",
+        "ts_code": "850818.SI"
+      },
+      "observedAt": "2026-10-09T20:04:35.869636+00:00",
+      "responseSha256": "8f950d602a504442a37ce8a1d4cee19b6b4b06701cbf5f593a708048d357eb1e",
+      "httpStatus": 200,
+      "providerCode": 0,
+      "rowCount": 10,
+      "outcome": "nonempty_sample",
+      "requests": 1
+    },
+    {
+      "api": "us_daily_adj",
+      "symbol": "XSD",
+      "params": {
+        "end_date": "20240913",
+        "start_date": "20240903",
+        "ts_code": "XSD"
+      },
+      "observedAt": "2026-10-09T20:04:38.130637+00:00",
+      "responseSha256": "1cc2daca954522da5a0c342eb77b02572099582b47b47009ad42836f01129422",
+      "httpStatus": 200,
+      "providerCode": 0,
+      "rowCount": 0,
+      "outcome": "empty_sample",
+      "requests": 1
+    }
+  ]
 }

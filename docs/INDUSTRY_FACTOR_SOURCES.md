@@ -39,3 +39,15 @@ Price fields receive the existing automatic return/trailing-volatility transform
 Each distinct named source costs one bounded historical request per acquisition, even when multiple selected recipes share it. The existing limit of 16 independent sources per acquisition remains enforced. The complete source grids, request parameters, raw adjustment factors, hashes and actual availability companions travel in the existing context archive. Python restoration, edge admission, and the independent standard-library auditor reconstruct the same as-of projection.
 
 The compact generated catalog contains recipe definitions. Its size and counts are UI inventory, not observed historical coverage or validated strategies. New source readbacks must record concrete API, symbol, interval, received rows and outcome separately; a successful sample cannot establish coverage for every symbol in the registry.
+
+## Live source samples on 2026-10-09 UTC
+
+After the Portal's isolated wrapper deployment was read back, exactly three additional requests were sent once, without any model fit or retry:
+
+| API / symbol | Requested interval | Result |
+| --- | --- | --- |
+| `sw_daily / 801125.SI` 白酒 | 2024-09-02 through 2024-09-13 | HTTP 200, provider code 0, 10 records |
+| `sw_daily / 850818.SI` 半导体设备 | 2024-09-02 through 2024-09-13 | HTTP 200, provider code 0, 10 records |
+| `us_daily_adj / XSD` | 2024-09-03 through 2024-09-13 | HTTP 200, provider code 0, **zero records** |
+
+The empty XSD response proves neither a permission denial nor ETF support. All 30 US ETF adapters remain `adapter_supported_history_unverified` in the library; their identities and adapter implementation are available, but they are not advertised as researched or connected histories. The two nonempty China samples do not establish all-symbol/all-date coverage. `data/industry-history-probes.json` preserves these exact scopes, statuses and wire hashes; private evidence retains every raw response. Including the two classification reads, this cycle consumed five provider requests and zero model fits.

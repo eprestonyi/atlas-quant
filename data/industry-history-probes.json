@@ -1,0 +1,54 @@
+{
+  "schema": "industry-history-probes/1",
+  "modelFits": 0,
+  "probes": [
+    {
+      "api": "sw_daily",
+      "symbol": "801125.SI",
+      "params": {
+        "end_date": "20240913",
+        "start_date": "20240902",
+        "ts_code": "801125.SI"
+      },
+      "observedAt": "2026-10-09T20:04:34.007445+00:00",
+      "responseSha256": "16358c66b54de2f747ae7a5335ba79a5eac9f76fba3d9a45224968897ff5ee43",
+      "httpStatus": 200,
+      "providerCode": 0,
+      "rowCount": 10,
+      "outcome": "nonempty_sample",
+      "requests": 1
+    },
+    {
+      "api": "sw_daily",
+      "symbol": "850818.SI",
+      "params": {
+        "end_date": "20240913",
+        "start_date": "20240902",
+        "ts_code": "850818.SI"
+      },
+      "observedAt": "2026-10-09T20:04:35.869636+00:00",
+      "responseSha256": "8f950d602a504442a37ce8a1d4cee19b6b4b06701cbf5f593a708048d357eb1e",
+      "httpStatus": 200,
+      "providerCode": 0,
+      "rowCount": 10,
+      "outcome": "nonempty_sample",
+      "requests": 1
+    },
+    {
+      "api": "us_daily_adj",
+      "symbol": "XSD",
+      "params": {
+        "end_date": "20240913",
+        "start_date": "20240903",
+        "ts_code": "XSD"
+      },
+      "observedAt": "2026-10-09T20:04:38.130637+00:00",
+      "responseSha256": "1cc2daca954522da5a0c342eb77b02572099582b47b47009ad42836f01129422",
+      "httpStatus": 200,
+      "providerCode": 0,
+      "rowCount": 0,
+      "outcome": "empty_sample",
+      "requests": 1
+    }
+  ]
+}
