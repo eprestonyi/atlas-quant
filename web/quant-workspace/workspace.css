@@ -1527,6 +1527,17 @@
 .sq-legacy {
   min-width: 0;
 }
+.sq-shell .v2-tabbar[aria-label='常用因子类别'] {
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+  gap: 4px;
+}
+.sq-shell .v2-tabbar[aria-label='常用因子类别'] > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 10px 12px;
+}
 .sq-legacy .v2-panel {
   margin-bottom: 22px;
 }
