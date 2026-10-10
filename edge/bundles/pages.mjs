@@ -26,6 +26,7 @@ const PUBLIC_COLLECTIONS = new Set([
   'riskLedger',
   'decisions',
   'plannedOrigins'
+  ,'researchPanel'
 ]);
 const fail = (text) => {
   throw new ApiError('INVALID_PAGE', text);

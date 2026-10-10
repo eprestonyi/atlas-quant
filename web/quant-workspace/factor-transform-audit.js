@@ -23,7 +23,7 @@ export function factorTransformRows(fit) {
   const included = new Set(inputs.map(x => x.name));
   return [...inputs, ...declared.filter(f => !included.has('factor:' + f.id)).map(factor => {
     const name = 'factor:' + factor.id;
-    const descriptor = automatic?.factors?.find(x => x.feature === name);
+    const descriptor = (a.featureConstruction?.inputs || automatic?.factors)?.find(x => x.feature === name);
     const dropped = fit.decorrelation?.dropped?.find(x => x.feature === name || x.name === name);
     return { name, included: false, factor, descriptor, dropped };
   })];
@@ -37,7 +37,7 @@ export function renderFactorTransformAudit(C, F, fit) {
   const value = x => x == null ? '—' : String(x);
   const pair = (label, x) => `<span>${e(label)} <code>${e(value(x))}</code></span>`;
   const raw = x => `<pre class="sq-report-code">${e(JSON.stringify(x, null, 2))}</pre>`;
-  const t = a.transforms || {}, automatic = a.featureConstruction?.automatic;
+  const t = a.transforms || {}, automatic = a.featureConstruction?.automatic || (a.featureConstruction?.schema === 'asset-return-features/1' ? {schema:'asset-return-features/1'} : null);
   const training = a.training || {};
   const rows = factorTransformRows(fit);
   const table = `<div class="sq-table-scroll"><table class="sq-table sq-transform-table"><thead><tr>${['输入与原始表达式', '经济变换 R', '训练有效 / 缺失', '截尾与填补', '训练中心与尺度', '模型输入'].map(s => `<th>${s}</th>`).join('')}</tr></thead><tbody>${rows.map(row => {

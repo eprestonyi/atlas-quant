@@ -88,11 +88,12 @@ class BasisRegressor(RegressorMixin, BaseEstimator):
                 local = ElasticNet(alpha=self.alpha, l1_ratio=self.l1_ratio,
                                    max_iter=20000, tol=1e-6, selection="cyclic")
                 local.fit(values[:, indices], y)
-                active = [indices[i] for i in range(len(indices)) if np.max(np.abs(local.coef_[:, i])) > 1e-12]
+                local_coef = np.atleast_2d(local.coef_)
+                active = [indices[i] for i in range(len(indices)) if np.max(np.abs(local_coef[:, i])) > 1e-12]
                 chosen.extend(active)
                 self.factor_selection_.append({"feature": feature, "terms": active,
-                                               "coefficients": np.asarray(local.coef_).tolist(),
-                                               "intercepts": np.asarray(local.intercept_).tolist()})
+                                               "coefficients": (local_coef if y.shape[1] == 1 else np.asarray(local.coef_)).tolist(),
+                                               "intercepts": (np.atleast_1d(local.intercept_) if y.shape[1] == 1 else np.asarray(local.intercept_)).tolist()})
             # Retain a constant-capable representation even if all bases shrink
             # to zero; explicit coefficients will record the lack of an effect.
             if not chosen:
@@ -119,8 +120,8 @@ class BasisRegressor(RegressorMixin, BaseEstimator):
                      if self.family in ("polynomial_elastic_net", "factorwise_basis")
                      else Ridge(alpha=self.alpha))
         estimator.fit(values[:, chosen], y)
-        self.coef_ = np.asarray(estimator.coef_)
-        self.intercept_ = np.asarray(estimator.intercept_)
+        self.coef_ = np.atleast_2d(estimator.coef_) if y.shape[1] == 1 else np.asarray(estimator.coef_)
+        self.intercept_ = np.atleast_1d(estimator.intercept_) if y.shape[1] == 1 else np.asarray(estimator.intercept_)
         self.n_features_in_ = X.shape[1]
         return self
 

@@ -34,9 +34,9 @@ export function createForms(C) {
   const input = (
     label,
     path,
-    { type = 'number', min, max, step = 1, help = '', value, unit = '' } = {}
+    { type = 'number', min, max, step = 1, help = '', value, unit = '', suggestions = [] } = {}
   ) =>
-    `<label class="sq-field"><span>${e(label)}${unit ? `<small>${e(unit)}</small>` : ''}</span><input id="sq-${e(path.replaceAll('.', '-'))}" data-sq-config="${e(path)}" type="${e(type)}" required value="${e(value ?? getPath(s.strategy, path) ?? '')}" ${min !== undefined ? `min="${min}"` : ''} ${max !== undefined ? `max="${max}"` : ''} ${type === 'number' ? `step="${step}"` : ''}>${help ? `<small>${e(help)}</small>` : ''}</label>`;
+    `<label class="sq-field"><span>${e(label)}${unit ? `<small>${e(unit)}</small>` : ''}</span><input id="sq-${e(path.replaceAll('.', '-'))}" data-sq-config="${e(path)}" type="${e(type)}" required value="${e(value ?? getPath(s.strategy, path) ?? '')}" ${min !== undefined ? `min="${min}"` : ''} ${max !== undefined ? `max="${max}"` : ''} ${type === 'number' ? `step="${step}"` : ''} ${suggestions.length ? `list="sq-options-${e(path.replaceAll('.','-'))}"` : ''}>${suggestions.length ? `<datalist id="sq-options-${e(path.replaceAll('.','-'))}">${suggestions.map(value=>`<option value="${e(value)}"></option>`).join('')}</datalist>` : ''}${help ? `<small>${e(help)}</small>` : ''}</label>`;
   const select = (label, path, options, help = '') =>
     `<label class="sq-field"><span>${e(label)}</span><select id="sq-${e(path.replaceAll('.', '-'))}" data-sq-config="${e(path)}">${Object.entries(
       options

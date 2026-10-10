@@ -39,6 +39,9 @@ def _train(samples, spec, train_dates, cutoff, strategy, runtime=None):
         try:
             kwargs = {"automatic_metadata": samples.automatic_preprocessing,
                       "training_dates": samples.meta.loc[mask, "date"].tolist()} if "automatic" in strategy["preprocess"] else {}
+            if "returnStudy" in strategy.get("research", {}):
+                from .return_study.contract import outputs
+                kwargs["output_names"] = outputs(strategy)
             model = models.fit(spec, samples.X.loc[mask], samples.y.loc[mask], strategy["preprocess"], **kwargs)
         finally:
             if runtime is not None:
@@ -55,6 +58,8 @@ def _train(samples, spec, train_dates, cutoff, strategy, runtime=None):
     audit = {"trainStart": actual_dates[0], "trainEnd": actual_dates[-1],
              "informationCutoff": cutoff, "labelEndMax": samples.meta.loc[mask, "targetDate"].max(),
              "trainDates": len(actual_dates), **model.audit}
+    if "returnStudy" in strategy.get("research", {}):
+        audit["returnInputDescriptors"] = samples.automatic_preprocessing["factors"]
     if strategy["model"].get("parameterSharing") == "per_target":
         targets = samples.meta.loc[mask, "targetId"].unique()
         if len(targets) != 1:
@@ -91,14 +96,14 @@ def _selection(trials):
     return min(admissible, key=_complexity), best, tolerance, admissible
 
 
-def _review_selection(reviewer, trials, specs, dates, staged):
+def _review_selection(reviewer, trials, specs, dates, staged, *, return_study=False):
     winner, _, _, admissible = _selection(trials)
     reserve = [spec for spec in specs if models.is_reserve(spec)]
     packet = {"schema": "factor-model-review-input/1", "developmentStart": dates[0],
         "developmentEnd": dates[-1], "candidateSetHash": digest(specs),
         "admissibleCandidateIds": [trial["id"] for trial in admissible],
         "reserveCandidates": reserve, "reserveEvaluationPending": staged,
-        "defaultCandidateId": winner["id"], "target": "equal_date_joint_normalized_mse",
+        "defaultCandidateId": winner["id"], "target": "equal_date_single_asset_response_mse" if return_study else "equal_date_joint_normalized_mse",
         "trials": [{key: trial[key] for key in ("id", "estimator", "params", "status", "score", "foldScoreHeuristicSE", "folds")}
                    for trial in trials], "outerOrTerminalDataIncluded": False}
     try:
@@ -119,7 +124,7 @@ def _review_selection(reviewer, trials, specs, dates, staged):
 
 def select(samples, specs, dates, strategy, runtime=None, review=False):
     runtime_args = {} if runtime is None else {"runtime": runtime}
-    schedule = folds(dates, strategy["validation"]["innerFolds"], strategy["validation"]["minTrainDates"], strategy["target"]["horizonSessions"]+1)
+    schedule = folds(dates, strategy["validation"]["innerFolds"], strategy["validation"]["minTrainDates"], strategy["target"]["horizonSessions"]+(0 if "returnStudy" in strategy.get("research", {}) else 1))
     trials = []
     reviewer = getattr(runtime, "review_candidates", None)
     review_enabled = review and strategy["model"].get("search") and callable(reviewer)
@@ -129,7 +134,7 @@ def select(samples, specs, dates, strategy, runtime=None, review=False):
                      if staged_review else len(specs))
     for candidate_index, spec in enumerate(specs):
         if staged_review and candidate_index == first_reserve and any(trial["status"] == "valid" for trial in trials):
-            review_result = _review_selection(reviewer, trials, specs, dates, True)
+            review_result = _review_selection(reviewer, trials, specs, dates, True, return_study="returnStudy" in strategy.get("research", {}))
         scores = []
         audits = []
         reason = None
@@ -178,7 +183,7 @@ def select(samples, specs, dates, strategy, runtime=None, review=False):
             trials[-1]["searchStage"] = "predeclared_refinement" if models.is_reserve(spec) else "initial"
     winner, best, tolerance, admissible = _selection(trials)
     if review_enabled and review_result is None:
-        review_result = _review_selection(reviewer, trials, specs, dates, False)
+        review_result = _review_selection(reviewer, trials, specs, dates, False, return_study="returnStudy" in strategy.get("research", {}))
     if review_result is not None:
         # Fresh reserve scores can overturn the preliminary recommendation.
         # Use the complete fixed-budget selector after refinement, not a stale

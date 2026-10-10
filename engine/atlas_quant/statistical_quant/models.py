@@ -1,4 +1,4 @@
-"""Finite, two-output conditional level-change estimators with train-only transforms."""
+"""Legacy dual-level estimators and explicit scalar-return opt-ins, train-only transforms."""
 from __future__ import annotations
 import copy
 import warnings
@@ -56,20 +56,26 @@ class FittedModel:
             result = np.tile(self.predictor, (len(X), 1))
         else:
             result = np.asarray(self.predictor.predict(X[self.columns]), dtype=float)
-        if result.shape != (len(X), 2) or not np.isfinite(result).all():
-            fail("INVALID_FORECAST", "预测器未返回有限的入场/退出两个条件值")
+        width = 1 if self.audit.get("outputs") in (["asset_return"], ["volatility_standardized_asset_return"]) else 2
+        if width == 1 and result.ndim == 1:
+            result = result.reshape(-1, 1)
+        if result.shape != (len(X), width) or not np.isfinite(result).all():
+            fail("INVALID_FORECAST", "预测器未返回有限的单输出收益" if width == 1 else "预测器未返回有限的入场/退出两个条件值")
         return result
 
 
-def fit(spec, X, y, preprocess, *, automatic_metadata=None, training_dates=None):
+def fit(spec, X, y, preprocess, *, automatic_metadata=None, training_dates=None, output_names=None):
     from ..engine import _decorrelate, TrainWinsorizer
-    if not len(X) or y.shape != (len(X), 2) or not np.isfinite(y.to_numpy()).all():
-        fail("INSUFFICIENT_FORECAST_DATA", "拟合缺少已成熟的双目标样本")
+    if output_names is not None and output_names not in (["asset_return"], ["volatility_standardized_asset_return"]):
+        fail("INVALID_MODEL_OUTPUTS", "未知单输出研究协议")
+    width = 1 if output_names is not None else 2
+    if not len(X) or y.shape != (len(X), width) or not np.isfinite(y.to_numpy()).all():
+        fail("INSUFFICIENT_FORECAST_DATA", "拟合缺少已成熟的单输出收益样本" if width == 1 else "拟合缺少已成熟的双目标样本")
     columns, decorrelation = _decorrelate(X, preprocess)
     if not columns:
         fail("MISSING_MODEL_DATA", "无有效预测特征")
     audit = {"trainRows": len(X), "featureNames": columns, "decorrelation": decorrelation,
-             "estimator": spec["estimator"], "params": spec["params"], "outputs": ["entry_level_change_over_known_gross", "exit_level_change_over_known_gross"]}
+             "estimator": spec["estimator"], "params": spec["params"], "outputs": output_names or ["entry_level_change_over_known_gross", "exit_level_change_over_known_gross"]}
     automatic = "automatic" in preprocess
     if automatic:
         from .preprocessing import validate_automatic
@@ -77,11 +83,13 @@ def fit(spec, X, y, preprocess, *, automatic_metadata=None, training_dates=None)
         if automatic_metadata is None:
             fail("MISSING_AUTOMATIC_PREPROCESSING", "自动预处理模型需要冻结的特征构造定义")
         audit["automaticPreprocessing"] = copy.deepcopy(automatic_metadata)
+        if output_names is not None:
+            audit["returnInputDescriptors"] = copy.deepcopy(automatic_metadata["factors"])
     elif automatic_metadata is not None:
         fail("INVALID_AUTOMATIC_PREPROCESSING", "旧版模型不能混入自动特征构造")
     name = spec["estimator"]
     if name in ("no_change", "historical_drift"):
-        value = np.zeros(2) if name == "no_change" else y.mean(axis=0).to_numpy()
+        value = np.zeros(width) if name == "no_change" else y.mean(axis=0).to_numpy()
         audit["constantPrediction"] = value.tolist()
         model = FittedModel(spec, columns, value, audit)
     else:
@@ -132,8 +140,8 @@ def fit(spec, X, y, preprocess, *, automatic_metadata=None, training_dates=None)
             scaler = pipe.named_steps["scale"]
             audit.update(scalerMean=scaler.mean_.tolist(), scalerScale=scaler.scale_.tolist())
         if hasattr(estimator, "coef_"):
-            audit["coefficients"] = np.asarray(estimator.coef_).tolist()
-            audit["intercepts"] = np.asarray(estimator.intercept_).tolist()
+            audit["coefficients"] = (np.atleast_2d(estimator.coef_) if width == 1 else np.asarray(estimator.coef_)).tolist()
+            audit["intercepts"] = (np.atleast_1d(estimator.intercept_) if width == 1 else np.asarray(estimator.intercept_)).tolist()
         if isinstance(estimator, BasisRegressor):
             audit["basisFit"] = estimator.audit()
         model = FittedModel(spec, columns, pipe, audit)

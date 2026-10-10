@@ -50,6 +50,9 @@ def run_statistical_quant(strategy, data, provenance=None, *, plan_sink=None):
     p = copy.deepcopy(provenance or {})
     panel, dates, audit = _prepare_data(data, s, p)
     with threadpool_limits(limits=1):
+        if "returnStudy" in s["research"]:
+            from .return_study.research import run
+            return run(s, panel, dates, audit, p, plan_sink=plan_sink)
         samples = build_samples(panel, dates, s)
         return _research_from_samples(s, panel, dates, audit, p, samples, plan_sink=plan_sink)
 
@@ -183,6 +186,8 @@ def execute_forecasts(strategy, data, artifact, provenance=None):
     """
     from ..engine import _prepare_data
     s = validate(strategy)
+    if "returnStudy" in s["research"]:
+        fail("RETURN_RESEARCH_ONLY", "收益模型研究不可通过旧交易执行接口重放")
     from ..factors import validate_expression
     financial_factors = any(
         field.startswith("model_fin_")

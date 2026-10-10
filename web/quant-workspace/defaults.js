@@ -1,3 +1,5 @@
+import {returnFactorDescriptors} from '../asset-return-factor-contract.js';
+import { enableReturnStudy, isReturnStudy, returnStudyErrors } from './return-study.js';
 import { typedFactorDescriptor } from '../factor-preprocess-semantics.js';
 import { LATEST_AUTOMATIC_FACTOR_SCHEMA, validateAutomaticFactorConfig } from '../factor-preprocess-contract.js';
 // Versioned research defaults and client-side protocol checks; server validation remains authoritative.
@@ -41,8 +43,8 @@ export const ESTIMATORS = {
   factorwise_basis: '逐因子拟合与组合',
 };
 
-export function defaultStrategy({ automatic = false } = {}) {
-  return {
+export function defaultStrategy({ automatic = false, returnStudy = false } = {}) {
+  const strategy = {
     schemaVersion: 2,
     name: '我的因子研究',
     research: { mode: RESEARCH_MODE, observationDays: 1 },
@@ -88,6 +90,7 @@ export function defaultStrategy({ automatic = false } = {}) {
     },
     dataBindings: { pcd: {} },
   };
+  return returnStudy ? enableReturnStudy(strategy) : strategy;
 }
 
 export function isStatistical(strategy) {
@@ -239,9 +242,10 @@ export function validateStrategy(
       add('自动价格处理请使用复权 close；raw_close 仅供 Studio 显式定义。');
   }
   section = 'model';
-  if (!['asset_price', 'frozen_basket'].includes(s.target?.kind))
+  for (const error of returnStudyErrors(s)) add(error);
+  if (!['asset_price', 'frozen_basket', 'asset_return'].includes(s.target?.kind))
     add('选择有计量定义的预测目标。');
-  number(s.target?.horizonSessions, 1, 60, '预测期限', true);
+  number(s.target?.horizonSessions, 1, isReturnStudy(s) ? 252 : 60, isReturnStudy(s) ? '收益期限' : '预测期限', true);
   number(s.research?.observationDays, 1, 60, '观察间隔', true);
   const b = s.target?.basket || {},
     symbols = b.symbols || [];
@@ -287,7 +291,7 @@ export function validateStrategy(
     add('模型搜索协议无效。');
   if (s.model?.parameterSharing !== undefined && !['pooled','per_target'].includes(s.model.parameterSharing))
     add('模型参数作用域无效。');
-  if (s.model?.parameterSharing === 'per_target' && s.target?.kind !== 'asset_price')
+  if (s.model?.parameterSharing === 'per_target' && !['asset_price', 'asset_return'].includes(s.target?.kind))
     add('逐标的模型需要逐只股票目标。');
   if (
     s.model?.family === 'pair_reversion' &&
@@ -295,6 +299,10 @@ export function validateStrategy(
   )
     add('配对模型族需要两腿 OLS 冻结篮子目标。');
   section = 'state';
+  if (isReturnStudy(s)) {
+    if (!s.factors?.length) add('添加至少一个研究因子。');
+    else { try { returnFactorDescriptors(s); } catch(error) { add(error.message); } }
+  }
   if (
     s.factors?.some((f) => f.role === 'hedge') &&
     (s.target?.kind !== 'frozen_basket' || b.method !== 'pca_residual')

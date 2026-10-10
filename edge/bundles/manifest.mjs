@@ -277,6 +277,30 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
   )
     fail('报告缺少版本化研究证据');
   const coverage = metadata.coverage;
+  const returnStudy = forecast.sourceStrategy?.research?.returnStudy;
+  if (returnStudy) {
+    const panel = forecast.factorResearch?.panel;
+    if (returnStudy.schema !== 'asset-return-study/1' ||
+        forecast.studyProtocol !== returnStudy.schema || coverage.studyProtocol !== returnStudy.schema ||
+        report.strategy.target?.kind !== 'asset_return' || report.strategy.execution?.enabled !== false ||
+        report.execution?.enabled !== false || report.metrics !== null ||
+        ['trades', 'equity', 'riskLedger', 'decisions'].some(id => collections.get(id)?.rowCount !== 0) ||
+        !collections.has('researchPanel') ||
+        forecast.factorResearch?.panel?.schema !== 'asset-return-panel/1' ||
+        forecast.factorResearch.panel.complete !== true ||
+        forecast.factorResearch.panel.rowCount !== collections.get('researchPanel').rowCount ||
+        collections.get('researchPanel').rowCount > 110000)
+      fail('收益研究需要独立、完整的逐资产面板，且不能包含执行结果');
+    if (!Array.isArray(panel.dates) || !panel.dates.length ||
+        panel.dates.some((day, i) => typeof day !== 'string' || !/^[0-9]{8}$/.test(day) || (i > 0 && day <= panel.dates[i - 1])) ||
+        !Array.isArray(panel.symbols) ||
+        JSON.stringify([...panel.symbols].sort()) !== JSON.stringify([...report.strategy.universe.symbols].sort()) ||
+        panel.rowCount !== panel.dates.length * panel.symbols.length ||
+        collections.get('targets').rowCount !== panel.symbols.length)
+      fail('收益研究面板必须覆盖日历与所有研究资产的完整乘积');
+  } else if (forecast.studyProtocol !== undefined || coverage.studyProtocol !== undefined || collections.has('researchPanel')) {
+    fail('旧研究不得混入收益研究协议');
+  }
   if (
     coverage.schemaVersion !== 1 ||
     !['samples_before_model_fitting', 'legacy_artifact_derived'].includes(coverage.source) ||

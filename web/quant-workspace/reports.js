@@ -1,3 +1,4 @@
+import { createReturnReport, isReturnReport } from './return-report.js';
 import { reportFeatureLabeler, createFeatureLabeler } from './feature-labels.js';
 import { marketDatasetDownload } from './source-downloads.js';
 import { financialTransportSource, datasetLocation } from './datasets/protocol.js';
@@ -151,6 +152,7 @@ export function createForecastReports(C, F) {
     `<div class="sq-catalog-pagination"><span>匹配 ${total.toLocaleString()} 条 · 第 ${page} / ${Math.max(1, Math.ceil(total / 25))} 页 · 每页 25 条</span><div>${F.button(action, '上一页', { page: page - 1, small: true, disabled: page <= 1 })}${F.button(action, '下一页', { page: page + 1, small: true, disabled: page * 25 >= total })}</div></div>`;
   const factorDiagnostics = createFactorDiagnostics(C, F, { remote, remoteState, table });
   const modelCandidates = createModelCandidates(C, F, { remote, remotePages, table, functionEditor });
+  const returnReport = createReturnReport(C,F,{remote,remoteState,table,modelCandidates,functionEditor,factorDiagnostics,provenance});
   function renderReport(r) {
     remote.bind(C.state.reportTransport, C.state.runId);
     const f = r.forecasts;
@@ -223,6 +225,7 @@ export function createForecastReports(C, F) {
         : '包含执行与冻结预测；重放还需要来源预测包中的原始行情。';
     const downloads = `<div class="sq-report-downloads"><a class="sq-button small" href="${e(downloadUrl)}" download>${remote.enabled() ? '流式下载完整私有报告' : '下载完整私有产物'}</a>${bundleUrl ? `<a class="sq-button small" href="${e(bundleUrl)}" download>${packLabel}</a><small>${packNote}</small>` : ''}${datasetArchiveUrl ? `<a class="sq-button small" href="${e(datasetArchiveUrl)}" download>${financialReport() ? '下载数据集完整闭包' : '下载完整行情来源包'}</a>` : financialReport() || marketReport(r) ? F.note('未返回完整数据集引用，不能宣称来源闭包已齐备。', 'warning') : ''}</div>`;
     ui.downloads = downloads;
+    if (isReturnReport(r)) return returnReport.view(r, downloads);
     const views = {
       models, forecasts: forecastRows,
       validation: result => `<div class="sq-report-stats">${stat('成熟预测观测', fmt(m.observations, 0), '')}${stat('联合 RMSE', fmt(m.rmse, 6), '')}${stat('相对无变化 MSE 改善', pct(m.relativeMseImprovement), '')}${stat('剩余变化 RMSE', fmt(m.remainingChangeRmse, 6), '')}</div>` + validation(result),
@@ -893,6 +896,7 @@ export function createForecastReports(C, F) {
   }
   async function handle(el) {
     if (el.dataset.sq?.startsWith('mfe-')) return functionEditor.handle(el);
+    if (await returnReport.handle(el)) return true;
     const action = el.dataset.sq;
     if (!action?.startsWith('forecast-')) return false;
     const r = ui.result;
@@ -1032,6 +1036,7 @@ export function createForecastReports(C, F) {
   }
   function onChange(el) {
     functionEditor.onInput(el);
+    if (returnReport.onChange(el)) return;
     if (modelCandidates.onChange(el)) return;
     if (el.id === 'sq-model-fit') { ui.fitId = el.value; ui.treeIndex = 0; render(); return; }
     if (el.id === 'sq-model-tree-output') { ui.treeOutput = Number(el.value); ui.treeIndex = 0; render(); return; }

@@ -51,6 +51,12 @@ def audit(envelope, source=None):
         checks += 1
 
     for row in rows:
+        if artifact.get('studyProtocol') == 'asset-return-study/1':
+            from return_study_audit import check_return_row
+            def require(condition, message):
+                assert condition, message
+            check_return_row(row, result['strategy'], near, require)
+            continue
         if row["status"] != "valid":
             continue
         p, v = row["currentState"], row["expectedFuture"]

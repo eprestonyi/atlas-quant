@@ -27,6 +27,7 @@ export function diagnosticSummary(value) {
     'familyHypothesis',
     'meanReversionProven',
     'aggregateUncertainty'
+    ,'studyProtocol', 'studyMode', 'outputUnit', 'assetModels', 'parameterSharing'
   ]);
   summary.detailCounts = {
     targetDiagnostics: value.detailCounts?.targetDiagnostics ?? count(value.perTarget),

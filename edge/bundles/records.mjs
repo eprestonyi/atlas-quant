@@ -4,6 +4,7 @@ import { sha } from '../runtime.mjs';
 import { DATE, BUNDLE_PROFILE } from './profile.mjs';
 import { byteLength, object } from './json.mjs';
 import { marketHedgeMetadata } from '../market-preparation/hedge-index.mjs';
+import { validateReturnRecord, validateReturnPanelRecord } from './return-records.mjs';
 
 const fail = (message) => {
   throw new ApiError('BUNDLE_RECORD', message);
@@ -53,7 +54,7 @@ export async function recordIndex(
   ordinal,
   chunkOrdinal,
   itemIndex,
-  { marketHedgeTargets = null } = {}
+  { marketHedgeTargets = null, returnStudy = null, returnFactorNames = null } = {}
 ) {
   if (!object(row)) fail('记录须为对象');
   let rowId = null,
@@ -67,6 +68,8 @@ export async function recordIndex(
     groupKey = null,
     metadata = {};
   if (['forecasts', 'baselineRows'].includes(collection)) {
+    if (Boolean(returnStudy) !== (row.schema === 'asset-return-observation/1'))
+      fail('收益记录与研究协议不匹配');
     rowId = identifier(row.forecastId, '预测');
     day = date(row.date);
     targetId = identifier(row.targetId, '目标');
@@ -74,6 +77,12 @@ export async function recordIndex(
     if (!['valid', 'invalid'].includes(row.status)) fail('预测状态无效');
     status = row.status;
     matured = Number(row.labelMaturedAt !== null && row.labelMaturedAt !== undefined);
+    if (row.schema === 'asset-return-observation/1') {
+      metadata = validateReturnRecord(row, fail);
+      if ((returnStudy.mode === 'forecast' && row.responseStartDate !== row.date) ||
+          (returnStudy.mode === 'association' && row.responseEndDate !== row.date))
+        fail('收益区间与研究模式不一致');
+    } else {
     date(row.entryDate, true);
     date(row.targetDate, true);
     date(row.labelMaturedAt, true);
@@ -107,6 +116,7 @@ export async function recordIndex(
       entryDate: row.entryDate ?? null,
       targetDate: row.targetDate ?? null
     };
+    }
   } else if (collection === 'plannedOrigins') {
     day = date(row.date);
     targetId = identifier(row.targetId, '计划目标');
@@ -119,6 +129,11 @@ export async function recordIndex(
       targetDate: row.targetDate ?? null,
       inputValid: row.inputValid
     };
+    if (row.responseStartDate !== undefined || row.responseEndDate !== undefined) {
+      date(row.responseStartDate, true); date(row.responseEndDate, true);
+      metadata.responseStartDate = row.responseStartDate ?? null;
+      metadata.responseEndDate = row.responseEndDate ?? null;
+    }
   } else if (collection === 'targets') {
     rowId = identifier(row.id, '目标');
     if (
@@ -129,7 +144,7 @@ export async function recordIndex(
     )
       fail('目标证券身份无效');
     if (
-      !['asset_price', 'frozen_basket'].includes(row.kind) ||
+      !['asset_price', 'frozen_basket', 'asset_return'].includes(row.kind) ||
       typeof row.construction !== 'string' ||
       row.construction.length > 80
     )
@@ -145,6 +160,7 @@ export async function recordIndex(
     );
   } else if (['modelFits', 'baselineModelFits'].includes(collection)) {
     rowId = identifier(row.id, '拟合');
+    targetId = identifier(row.targetId, '拟合资产', true);
     metadata = {
       id: row.id,
       estimator: row.estimator ?? null,
@@ -152,7 +168,8 @@ export async function recordIndex(
       trainStart: row.trainStart ?? null,
       trainEnd: row.trainEnd ?? null,
       labelEndMax: row.labelEndMax ?? null,
-      status: row.status ?? null
+      status: row.status ?? null,
+      ...(row.targetId ? {targetId: row.targetId, targetSymbol: row.targetSymbol} : {})
     };
     status = identifier(row.status, '拟合状态', true);
   } else if (collection === 'modelSearchCandidates') {
@@ -164,6 +181,16 @@ export async function recordIndex(
       selected:row.selected,baseline:row.baseline,withinHeuristicTolerance:row.withinHeuristicTolerance,
       targetId,symbols:row.symbols ?? null,functionArtifactId:row.functionArtifact?.artifactId ?? null,
       trainingMetrics:row.trainingMetrics};
+  } else if (['factorFeatures', 'factorJointDistributions'].includes(collection)) {
+    targetId = identifier(row.targetId, '诊断资产', true);
+    rowId = row.id !== undefined ? identifier(row.id, '诊断') : null;
+  } else if (collection === 'researchPanel') {
+    if (!returnStudy) fail('收益面板缺少研究协议');
+    metadata = validateReturnPanelRecord(row,returnFactorNames,fail);
+    day = date(row.date);
+    targetId = identifier(row.targetId, '面板资产');
+    rowId = day + '|' + targetId;
+    if ((returnStudy.mode === 'forecast' && row.responseStartDate !== row.date) || (returnStudy.mode === 'association' && row.responseEndDate !== row.date)) fail('收益面板区间与研究模式不一致');
   } else if (collection === 'snapshotColumns') {
     rowId = identifier(row.name, '冻结数据列');
     metadata = { kind: row.kind };
@@ -197,6 +224,7 @@ export async function recordIndex(
     targetId = identifier(row.targetId, '决策目标', true);
   } else if (['finalTrials', 'baselineFinalTrials'].includes(collection)) {
     rowId = identifier(row.id, '试验');
+    targetId = identifier(row.targetId, '试验资产', true);
     status = identifier(row.status, '试验状态', true);
   } else if (['perTarget', 'baselinePerTarget'].includes(collection)) {
     targetId = identifier(row.targetId, '分目标指标', true);
@@ -215,6 +243,7 @@ export async function recordIndex(
     }
   } else if (collection === 'outerFolds') {
     rowId = String(ordinal);
+    targetId = identifier(row.targetId, '验证资产', true);
   } else if (row.id !== undefined) rowId = identifier(row.id, '记录');
   const encodedMetadata = JSON.stringify(metadata);
   if (byteLength(encodedMetadata) > 8192) fail('索引元数据超过上限');

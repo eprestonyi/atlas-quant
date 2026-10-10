@@ -50,6 +50,9 @@ def section(parent, name, allowed, defaults=None):
 
 
 def validate(strategy, *, capacity_profile=None):
+    from .return_study.contract import enabled, validate as validate_return_study
+    if enabled(strategy):
+        return validate_return_study(strategy, capacity_profile=capacity_profile)
     from ..factors import validate_expression
     from ..financial_statements.admission import (
         is_fundamental_field, is_registered_statement_state,

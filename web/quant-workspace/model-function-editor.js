@@ -1,6 +1,7 @@
+import { isReturnFunction, returnUnit, returnTiming } from './return-study.js';
 import { createFeatureLabeler } from './feature-labels.js';
 import { modelFormula, basisTerm } from './report-model.js';
-import { featureSymbol, renderFunctionInputs } from './model-inputs.js';
+import { featureSymbol, renderFunctionInputs, inputDefinition } from './model-inputs.js';
 import { FUNCTION_SCHEMAS } from '../model-function-runtime.js';
 // Edits derive new immutable functions. Server resolves the owner-bound source and performs numeric inference.
 export function createModelFunctionEditor(C, F) {
@@ -17,20 +18,20 @@ export function createModelFunctionEditor(C, F) {
     return `<label class="sq-field"><span>${e(label)}</span><input type="number" step="any" data-mfe-param="${e(path)}" value="${e(state.edits.get(path) ?? at(state.artifact, path))}" required></label>`;
   }
   function treeControls(state) {
-    const outputs = state.artifact.estimator.outputs, out = Math.min(1, Math.max(0, Number(state.fields.output) || 0));
+    const outputs = state.artifact.estimator.outputs, out = Math.min(outputs.length-1, Math.max(0, Number(state.fields.output) || 0));
     const trees = outputs[out].trees, treeIndex = Math.min(trees.length - 1, Math.max(0, Number(state.fields.tree) || 0));
     const tree = trees[treeIndex], leaves = tree.map((node, index) => ({ node, index })).filter(x => x.node[5] === 1);
     const selected = leaves.some(x => String(x.index) === state.fields.leaf) ? state.fields.leaf : String(leaves[0]?.index ?? '');
     state.fields.leaf = selected;
-    return `<div class="sq-form-grid">${[0,1].map(n => parameter(state, `/estimator/outputs/${n}/baseline`, n ? '未来状态森林基准' : '入场状态森林基准')).join('')}<label class="sq-field"><span>森林输出</span><select data-mfe-input="output"><option value="0" ${out === 0 ? 'selected' : ''}>入场状态</option><option value="1" ${out === 1 ? 'selected' : ''}>未来状态</option></select></label><label class="sq-field"><span>树编号</span><select data-mfe-input="tree">${trees.map((_,n) => `<option value="${n}" ${n === treeIndex ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label class="sq-field"><span>叶子编号 / 原值</span><select data-mfe-input="leaf">${leaves.map(x => `<option value="${x.index}" ${String(x.index) === selected ? 'selected' : ''}>${x.index} · ${e(x.node[0])}</option>`).join('')}</select></label>${field(state, 'leafValue', '新叶子输出', '填写有限数值，再加入修改。')}</div>${F.button('mfe-leaf', '加入叶子修改', { small: true })}${F.advanced('当前树的冻结节点', raw(tree))}`;
+    return `<div class="sq-form-grid">${outputs.map((_,n) => parameter(state, `/estimator/outputs/${n}/baseline`, isReturnFunction(state.artifact) ? '收益响应森林基准' : n ? '未来状态森林基准' : '入场状态森林基准')).join('')}<label class="sq-field"><span>森林输出</span><select data-mfe-input="output">${outputs.map((_,n)=>`<option value="${n}" ${out===n?'selected':''}>${isReturnFunction(state.artifact)?'收益响应':n?'未来状态':'入场状态'}</option>`).join('')}</select></label><label class="sq-field"><span>树编号</span><select data-mfe-input="tree">${trees.map((_,n) => `<option value="${n}" ${n === treeIndex ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label class="sq-field"><span>叶子编号 / 原值</span><select data-mfe-input="leaf">${leaves.map(x => `<option value="${x.index}" ${String(x.index) === selected ? 'selected' : ''}>${x.index} · ${e(x.node[0])}</option>`).join('')}</select></label>${field(state, 'leafValue', '新叶子输出', '填写有限数值，再加入修改。')}</div>${F.button('mfe-leaf', '加入叶子修改', { small: true })}${F.advanced('当前树的冻结节点', raw(tree))}`;
   }
   function parameters(state) {
-    const a = state.artifact, k = a.estimator.kind;
+    const a = state.artifact, k = a.estimator.kind, single = isReturnFunction(a), outputs = single ? [0] : [0,1];
     const label = createFeatureLabeler({ factors: a.featureConstruction?.factors || [], catalog: C.state?.catalog?.factors || [] });
     let body;
-    if (k === 'constant') body = `<div class="sq-form-grid">${[0,1].map(n => parameter(state, `/estimator/value/${n}`, n ? '未来状态常量' : '入场状态常量')).join('')}</div>`;
-    else if (k === 'linear') body = `<div class="sq-form-grid">${[0,1].map(n => parameter(state, `/estimator/intercepts/${n}`, n ? '未来状态截距' : '入场状态截距')).join('')}</div>` + table(['输入（训练变换后）', '入场输出系数', '未来输出系数'], a.inputSchema.map((x, n) => `<tr><th scope="row">${featureSymbol(n)} · ${e(label(x.name))}</th>${[0,1].map(o => `<td>${parameter(state, `/estimator/coefficients/${o}/${n}`, `${featureSymbol(n)} · ${o ? '未来' : '入场'}`)}</td>`).join('')}</tr>`));
-    else if (k === 'basis_linear') body = `<div class="sq-form-grid">${[0,1].map(n => parameter(state, `/estimator/intercepts/${n}`, n ? '未来状态截距' : '入场状态截距')).join('')}</div>` + table(['训练尺度后的基函数', '入场输出系数', '未来输出系数'], a.estimator.terms.map((term, n) => `<tr><th scope="row">${e(basisTerm(term))}<small>(φ − ${e(a.estimator.termCenter[n])}) / ${e(a.estimator.termScale[n])}</small></th>${[0,1].map(o => `<td>${parameter(state, `/estimator/coefficients/${o}/${n}`, `${basisTerm(term)} · ${o ? '未来' : '入场'}`)}</td>`).join('')}</tr>`));
+    if (k === 'constant') body = `<div class="sq-form-grid">${outputs.map(n => parameter(state, `/estimator/value/${n}`, single ? '收益响应常量' : n ? '未来状态常量' : '入场状态常量')).join('')}</div>`;
+    else if (k === 'linear') body = `<div class="sq-form-grid">${outputs.map(n => parameter(state, `/estimator/intercepts/${n}`, single ? '收益响应截距' : n ? '未来状态截距' : '入场状态截距')).join('')}</div>` + table(single ? ['输入（训练变换后）','收益响应系数'] : ['输入（训练变换后）', '入场输出系数', '未来输出系数'], a.inputSchema.map((x, n) => `<tr><th scope="row">${featureSymbol(n)} · ${e(label(x.name))}</th>${outputs.map(o => `<td>${parameter(state, `/estimator/coefficients/${o}/${n}`, `${featureSymbol(n)} · ${single ? '收益响应' : o ? '未来' : '入场'}`)}</td>`).join('')}</tr>`));
+    else if (k === 'basis_linear') body = `<div class="sq-form-grid">${outputs.map(n => parameter(state, `/estimator/intercepts/${n}`, single ? '收益响应截距' : n ? '未来状态截距' : '入场状态截距')).join('')}</div>` + table(single ? ['训练尺度后的基函数','收益响应系数'] : ['训练尺度后的基函数', '入场输出系数', '未来输出系数'], a.estimator.terms.map((term, n) => `<tr><th scope="row">${e(basisTerm(term))}<small>(φ − ${e(a.estimator.termCenter[n])}) / ${e(a.estimator.termScale[n])}</small></th>${outputs.map(o => `<td>${parameter(state, `/estimator/coefficients/${o}/${n}`, `${basisTerm(term)} · ${single ? '收益响应' : o ? '未来' : '入场'}`)}</td>`).join('')}</tr>`));
     else body = treeControls(state);
     return F.advanced('修改 F 的数值参数', body + '<span class="sq-status warning">修改后另存 · 未验证</span>' + F.advanced('参数修改状态', F.note('修改后是未验证的新函数；原函数、预测与统计结果保持冻结。修改值不继承原模型的 IC、误差或拟合结论。')), true);
   }
@@ -58,6 +59,7 @@ export function createModelFunctionEditor(C, F) {
     for (const row of rows) {
       if (!row || typeof row !== 'object' || Array.isArray(row) || JSON.stringify(Object.keys(row).sort()) !== JSON.stringify(names) || Object.values(row).some(x => x !== null && (typeof x !== 'number' || !Number.isFinite(x)))) throw Error('每一行必须包含完整输入名，值为有限数字或明确的 null。');
     }
+    if (isReturnFunction(state.artifact)) return returnInput(state, rows);
     const context = (key, positive) => {
       if (!state.fields[key].trim()) throw Error('请填写当前状态 P 与正的尺度 scale；不会自动填充市场数值。');
       let result;
@@ -71,6 +73,7 @@ export function createModelFunctionEditor(C, F) {
   function resultView(state) {
     if (!state.result) return '';
     const { response, input, inferenceRevision } = state.result, result = response.result;
+    if (isReturnFunction(state.artifact)) return F.panel(result.scenarioOnly ? '未来情景的条件响应' : '函数响应', `<div data-mfe-stale ${inferenceRevision === state.inferenceRevision ? 'hidden' : ''}>${F.note('输入或参数已修改；以下为上次试算。','warning')}</div><code>${e(result.artifactId)}</code>`+table(['行',returnUnit(state.artifact),'还原收益率','条件价格'],result.predictedResponse.map((x,n)=>`<tr><td>${n+1}</td><td class="numeric">${fmt(x,6)}</td><td class="numeric">${fmt(result.simpleReturns?.[n],6)}</td><td class="numeric">${fmt(result.conditionalPrices?.[n],6)}</td></tr>`))+F.note(result.scenarioOnly ? '给定未来因子假设的情景响应；不是当期信息预测，也未新增检验。' : '仅对给定输入求值；未读取实时数据或新增统计检验。'));
     return F.panel('用户输入的 F(X) 试算',
       `<div data-mfe-stale ${inferenceRevision === state.inferenceRevision ? 'hidden' : ''}>${F.note('输入或参数已修改；下方仍是上次提交时的试算结果。', 'warning')}</div>` +
       `<code>${e(result.artifactId)}</code>` + table(['行', '当前 P', '预期入场', '未来 V', 'E = P − V', '预期变化 −E'], (result.levels || []).map((x,n) => `<tr><td>${n + 1}</td>${[input.currentState[n], x.expectedEntry, x.expectedFuture, x.e, x.expectedChange].map(v => `<td class="numeric">${fmt(v, 6)}</td>`).join('')}</tr>`)) +
@@ -85,6 +88,7 @@ export function createModelFunctionEditor(C, F) {
   }
   function view(state) {
     const a = state.artifact, k = a.estimator.kind, eligible = sourceReady(state.source);
+    if (isReturnFunction(a)) return returnView(state, eligible);
     const assetReturn = a.scope?.targetKind === 'asset_price' && a.identity?.scale === 'origin_known_gross_absolute_leg_value';
     const formula = 'fₕ(X) = ' + modelFormula(a, 1) + '\nV̂future = ' + (assetReturn ? 'P × (1 + fₕ(X))' : 'P + scale × fₕ(X)');
     const transformNote = k === 'constant' ? '常量模型忽略 X，不使用训练输入变换。' : 'T 使用本次训练冻结的截尾、缺失填充和标准化。' + (['atlas-model-function/2','atlas-model-function/3'].includes(a.schema) ? '输入 R 已完成经济变换与目标对齐，试算不会再次执行 log 等经济变换。' : '');
@@ -92,12 +96,40 @@ export function createModelFunctionEditor(C, F) {
     const pending = [...state.edits].filter(([p,v]) => String(at(a,p)) !== String(v));
     return `<section class="mfe-editor" data-mfe-key="${state.key}"><h3>修改与试算 F</h3><pre class="sq-model-equation">${e(formula)}</pre>${F.advanced('函数口径', `<p>${e(transformNote)}两个输出分别描述入场与未来状态相对当前已知尺度的变化。</p><p>观察收盘后，入场为下一官方交易日开盘，未来为其后 h 个交易日开盘。</p>`)}<dl class="sq-key-values"><dt>函数身份</dt><dd><code>${e(a.artifactId)}</code></dd><dt>当前版本来源</dt><dd>${e(a.lineage?.status || '未返回')}</dd><dt>训练截止</dt><dd>${e(a.training?.informationCutoff)}</dd><dt>期限 / 观察间隔</dt><dd>${e(a.scope?.horizonSessions)} / ${e(a.scope?.observationDays)} 交易日</dd><dt>证券范围</dt><dd>${scopeView(a)}</dd></dl>${F.advanced('输出与期限口径', '<p>output[0] 估计下一开盘，output[1] 估计该开盘之后 h 个交易日的开盘。h=1 对应第二个后续交易日开盘，不是下一日收盘。</p><p>观察间隔默认 1 表示每天观察一次，与预测期限 h 分开。具体观察、入场和目标日期见原报告逐条预测；训练截止不是试算输入的观察日期，本页不会推算或补造交易日历。</p>')}${F.advanced('适用范围', F.note('原研究范围以外的适用性尚未验证。输入须按原特征定义构建，不能把任意股票或任意单位直接代入。'))}${state.error ? F.note(state.error, 'error') : ''}${state.notice ? F.note(state.notice) : ''}${renderFunctionInputs(C, F, a)}${parameters(state)}${pending.length ? F.advanced(`待派生参数 · ${pending.length} 项`, table(['路径', '新值', '操作'], pending.map(([path,value]) => `<tr><td><code>${e(path)}</code></td><td>${e(value)}</td><td>${F.button('mfe-remove', '撤销', { id: path, small: true })}</td></tr>`)), true) : ''}<div class="sq-actions">${F.button('mfe-download', '下载当前版本 JSON', { small: true })}${F.button('mfe-resolve', '核验函数来源', { small: true, disabled: !eligible || state.busy })}${F.button('mfe-library', '已保存的函数版本', { small: true })}</div>${F.advanced('下载版本', '<p>下载的是当前已保存版本；未保存的参数修改不包含在 JSON 中。</p>')}${!eligible ? F.note('当前报告没有完整的私有来源引用；可以读取原函数，在线试算和派生保存尚不可用。') : ''}${F.panel('给 F 提供试算输入', field(state, 'rows', 'R 行数组 · 待填示例', '', true) + F.advanced('输入格式', `<p>${e(inputHelp)}</p>`) + `<div class="sq-form-grid">${field(state, 'currentState', '当前状态 P', '单行填数字；多行填等长数组。')}${field(state, 'scale', '当前已知尺度 scale', assetReturn ? '个股价格目标：scale = 当前状态 P，必须为正。' : '原目标的总绝对腿价值，必须为正；须与 P 和模型保持同一单位。')}</div>${F.button('mfe-evaluate', state.busy === 'evaluate' ? '正在试算…' : '运行 F(X) 试算', { primary: true, disabled: !eligible || !!state.busy })}`)}${resultView(state)}${F.panel('保存独立的派生函数', field(state, 'name', '新函数名称') + F.button('mfe-derive', state.busy === 'derive' ? '正在保存…' : '保存新的函数版本', { primary: true, disabled: !eligible || !!state.busy }) + '<span class="sq-status warning">新版本 · 未验证</span>')}${state.saved ? F.panel('已保存派生版本', `<code>${e(state.saved.ref.artifactId)}</code><p>UNVALIDATED_USER_EDIT · 未继承父模型统计检验</p>${F.button('mfe-open-saved', '打开这个函数版本', { id: state.saved.ref.functionId, artifact: state.saved.ref.artifactId, small: true })}`) : ''}${F.advanced('完整输入变换与函数来源', raw({ transforms: a.transforms, featureConstruction: a.featureConstruction, training: a.training, scope: a.scope, provenance: a.provenance, lineage: a.lineage }))}</section>`;
   }
-  function render(fit, source) {
+  function returnInput(state, rows) {
+    const mode=state.fields.mode, a=state.artifact, normalized=a.featureConstruction.targetSpecification.normalization.kind==='trailing_volatility';
+    if (!(a.scope.studyMode==='association' ? ['association','future_scenario'] : ['forecast']).includes(mode)) throw Error('此函数不接受该输入时间口径。');
+    const input={rows,mode};
+    for(const key of ['originPrice','originVolatility']) {
+      const value=state.fields[key].trim(), required=mode==='future_scenario'&&(key==='originPrice'||normalized);
+      if (!value) {if(required) throw Error('情景推演需要起点价格，以及标准化模型的起点历史波动率。'); continue;}
+      let values;try{values=JSON.parse(value);}catch{throw Error('起点价格与波动率需为有限数字或逐行数组。');}
+      values=Array.isArray(values)?values:[values];
+      if(values.length!==rows.length||values.some(x=>typeof x!=='number'||!Number.isFinite(x)||x<=(key==='originVolatility'?1e-8:0))) throw Error('起点数值须逐行对应，价格为正，波动率超过最小值。');
+      input[key]=values;
+    }
+    return input;
+  }
+  function returnFactorFields(state) {
+    let rows;try{rows=JSON.parse(state.fields.rows);}catch{return '';}
+    if(!Array.isArray(rows)||rows.length!==1)return '';
+    return `<div class="sq-form-grid">${state.artifact.inputSchema.map((x,index)=>{
+      const d=inputDefinition(state.artifact,index),value=rows[0]?.[x.name];
+      return `<label class="sq-field"><span>${e(d.factor?.name||d.factor?.id||x.name)} · R${index+1}</span><input type="number" step="any" data-mfe-factor="${e(x.name)}" value="${value==null?'':e(value)}" placeholder="未提供"><small>${e(d.construction.operations.join(' · '))}</small></label>`;
+    }).join('')}</div>`;
+  }
+  function returnView(state, eligible) {
+    const a=state.artifact,mode=state.fields.mode,scenario=mode==='future_scenario';
+    const modeControl=a.scope.studyMode==='association'?`<label class="sq-field"><span>输入时间口径</span><select data-mfe-input="mode"><option value="association" ${!scenario?'selected':''}>同期已观测输入</option><option value="future_scenario" ${scenario?'selected':''}>未来因子情景</option></select></label>`:`<span class="sq-status">当期已知输入 → 未来收益</span>`;
+    const norm=a.featureConstruction.targetSpecification.normalization.kind==='trailing_volatility';
+    return `<section class="mfe-editor" data-mfe-key="${state.key}"><h3>${e(a.scope.symbols[0])} · 修改与试算 F</h3><pre class="sq-model-equation">Fᵢ,ₕ(X) = ${e(modelFormula(a,0))}</pre><span>${e(returnTiming(a))}</span><dl class="sq-key-values"><dt>函数身份</dt><dd><code>${e(a.artifactId)}</code></dd><dt>训练截止</dt><dd>${e(a.training.informationCutoff)}</dd><dt>收益期限</dt><dd>${e(a.scope.horizonSessions)} 交易日</dd><dt>输出</dt><dd>${e(returnUnit(a))}</dd></dl>${state.error?F.note(state.error,'error'):''}${state.notice?F.note(state.notice):''}${renderFunctionInputs(C,F,a)}${parameters(state)}<div class="sq-actions">${F.button('mfe-download','下载当前版本 JSON',{small:true})}${F.button('mfe-resolve','核验函数来源',{small:true,disabled:!eligible||state.busy})}${F.button('mfe-library','已保存的函数版本',{small:true})}</div>${F.panel(scenario?'未来因子情景':'函数试算',modeControl+returnFactorFields(state)+F.advanced('多行输入 / JSON',field(state,'rows',scenario?'未来假设 R · 经济处理后的因子行':'已观测 R · 经济处理后的因子行','',true))+`<div class="sq-form-grid">${field(state,'originPrice',scenario?'情景起点价格':'起点价格 · 可选')}${norm?field(state,'originVolatility',scenario?'起点历史日波动率':'起点历史日波动率 · 还原收益时填写'):''}</div>`+F.note(scenario?'未来输入是明确的假设，输出仅是条件情景响应。':'R 按冻结定义构建；函数仅应用训练时保存的截尾、填充与缩放。')+F.button('mfe-evaluate',state.busy==='evaluate'?'正在试算…':'运行 F(X) 试算',{primary:true,disabled:!eligible||!!state.busy}))}${resultView(state)}${F.panel('保存独立的派生函数',field(state,'name','新函数名称')+F.button('mfe-derive','保存新的函数版本',{primary:true,disabled:!eligible||!!state.busy})+'<span class="sq-status warning">新版本 · 未验证</span>')}${state.saved?F.panel('已保存派生版本',`<code>${e(state.saved.ref.artifactId)}</code>${F.button('mfe-open-saved','打开这个函数版本',{id:state.saved.ref.functionId,artifact:state.saved.ref.artifactId,small:true})}`):''}${F.advanced('冻结输入与模型',raw(a))}</section>`;
+  }
+  function render(fit, source, options = {}) {
     const a = fit?.functionArtifact;
     if (!a) return F.note('此拟合记录未保存可移植的 F 函数。不能从旧报告的摘要重建系数或假装导出函数。');
     if (!FUNCTION_SCHEMAS.includes(a.schema) || !hash(a.artifactId) || !Array.isArray(a.inputSchema) || !['constant','linear','basis_linear','histogram_trees'].includes(a.estimator?.kind)) return F.note('函数格式不受支持，未启用编辑。', 'error');
-    const identity = JSON.stringify([a.artifactId, source]);
-    if (current?.identity !== identity) current = { identity, key: ++sequence, source: structuredClone(source || {}), artifact: structuredClone(a), edits: new Map(), fields: { rows: JSON.stringify([Object.fromEntries(a.inputSchema.map(x => [x.name, null]))], null, 2), currentState: '', scale: '', name: '派生 F · ' + a.artifactId.slice(0, 10), output: '1', tree: '0', leaf: '', leafValue: '' }, inferenceRevision: 0, saveRevision: 0, busy: '', error: '', notice: '', result: null, saved: null, request: null };
+    const identity = JSON.stringify([a.artifactId, source, options.mode]);
+    if (current?.identity !== identity) current = { identity, key: ++sequence, source: structuredClone(source || {}), artifact: structuredClone(a), edits: new Map(), fields: { rows: JSON.stringify([Object.fromEntries(a.inputSchema.map(x => [x.name, null]))], null, 2), currentState: '', scale: '', originPrice:'',originVolatility:'',mode: options.mode || a.scope?.studyMode || 'forecast', name: '派生 F · ' + a.artifactId.slice(0, 10), output: isReturnFunction(a) ? '0' : '1', tree: '0', leaf: '', leafValue: '' }, inferenceRevision: 0, saveRevision: 0, busy: '', error: '', notice: '', result: null, saved: null, request: null };
     return view(current);
   }
   function mounted(state) { return document.querySelector(`[data-mfe-key="${state.key}"]`); }
@@ -105,16 +137,27 @@ export function createModelFunctionEditor(C, F) {
   function onInput(el) {
     const state = current;
     if (!state || !el.closest?.(`[data-mfe-key="${state.key}"]`)) return;
-    if (el.dataset.mfeParam) setParameter(state, el.dataset.mfeParam, el.value);
+    if (el.dataset.mfeFactor) {
+      let rows;try{rows=JSON.parse(state.fields.rows);}catch{return;}
+      const key=el.dataset.mfeFactor;
+      if (!isReturnFunction(state.artifact)||rows.length!==1||!state.artifact.inputSchema.some(x=>x.name===key))return;
+      rows[0][key]=el.value.trim()===''?null:Number(el.value);
+      state.fields.rows=JSON.stringify(rows,null,2);state.inferenceRevision++;
+      const text=mounted(state)?.querySelector('[data-mfe-input="rows"]');if(text)text.value=state.fields.rows;
+    } else if (el.dataset.mfeParam) setParameter(state, el.dataset.mfeParam, el.value);
     else if (el.dataset.mfeInput) {
       const key = el.dataset.mfeInput, changed = state.fields[key] !== el.value;
       state.fields[key] = el.value;
-      if (changed && ['rows','currentState','scale'].includes(key)) state.inferenceRevision++;
+      if (changed && ['rows','currentState','scale','originPrice','originVolatility','mode'].includes(key)) state.inferenceRevision++;
       if (changed && key === 'name') state.saveRevision++;
+      if (changed && key === 'rows' && isReturnFunction(state.artifact)) {
+        let rows;try{rows=JSON.parse(el.value);}catch{}
+        for(const field of mounted(state)?.querySelectorAll('[data-mfe-factor]')||[]) {field.disabled=!Array.isArray(rows)||rows.length!==1;field.value=field.disabled?'':rows[0]?.[field.dataset.mfeFactor]??'';}
+      }
     } else return;
     const stale = mounted(state)?.querySelector('[data-mfe-stale]');
     if (stale) stale.hidden = state.result?.inferenceRevision === state.inferenceRevision;
-    if (['output','tree'].includes(el.dataset.mfeInput)) { state.fields.leaf = ''; if (el.dataset.mfeInput === 'output') state.fields.tree = '0'; refresh(state); }
+    if (['output','tree','mode'].includes(el.dataset.mfeInput)) { state.fields.leaf = ''; if (el.dataset.mfeInput === 'output') state.fields.tree = '0'; refresh(state); }
   }
   async function library(offset = 0) {
     const request = ++libraryRequest;
@@ -188,8 +231,14 @@ export function createModelFunctionEditor(C, F) {
       if (current !== state || !mounted(state)) { if (endpoint === 'derive') toast('此前提交的派生函数已保存，可在函数版本列表读取。'); return true; }
       if (endpoint === 'resolve') { if (response.artifact?.artifactId !== state.artifact.artifactId) throw Error('来源返回了不同的函数身份。'); state.notice = '已从私有来源核验这个函数版本。'; }
       if (endpoint === 'evaluate') {
+        if (isReturnFunction(state.artifact)) {
+          const r=response.result;
+          if (response.inferenceOnly!==true || response.newValidationPerformed!==false || !hash(r?.artifactId) || r.mode!==payload.input.mode || r.outputUnit!==state.artifact.outputs[0] || r.scenarioOnly!==(payload.input.mode==='future_scenario') || !Array.isArray(r.predictedResponse) || r.predictedResponse.length!==payload.input.rows.length || r.predictedResponse.some(x=>!Number.isFinite(x)) || ['simpleReturns','conditionalPrices'].some(key=>r[key]!==undefined&&(!Array.isArray(r[key])||r[key].length!==payload.input.rows.length||r[key].some(x=>!Number.isFinite(x))))) throw Error('收益试算结果或情景边界无效。');
+          if ((!edits.length&&r.artifactId!==state.artifact.artifactId)||(edits.length&&r.evidenceStatus!=='UNVALIDATED_USER_EDIT')) throw Error('试算函数身份不一致。');
+        } else {
         if (response.inferenceOnly !== true || response.newValidationPerformed !== false || !hash(response.result?.artifactId) || !Array.isArray(response.result.levels) || response.result.levels.length !== payload.input.rows.length) throw Error('试算返回的结果或验证边界无效。');
         if ((!edits.length && response.result.artifactId !== state.artifact.artifactId) || (edits.length && response.result.evidenceStatus !== 'UNVALIDATED_USER_EDIT') || response.result.levels.some(row => ['expectedEntry','expectedFuture','e','expectedChange'].some(key => !Number.isFinite(row[key])))) throw Error('函数试算的身份、数值或派生状态不一致。');
+        }
         state.result = { response, input: payload.input, inferenceRevision };
       }
       if (endpoint === 'derive') {

@@ -1,3 +1,4 @@
+import { isReturnStudy } from './return-study.js';
 import { AUTOMATIC_FACTOR_SCHEMAS } from '../factor-preprocess-contract.js';
 import { STEPS, validateStrategy } from './defaults.js';
 import contextRegistry from '../../engine/atlas_quant/context_sources.json' with { type: 'json' };
@@ -47,6 +48,7 @@ export function stepErrors(strategy, step, options = {}) {
   let errors = validateStrategy(strategy, { ...options, step, includeData: step === 'model' });
   if (step === 'state' && options.easy)
     errors = errors.map(error => error.includes('事件模型需要') ? '添加带可用时间的事件输入，或在 Studio 配置。' : error);
+  if (step === 'model' && isReturnStudy(strategy) && options.session?.runner && !supports(options.session.runner, 'returnStudyFormats', 'asset-return-study/1')) errors.push('计算节点暂不支持逐资产收益研究。');
   if (step === 'state') {
     const format = strategy.preprocess?.automatic?.schema, automatic = AUTOMATIC_FACTOR_SCHEMAS.includes(format);
     const fields = strategy.factors.flatMap(factor => typeof factor.expression === 'string' ? factor.expression.match(/\bext_ctx_[A-Za-z0-9_]*\b/g) || [] : []);

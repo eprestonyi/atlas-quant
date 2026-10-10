@@ -32,7 +32,8 @@ export function assertFunctionSource(artifact, fit, strategy) {
     observationDays: strategy?.research?.observationDays,
     researchStart: strategy?.universe?.start,
     researchEnd: strategy?.universe?.end,
-    generalizationOutsideScopeValidated: false
+    generalizationOutsideScopeValidated: false,
+    ...(strategy?.research?.returnStudy ? {studyMode: strategy.research.returnStudy.mode} : {})
   }, '适用范围');
   for (const key of ['trainStart', 'trainEnd', 'informationCutoff', 'labelEndMax', 'trainRows', 'trainDates'])
     requireSame(artifact.training[key], fit[key], '训练记录');
@@ -42,8 +43,10 @@ export function assertFunctionSource(artifact, fit, strategy) {
   requireSame(artifact.featureConstruction.factors, strategy?.factors, '因子定义');
   requireSame(artifact.featureConstruction.preprocess, strategy?.preprocess, '预处理声明');
   if (strategy?.preprocess?.automatic) {
-    requireSame(artifact.schema, artifact.estimator.kind === 'basis_linear' ? 'atlas-model-function/3' : 'atlas-model-function/2', '自动因子函数版本');
-    requireSame(artifact.featureConstruction.automatic, fit.automaticPreprocessing, '因子经济变换与作用域');
+    requireSame(artifact.schema, strategy.research?.returnStudy ? 'atlas-model-function/4' : artifact.estimator.kind === 'basis_linear' ? 'atlas-model-function/3' : 'atlas-model-function/2', '自动因子函数版本');
+    if (strategy.research?.returnStudy) {
+      requireSame(artifact.featureConstruction.inputs, fit.returnInputDescriptors, '收益因子的变换与时期');
+    } else requireSame(artifact.featureConstruction.automatic, fit.automaticPreprocessing, '因子经济变换与作用域');
     if (!['no_change', 'historical_drift'].includes(fit.estimator) && strategy.preprocess.standardize)
       requireSame(fit.scalerMethod, 'median_iqr', '训练集稳健尺度');
   } else {
