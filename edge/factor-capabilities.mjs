@@ -1,6 +1,6 @@
 /** Explicit execution contracts: version strings alone do not authorize new inputs. */
 import {ApiError} from './errors.mjs';
-export const supportsAutomaticFactors = runner => (Array.isArray(runner?.factorPreprocessFormats) ? runner.factorPreprocessFormats : []).includes('auto-factor-preprocess/1') === true;
+export const supportsAutomaticFactors = (runner, strategy) => (Array.isArray(runner?.factorPreprocessFormats) ? runner.factorPreprocessFormats : []).includes(strategy?.preprocess?.automatic?.schema || 'auto-factor-preprocess/1') === true;
 export const supportsContextSources = runner => (Array.isArray(runner?.contextSourceFormats) ? runner.contextSourceFormats : []).includes('named-index-history/1') === true;
 export const supportsForeignContextSources = runner => (Array.isArray(runner?.contextSourceFormats) ? runner.contextSourceFormats : []).includes('named-market-history/2') === true;
 export const supportsYahooContextSources = runner => (Array.isArray(runner?.contextSourceFormats) ? runner.contextSourceFormats : []).includes('named-market-history/3') === true;
@@ -11,7 +11,7 @@ export const needsAutomaticFactors = strategy => strategy?.preprocess?.automatic
 export const needsContextSources = strategy => strategy?.factors?.some(f => /\bext_ctx_/.test(f.expression)) === true;
 export const needsForeignContextSources = strategy => strategy?.factors?.some(f => /\bext_ctx_[a-z]/.test(f.expression)) === true;
 export function assertFactorCapabilities(strategy, runner) {
-  if ((needsAutomaticFactors(strategy) && !supportsAutomaticFactors(runner)) ||
+  if ((needsAutomaticFactors(strategy) && !supportsAutomaticFactors(runner, strategy)) ||
       (needsContextSources(strategy) && !supportsContextSources(runner)) ||
       (needsForeignContextSources(strategy) && !supportsForeignContextSources(runner)) ||
       (needsYahooContextSources(strategy) && !supportsYahooContextSources(runner)) ||

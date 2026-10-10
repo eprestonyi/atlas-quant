@@ -192,7 +192,7 @@ def test_all_v2_estimators_export_same_numeric_function_after_robust_preprocessi
     assert len(kinds)==6
 
 
-@pytest.mark.parametrize("bad", [None, True, {}, {"schema":"auto-factor-preprocess/2"}, {"schema":"auto-factor-preprocess/1","x":1}])
+@pytest.mark.parametrize("bad", [None, True, {}, {"schema":"auto-factor-preprocess/999"}, {"schema":"auto-factor-preprocess/1","x":1}])
 def test_unknown_automatic_protocols_are_not_silently_treated_as_legacy(bad):
     s = automatic_strategy(); s["preprocess"]["automatic"] = bad
     with pytest.raises(ResearchError): validate(s)

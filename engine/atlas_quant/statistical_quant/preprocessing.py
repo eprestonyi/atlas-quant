@@ -34,6 +34,10 @@ def automatic_enabled(preprocess):
 
 
 def validate_automatic(value):
+    from .typed_preprocessing import SCHEMA, NEW_TRANSFORMS, validate_config
+    if isinstance(value, dict) and value.get("schema") == SCHEMA:
+        validate_config(value, TRANSFORMS + NEW_TRANSFORMS)
+        return
     if not isinstance(value, dict) or value != {"schema": AUTOMATIC_SCHEMA}:
         fail("INVALID_AUTOMATIC_PREPROCESSING", "自动因子预处理协议须为 auto-factor-preprocess/1")
 
@@ -73,6 +77,16 @@ def factor_descriptor(factor):
 
 def automatic_metadata(strategy):
     validate_automatic(strategy["preprocess"]["automatic"])
+    from .typed_preprocessing import SCHEMA, STATE_FEATURES, descriptor
+    config = strategy["preprocess"]["automatic"]
+    if config["schema"] == SCHEMA:
+        predictors = [f for f in strategy["factors"] if f["role"] != "hedge"]
+        overrides = config.get("overrides", {})
+        if set(overrides) - {f["id"] for f in predictors}:
+            fail("INVALID_AUTOMATIC_PREPROCESSING", "处理选择只能对应本次非对冲因子")
+        return {"schema": SCHEMA, "inputStage": INPUT_STAGE, "scaling": SCALING,
+                "fitPopulation": FIT_POPULATION, "stateFeatures": STATE_FEATURES,
+                "factors": [descriptor(f, overrides.get(f["id"])) for f in predictors]}
     return {"schema": AUTOMATIC_SCHEMA, "inputStage": INPUT_STAGE, "scaling": SCALING, "fitPopulation": FIT_POPULATION,
             "factors": [factor_descriptor(f) for f in strategy["factors"] if f["role"] != "hedge"]}
 
@@ -92,6 +106,14 @@ def transform_values(values, transform):
             result = 1. / values.where(values != 0)
         elif kind == "percent_to_fraction":
             result = values / 100.
+        elif kind == "signed_log1p":
+            result = np.sign(values) * np.log1p(np.abs(values) / transform["referenceUnit"])
+        elif kind == "first_difference":
+            result = values - values.shift(transform["lag"])
+        elif kind in {"simple_return", "log_return"}:
+            positive = values.where(values > 0)
+            lagged = positive.shift(transform["lag"])
+            result = positive / lagged - 1. if kind == "simple_return" else np.log(positive) - np.log(lagged)
         elif kind == "return_over_trailing_volatility":
             positive = values.where(values > 0)
             returns = positive / positive.shift(1) - 1.
@@ -138,8 +160,12 @@ def evaluate_factors(panel, dates, symbols, strategy):
             result[factor["id"]] = raw * factor["direction"]
             continue
         if description["scope"] == "global":
-            raw = evaluate_expression(factor["expression"], global_panel, mask_asset_availability=False).unstack("ts_code").reindex(index=dates)
-            transformed = transform_values(raw, description["transform"]).iloc[:, 0] * factor["direction"]
+            if description.get("clock") == "observed_source_sessions_asof":
+                from ..context_factor_clock import evaluate_source_clock_factor
+                transformed = evaluate_source_clock_factor(panel, dates, factor, description["transform"])
+            else:
+                raw = evaluate_expression(factor["expression"], global_panel, mask_asset_availability=False).unstack("ts_code").reindex(index=dates)
+                transformed = transform_values(raw, description["transform"]).iloc[:, 0] * factor["direction"]
             result[factor["id"]] = pd.DataFrame({symbol: transformed for symbol in symbols}, index=dates)
         else:
             raw = evaluate_expression(factor["expression"], evaluated).unstack("ts_code").reindex(index=dates, columns=symbols)
@@ -149,15 +175,22 @@ def evaluate_factors(panel, dates, symbols, strategy):
 
 def validate_metadata(metadata, factors):
     """Validate frozen declarations without reinterpreting a mutable catalogue."""
+    from .typed_preprocessing import SCHEMA, STATE_FEATURES, TYPES, CLOCKS, NEW_TRANSFORMS
+    v2 = isinstance(metadata, dict) and metadata.get("schema") == SCHEMA
     expected = {"schema", "inputStage", "scaling", "fitPopulation", "factors"}
-    if not isinstance(metadata, dict) or set(metadata) != expected or metadata["schema"] != AUTOMATIC_SCHEMA or metadata["inputStage"] != INPUT_STAGE or metadata["scaling"] != SCALING or metadata["fitPopulation"] != FIT_POPULATION:
+    if v2:
+        expected.add("stateFeatures")
+    if not isinstance(metadata, dict) or set(metadata) != expected or metadata["schema"] not in {AUTOMATIC_SCHEMA, SCHEMA} or metadata["inputStage"] != INPUT_STAGE or metadata["scaling"] != SCALING or metadata["fitPopulation"] != FIT_POPULATION or v2 and metadata["stateFeatures"] != STATE_FEATURES:
         raise ValueError("invalid automatic preprocessing metadata")
     items = metadata["factors"]
     predictors = [f for f in factors if f["role"] != "hedge"]
     if not isinstance(items, list) or len(items) != len(predictors):
         raise ValueError("automatic factor declarations must match non-hedge factors")
     for item, factor in zip(items, predictors):
-        if not isinstance(item, dict) or set(item) != {"feature", "expression", "direction", "scope", "transform", "aggregation"}:
+        item_keys = {"feature", "expression", "direction", "scope", "transform", "aggregation"}
+        if v2:
+            item_keys.update(("economicType", "sourceUnit", "clock"))
+        if not isinstance(item, dict) or set(item) != item_keys:
             raise ValueError("invalid automatic factor declaration")
         if item["feature"] != "factor:" + factor["id"] or item["expression"] != factor["expression"] or isinstance(item["direction"], bool) or item["direction"] != factor["direction"]:
             raise ValueError("automatic factor source mismatch")
@@ -165,8 +198,17 @@ def validate_metadata(metadata, factors):
             raise ValueError("automatic factor scope mismatch")
         transform = item["transform"]
         # bool equals 1 in Python but is never a numeric protocol parameter.
-        if not isinstance(transform, dict) or transform not in TRANSFORMS or any(isinstance(value, bool) for value in transform.values()):
+        if not isinstance(transform, dict) or transform not in TRANSFORMS + (NEW_TRANSFORMS if v2 else []) or any(isinstance(value, bool) for value in transform.values()):
             raise ValueError("invalid semantic transformation")
+        if v2:
+            if item["economicType"] not in TYPES or item["clock"] not in CLOCKS or not isinstance(item["sourceUnit"], str) or not 1 <= len(item["sourceUnit"]) <= 80 or not item["sourceUnit"].isascii():
+                raise ValueError("invalid economic quantity metadata")
+            if item["clock"] == "observed_source_sessions_asof" and item["scope"] != "global":
+                raise ValueError("source session clock requires global scope")
+            if item["economicType"] == "price" and transform["kind"] not in {"simple_return", "log_return", "return_over_trailing_volatility"}:
+                raise ValueError("price requires a return construction")
+            if item["economicType"] == "log_price" and transform["kind"] != "first_difference":
+                raise ValueError("log price requires a log return construction")
 
 
 def feature_names(family, metadata):

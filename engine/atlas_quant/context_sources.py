@@ -243,6 +243,8 @@ def restore_context_fields(panel, frame, provenance, aliases, dates, start, end)
     evidence = validate_context_sources(frame, provenance, aliases, dates, start, end)
     if not evidence:
         return {}
+    from .context_factor_clock import attach_native_context
+    attach_native_context(panel, evidence, aliases)
     sources = {(s['api'], s['params']['ts_code']): s for s in evidence['contextSources']}
     restored, observations = {}, {}
     grid_dates = panel.index.get_level_values('trade_date')

@@ -5,6 +5,7 @@ import { createModelFunctionEditor } from './model-function-editor.js';
 import { createFactorDiagnostics } from './factor-diagnostics.js';
 import { renderSavedModel } from './report-model.js';
 import { createModelCandidates } from './model-candidates.js';
+import { renderFactorTransformAudit } from './factor-transform-audit.js';
 import { forecastCharts } from './report-charts.js';
 import { renderContextSources } from './context-source-view.js';
 // Read-only views of immutable forecast artifacts; execution overrides live in a separate UI draft.
@@ -75,6 +76,7 @@ export function createForecastReports(C, F) {
   const reportDiagnostics = (r) => r.forecasts?.diagnostics || r.validation || {};
   const tags = {
     models: 'F 模型与参数',
+    factorTransforms: '因子处理',
     forecasts: '拟合数据',
     validation: '检验',
     factorDiagnostics: '因子统计',
@@ -224,6 +226,7 @@ export function createForecastReports(C, F) {
     const views = {
       models, forecasts: forecastRows,
       validation: result => `<div class="sq-report-stats">${stat('成熟预测观测', fmt(m.observations, 0), '')}${stat('联合 RMSE', fmt(m.rmse, 6), '')}${stat('相对无变化 MSE 改善', pct(m.relativeMseImprovement), '')}${stat('剩余变化 RMSE', fmt(m.remainingChangeRmse, 6), '')}</div>` + validation(result),
+      factorTransforms: result => models(result, { audit: true }),
       factorDiagnostics: result => factorDiagnostics.render(result, 'features'),
       correlations: result => factorDiagnostics.render(result, 'correlations'),
       exposures: result => factorDiagnostics.render(result, 'exposures'),
@@ -663,7 +666,10 @@ export function createForecastReports(C, F) {
       if (request === fitRequest) selectedFit = { id, loading: false, item: null, error: error.message };
     }).finally(() => { if (request === fitRequest) render(); });
   }
-  function models(r) {
+  function models(r, { audit = false } = {}) {
+    const renderAudit = fit => renderFactorTransformAudit(C, F, fit);
+    if (audit && (r.forecasts?.diagnostics || r.validation)?.modelSearch)
+      return modelCandidates.view(r, { audit: renderAudit });
     const page = remote.enabled() ? remote.page('modelFits') : null;
     const rows = r.forecasts.modelFits || [];
     const shown = page ? page.items : rows.slice((ui.page - 1) * 25, ui.page * 25);
@@ -673,11 +679,12 @@ export function createForecastReports(C, F) {
     if (page && !brief.functionArtifact && selectedFit?.id !== ui.fitId) loadFit(ui.fitId);
     const fit = brief.functionArtifact || !page ? brief : selectedFit?.item;
     const picker = `<label class="sq-field sq-model-fit-picker"><span>拟合版本</span><select id="sq-model-fit">${shown.map(x => `<option value="${e(x.id)}" ${x.id === ui.fitId ? 'selected' : ''}>${e(d(x.fitDate))} · ${e(ESTIMATORS[x.estimator] || x.estimator || r.selection?.winner || 'F')} · ${e(x.id)}</option>`).join('')}</select></label>`;
-    let model = fit ? renderSavedModel(C, F, fit, { output: ui.treeOutput, tree: ui.treeIndex }) : selectedFit?.error
+    let model = fit ? audit ? renderAudit(fit) : renderSavedModel(C, F, fit, { output: ui.treeOutput, tree: ui.treeIndex }) : selectedFit?.error
       ? F.note(selectedFit.error, 'error') + F.button('forecast-model-retry', '重试读取 F', { small: true })
       : '<div class="sq-loading" role="status">正在读取模型与参数…</div>';
-    if (fit?.functionArtifact) model += `<div class="sq-actions">${F.button('forecast-fit', '修改与试算 F', { id: fit.id, primary: true })}${F.button('mfe-library', '已保存的函数', { small: true })}</div>`;
+    if (fit?.functionArtifact && !audit) model += `<div class="sq-actions">${F.button('forecast-fit', '修改与试算 F', { id: fit.id, primary: true })}${F.button('mfe-library', '已保存的函数', { small: true })}</div>`;
     const adopted = F.panel(r.forecasts?.diagnostics?.modelSearch ? '已采用的滚动模型' : 'F(X)', model + (page ? remotePages(page) : pages(ui.page, rows.length, 'forecast-page')), { actions: picker, className: 'sq-model-primary' });
+    if (audit) return F.panel('因子处理', model + (page ? remotePages(page) : pages(ui.page, rows.length, 'forecast-page')), { actions: picker, className: 'sq-model-primary' });
     return modelCandidates.view(r) + (r.forecasts?.diagnostics?.modelSearch ? F.advanced('已采用的滚动模型', adopted) : adopted) +
       F.panel('拟合数据', table(['版本', '训练日期', '训练行数', '最晚标签成熟', '信息截止'], shown.map(x => `<tr><td>${e(d(x.fitDate))}</td><td>${e(d(x.trainStart))} — ${e(d(x.trainEnd))}</td>${cell(x.trainRows, 0)}<td>${e(d(x.labelEndMax))}</td><td>${e(d(x.informationCutoff))}</td></tr>`)) + F.button('forecast-tab', '查看预测与实际值', { id: 'forecasts', small: true }));
   }

@@ -84,6 +84,20 @@ def _features(prices, q, scale, factor_values, strategy, automatic=None):
         feature.update({f"trend{h}": float((state[-1]-state[-1-h])/scale) for h in (1, 5, 20, 60)})
     else:
         feature.update(change1=float(changes[-1]/scale), change5=float((state[-1]-state[-6])/scale))
+    # v1 origin-gross features are immutable. v2 asset predictors use familiar
+    # simple-return quantities; signed frozen baskets still need a positive gross
+    # denominator because their state may cross zero without any economic jump.
+    if (automatic or {}).get("stateFeatures") == "asset_returns_basket_gross/1" and strategy["target"]["kind"] == "asset_price":
+        returns = np.diff(state) / state[:-1]
+        feature = {"volatility20": float(np.std(returns[-20:], ddof=1))}
+        if family in ("mean_reversion", "pair_reversion"):
+            feature.update(state_deviation20=float(state[-1]/state[-20:].mean()-1),
+                           state_deviation60=float(state[-1]/state[-60:].mean()-1),
+                           change1=float(returns[-1]))
+        elif family == "trend":
+            feature.update({f"trend{h}": float(state[-1]/state[-1-h]-1) for h in (1, 5, 20, 60)})
+        else:
+            feature.update(change1=float(returns[-1]), change5=float(state[-1]/state[-6]-1))
     dollar = q * prices[-1] / scale
     event = False
     for f in strategy["factors"]:

@@ -137,7 +137,7 @@ def factor_diagnostics(samples, holdout_start, factor_definitions=None):
     contemporary = X[change_column].copy() if change_column else None
     target_definitions = getattr(samples, "definitions", {})
     asset_returns = bool(target_definitions) and all(item["kind"] == "asset_price" for item in target_definitions.values())
-    if contemporary is not None and asset_returns:
+    if contemporary is not None and asset_returns and (automatic or {}).get("stateFeatures") != "asset_returns_basket_gross/1":
         # State change1 divides by P_t. Recover the usual P_t/P_{t-1}-1,
         # rather than labeling the existing state-change convention a return.
         contemporary = (contemporary/(1-contemporary)).where(contemporary < 1)

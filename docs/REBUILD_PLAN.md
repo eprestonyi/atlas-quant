@@ -394,3 +394,12 @@ dataset/3 的独立控制面、声明能力、同持有者来源校验和 financ
 开始准备数据之前复用完整配置与字段校验，四个对抗反例均零POST，过期并发读不能沿用旧能力；未知原请求恢复不受影响。原生浏览器另发现新增共享validator的源码引用不在静态资源路径内，造成启动停滞。共用资产构建现打包完整模块依赖，生产Worker返回字节的启动测试和实际浏览器恢复通过，未放松规则或开放服务端源码路径。
 
 最新Easy趋势接线仅接受精确实时能力，显式复用冻结来源再保存新版本；独立DOM与15个身份/范围/并发反例通过。其实际浏览器重绑及派生F修改还未验收，宿主Mac锁屏，已请求手动解锁并正常停止临时空闲消费者。新UI不因此视为全部验收完成。后续：解锁后完成这个闭环，固定最终候选和新CI，继续六服务发布准备与增量备份/迁移。云端最新只读核对已确认v0.8最终public配置与源码未变，0008–0011仍未安装。配对、事件与跨范围基本面研究继续各自独立设计。
+
+
+### Cycle 23 — v0.11 baseline and typed factor reconstruction (v0.12 candidate)
+
+v0.11 has since completed its six-service production release and public source publication. The current v0.12 cycle changes the economic preprocessing contract rather than overwriting earlier runs. New Easy and Studio studies use `auto-factor-preprocess/2`; existing `/1` inputs and arithmetic remain frozen. Prices default to conventional returns, compound expressions carry quantity checks, percent conversion occurs once, and Studio overrides are explicit saved choices. Individual-asset state returns use the conventional lagged denominator; signed baskets retain known-origin gross normalization. Foreign single-source factors are constructed on retained source observations before strict prior-date projection.
+
+The independent reference evaluator uses NumPy and standard-library arithmetic, without engine transformation or regression helpers. It checks all 5,967 catalog definitions against an independently specified family/unit policy and numerically exercises 85 family/unit representatives, all five state mechanisms, missing and invalid domains, rebasing and train-only conditioning. These are definition and software checks, not proof that all factor histories exist or predict returns. Frozen baijiu reconstruction checks 6,356 rows and 908 dates; `/2` transformed inputs and training conditioning agree within approximately 1.9e-14. The complete source/disclosure limits remain recorded in `FACTOR_TRANSFORM_CONTRACT.md`.
+
+One separately declared v0.12 research reused the original frozen seven-stock snapshot, without supplier or AI calls. It retained 1,267 forecasts and 22 portable candidate functions; the admitted result remains no-change, with a nonconstant transformed-Ridge research candidate available for inspection. Previously observed terminal data are not a fresh prospective test. Model-source binding and portable JS consumption passed; current-commit CI, actual browser checks, production transition and public source readback are still required by `RELEASE_V012_PLAN.md` before calling this candidate deployed.

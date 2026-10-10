@@ -201,6 +201,8 @@ def _metadata(a):
         try:
             validate_automatic(pre["automatic"])
             validate_metadata(construction["automatic"], factors)
+            if pre["automatic"]["schema"] != construction["automatic"]["schema"]:
+                _bad("automatic protocol mismatch")
         except ValueError as exc:
             _bad(str(exc))
     target = construction["targetSpecification"]

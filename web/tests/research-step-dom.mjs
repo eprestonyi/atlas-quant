@@ -11,7 +11,9 @@ const symbols=['600000.SH','600036.SH','601318.SH'];
 const unit=defaultStrategy();unit.universe.symbols=[...symbols];
 assert.equal(unit.preprocess.automatic,undefined);
 assert.equal(normalizeStrategy(unit).preprocess.automatic,undefined,'old protocols are not upgraded on load');
-assert.deepEqual(defaultStrategy({automatic:true}).preprocess.automatic,{schema:'auto-factor-preprocess/1'});
+const oldAutomatic=structuredClone(unit);oldAutomatic.preprocess.automatic={schema:'auto-factor-preprocess/1'};
+assert.deepEqual(normalizeStrategy(oldAutomatic).preprocess.automatic,oldAutomatic.preprocess.automatic,'saved /1 never upgrades on load');
+assert.deepEqual(defaultStrategy({automatic:true}).preprocess.automatic,{schema:'auto-factor-preprocess/2'});
 assert.deepEqual(pairTarget(unit).basket.symbols,[],'a large pool is not silently sampled');
 unit.universe.symbols=symbols.slice(0,2);
 assert.deepEqual(pairTarget(unit).basket.symbols,symbols.slice(0,2));
@@ -34,7 +36,7 @@ assert(validateStrategy(invalid,{step:'universe'}).every(message=>!message.inclu
 assert(validateStrategy(invalid,{step:'settings'}).some(message=>message.includes('训练窗口')));
 const contextStudy=defaultStrategy({automatic:true});
 contextStudy.factors=[{id:'index',expression:'ext_ctx_000300_sh_close',direction:1,role:'predictor'}];
-const contextOptions={easy:true,dataSource:'tushare',session:{runner:{factorPreprocessFormats:['auto-factor-preprocess/1'],contextSourceFormats:['named-index-history/1']}}};
+const contextOptions={easy:true,dataSource:'tushare',session:{runner:{factorPreprocessFormats:['auto-factor-preprocess/2'],contextSourceFormats:['named-index-history/1']}}};
 assert.deepEqual(stepErrors(contextStudy,'state',contextOptions),[]);
 assert(stepErrors(contextStudy,'state',{...contextOptions,dataSource:'demo'}).some(message=>message.includes('导入对应指数数据')));
 assert(stepErrors(contextStudy,'state',{...contextOptions,dataSource:'ready_market'}).some(message=>message.includes('冻结数据来源')));
@@ -59,7 +61,7 @@ for(const contextSources of [[],[{params:{ts_code:'000300.SH'},rowCount:100}],[{
 const yahooStudy=structuredClone(contextStudy);yahooStudy.factors[0].expression='ext_ctx_yf_xsd_close';
 assert(contextRegistry.items.some(source=>source.aliasKey==='yf_xsd'&&source.api==='yfinance_history'));
 assert(stepErrors(yahooStudy,'state',contextOptions).some(message=>message.includes('Yahoo ETF')));
-const yahooOptions={...contextOptions,session:{runner:{factorPreprocessFormats:['auto-factor-preprocess/1'],contextSourceFormats:['named-index-history/1','named-market-history/3']}}};
+const yahooOptions={...contextOptions,session:{runner:{factorPreprocessFormats:['auto-factor-preprocess/2'],contextSourceFormats:['named-index-history/1','named-market-history/3']}}};
 assert.deepEqual(stepErrors(yahooStudy,'state',yahooOptions),[]);
 const yahooProvenance={contextSourceRoot:'d'.repeat(64),contextScope:'named_market_series_asof_broadcast_by_date',contextObservationClock:'source_session_publication_before_cn_origin',contextSources:[{api:'yfinance_history',params:{ts_code:'XSD'},records:[{ts_code:'XSD',trade_date:'20240903',close:200}]}]};
 const yahooUpload={...yahooOptions,dataSource:'upload',dataset:{provenance:yahooProvenance}};
@@ -77,9 +79,9 @@ const bothProviders=structuredClone(yahooUpload);bothProviders.session.runner.co
 assert(stepErrors(mixedStudy,'state',bothProviders).some(message=>message.includes('完整来源包')));
 bothProviders.dataset.provenance.contextSources.push({api:'us_daily_adj',params:{ts_code:'XSD'},records:[{ts_code:'XSD',trade_date:'20240903',close:100,adj_factor:2}]});
 assert.deepEqual(stepErrors(mixedStudy,'state',bothProviders),[]);
-for(const automatic of [null,{},true,{schema:'auto-factor-preprocess/2'},{schema:'auto-factor-preprocess/1',guess:true}]){
+for(const automatic of [null,{},true,{schema:'auto-factor-preprocess/99'},{schema:'auto-factor-preprocess/2',guess:true}]){
   const malformed=defaultStrategy();malformed.preprocess.automatic=automatic;
-  assert(stepErrors(malformed,'state').some(message=>message.includes('自动因子处理版本无效')));
+  assert(stepErrors(malformed,'state').some(message=>message.includes('自动因子处理')));
 }
 const rawPrice=defaultStrategy({automatic:true});rawPrice.factors=[{id:'raw',expression:'( raw_close )',direction:1}];
 assert(stepErrors(rawPrice,'state').some(message=>message.includes('复权 close')));
@@ -97,7 +99,7 @@ w.fetch=async(url,options={})=>{
 };
 const result=await build({entryPoints:['web/main.js'],bundle:true,write:false,format:'iife',plugins:[{name:'no-init',setup(b){b.onLoad({filter:/\/web\/app\.js$/},async args=>({contents:(await fs.readFile(args.path,'utf8')).replace('  init();','  window.qa={state,studio,workspace,parseRoute,render,processDataFile};'),loader:'js'}));}}]});
 w.eval(result.outputFiles[0].text);const q=w.qa,s=q.state;
-s.loading=false;s.session={workspace:{id:'fixture'},capabilities:{tushareHosted:true},runner:{online:true,factorPreprocessFormats:['auto-factor-preprocess/1']}};s.dataSource='demo';q.parseRoute();q.render();
+s.loading=false;s.session={workspace:{id:'fixture'},capabilities:{tushareHosted:true},runner:{online:true,factorPreprocessFormats:['auto-factor-preprocess/2']}};s.dataSource='demo';q.parseRoute();q.render();
 async function waitFor(predicate,label){const deadline=Date.now()+3000;while(!predicate()){assert(Date.now()<deadline,label);await new Promise(resolve=>setTimeout(resolve,5));}}
 async function route(path,expected=path.split('/').at(-1)){
   w.location.hash='#quant/'+path;
@@ -111,7 +113,7 @@ const expectBlocked=async selector=>{await click(selector,()=>!!error());assert.
 
 await route('modes');
 await click('.sq-mode-card[data-id="easy"]',()=>s.quantStep==='universe');
-assert.equal(s.strategy.preprocess.automatic.schema,'auto-factor-preprocess/1','first Easy choice explicitly enables automatic processing');
+assert.equal(s.strategy.preprocess.automatic.schema,'auto-factor-preprocess/2','first Easy choice explicitly enables automatic processing');
 await route('easy/report','universe');assert(error().includes('至少需要一个成员'));
 await click('.sq-step[href="#quant/easy/model"]',()=>!!error()&&s.quantStep==='universe');
 await waitFor(()=>w.location.hash==='#quant/easy/universe','sidebar guard');
@@ -244,12 +246,44 @@ await route('easy/state');
 assert.equal(s.strategy.model.estimator,'ridge','visiting Easy preserves a saved explicit estimator');
 await route('researches');
 await click('[data-sq="new"]',()=>s.quantStep==='universe');
-assert.equal(s.strategy.preprocess.automatic.schema,'auto-factor-preprocess/1','new Easy study declares its own protocol');
+assert.equal(s.strategy.preprocess.automatic.schema,'auto-factor-preprocess/2','new Easy study declares its own protocol');
+s.strategy.universe.symbols=symbols.slice(0,2);
+s.strategy.factors=[{id:'size',expression:'total_mv',direction:1,role:'predictor'}];
+await route('easy/state');assert(!w.document.querySelector('[data-sq-factor-transform]'),'Easy has no preprocessing controls');
+await route('studio/state');
+await change('[data-sq-factor-transform="size"]','signed_log1p');
+assert.equal(s.strategy.preprocess.automatic.overrides.size.transform.referenceUnit,1);
+assert.equal(s.strategy.preprocess.automatic.overrides.size.transform.kind,'signed_log1p');
+assert(w.document.querySelector('.sq-selected-factor strong').textContent.includes('带符号数量压缩'),'selected label follows actual Studio override');
+await route('easy/state');assert(!w.document.querySelector('[data-sq-factor-transform]'));
+assert.equal(s.strategy.preprocess.automatic.overrides.size.transform.kind,'signed_log1p','mode switching preserves explicit Studio choice');
+await route('studio/state');
+await change('[data-sq-factor-transform="size"]','');
+assert.equal(s.strategy.preprocess.automatic.overrides.size,undefined);
+await change('[data-sq-factor-transform="size"]','log_positive');
+await change('[data-sq-factor-role="size"]','hedge');
+assert.equal(s.strategy.preprocess.automatic.overrides.size,undefined,'hedge roles never retain predictor transforms');
+await change('[data-sq-factor-role="size"]','predictor');
+await change('[data-sq-factor-transform="size"]','log_positive');
+await click('[data-sq="remove-factor"][data-id="size"]');
+assert.equal(s.strategy.preprocess.automatic.overrides.size,undefined,'removing a factor removes only its explicit override');
+await route('easy/state');
+
+await route('studio/researches');
+await click('[data-sq="new"]',()=>s.quantStep==='universe');
+assert.equal(s.strategy.preprocess.automatic.schema,'auto-factor-preprocess/2','new Studio study uses typed defaults too');
+s.strategy.universe.symbols=symbols.slice(0,2);
+s.strategy.factors=[{id:'new-studio-size',expression:'total_mv',direction:1,role:'predictor'}];
+await route('studio/state');assert(w.document.querySelector('[data-sq-factor-transform="new-studio-size"]'));
+await change('[data-sq-factor-transform="new-studio-size"]','signed_log1p');
+assert.equal(s.strategy.preprocess.automatic.overrides['new-studio-size'].transform.kind,'signed_log1p');
+s.strategy.factors=[];s.strategy.preprocess.automatic.overrides={};
+await route('easy/state');
 s.strategy.universe.symbols=symbols.slice(0,2);s.session.runner={online:true};
 await route('easy/report','state');assert(error().includes('暂不支持自动因子处理'));
-s.session.runner.factorPreprocessFormats='auto-factor-preprocess/1';
+s.session.runner.factorPreprocessFormats='auto-factor-preprocess/2';
 await click(next,()=>!!error());assert.equal(s.quantStep,'state');assert(error().includes('暂不支持自动因子处理'),'capability text is not a capability list');
-s.session.runner.factorPreprocessFormats=['auto-factor-preprocess/1'];
+s.session.runner.factorPreprocessFormats=['auto-factor-preprocess/2'];
 s.strategy.factors=structuredClone(contextStudy.factors);s.dataSource='tushare';
 await click(next,()=>!!error());assert.equal(s.quantStep,'state');assert(error().includes('暂不支持指数数据'));
 s.session.runner.contextSourceFormats='named-index-history/1';
@@ -268,7 +302,7 @@ assert(error().includes('暂不支持指数数据'),'run rechecks factor admissi
 assert.equal(s.submitting,false);
 await route('studio/researches');
 await click('[data-sq="new"]',()=>s.quantStep==='universe');
-assert.equal(s.strategy.preprocess.automatic,undefined,'new Studio keeps explicit legacy preprocessing by default');
+assert.equal(s.strategy.preprocess.automatic.schema,'auto-factor-preprocess/2','new Studio starts with typed preprocessing and explicit overrides');
 s.strategy.universe.symbols=symbols.slice(0,2);s.strategy.model.family='pair_reversion';s.strategy.target=pairTarget(s.strategy);
 s.strategy.target.basket.symbols[1]='';s.session.capabilities.tushareHosted=false;
 await route('studio/model');await expectBlocked(next);assert(error().includes('Tushare'));
@@ -283,5 +317,5 @@ for(const wrap of [dataset=>dataset,dataset=>({dataset})]){
   assert.equal(s.dataset.rows[0].ext_ctx_000300_sh_close,4000);
 }
 assert(!requests.some(path=>/\/run|\/acquisition|\/executions/.test(path)));
-console.log(JSON.stringify({easyHidesTechnicalTargets:true,legacyCombinationRepairExplicit:true,savedVersionUntouched:true,hedgeRolesPreserved:true,legacyScopeCheckedBeforeNext:true,explicitPairObjects:true,noImplicitSubset:true,savedTargetPreserved:true,explicitPairExitRestoresTarget:true,sourceAndImportClearStaleErrors:true,explicitEstimatorPreserved:true,invalidMembersCaughtOnMechanism:true,nextSidebarMobileHashGuarded:true,runRechecksStepAdmission:true,windowsCheckedEarly:true,fundamentalInputCheckedEarly:true,rolesStudioOnly:true,noImplicitEvent:true,automaticOnlyForNewEasy:true,exactRunnerCapabilityGate:true,contextInputsCheckedEarly:true,uploadedSourcePackageRequired:true,realJsonImportPreservesContext:true,fixtureOnly:true}));
+console.log(JSON.stringify({easyHidesTechnicalTargets:true,legacyCombinationRepairExplicit:true,savedVersionUntouched:true,hedgeRolesPreserved:true,legacyScopeCheckedBeforeNext:true,explicitPairObjects:true,noImplicitSubset:true,savedTargetPreserved:true,explicitPairExitRestoresTarget:true,sourceAndImportClearStaleErrors:true,explicitEstimatorPreserved:true,invalidMembersCaughtOnMechanism:true,nextSidebarMobileHashGuarded:true,runRechecksStepAdmission:true,windowsCheckedEarly:true,fundamentalInputCheckedEarly:true,rolesStudioOnly:true,noImplicitEvent:true,typedDefaultsForNewModes:true,exactRunnerCapabilityGate:true,contextInputsCheckedEarly:true,uploadedSourcePackageRequired:true,realJsonImportPreservesContext:true,fixtureOnly:true}));
 dom.window.close();

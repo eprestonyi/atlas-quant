@@ -485,3 +485,17 @@ test('automatic and context jobs require exact capabilities before reserve and d
   const resumed=await (await claim(requestId,capabilities)).json();
   assert.equal(resumed.job.leaseToken,first.job.leaseToken);
 });
+
+
+test('typed v2 jobs cannot be reserved or recovered by v1-only runners', async () => {
+  const spec={schemaVersion:2,name:'typed preprocessing claim',universe:{symbols:['000001.SZ'],start:'20230101',end:'20250930'},research:{mode:'statistical_quant',observationDays:1},factors:[{id:'size',expression:'circ_mv',direction:1,role:'predictor'}],preprocess:{automatic:{schema:'auto-factor-preprocess/2'}},target:{kind:'asset_price',horizonSessions:5},model:{family:'trend',estimator:'ridge'},execution:{enabled:false}};
+  const id=await seed('requires-typed-v2',spec), old={engineVersion:'99.0.0',factorPreprocessFormats:['auto-factor-preprocess/1']};
+  for(const request of [undefined,randomUUID()]) {
+    const denied=await claim(request,old);assert.equal(denied.status,200);assert.equal((await denied.json()).job,null);
+    assert.equal((await read(id)).status,'queued');
+  }
+  const requestId=randomUUID(), current={factorPreprocessFormats:['auto-factor-preprocess/1','auto-factor-preprocess/2']};
+  const first=await(await claim(requestId,current)).json();assert.equal(first.job.id,id);
+  const downgrade=await claim(requestId,old);assert.equal(downgrade.status,409);assert.equal((await downgrade.json()).error.code,'RUNNER_UPGRADE_REQUIRED');
+  const recovered=await(await claim(requestId,current)).json();assert.equal(recovered.job.leaseToken,first.job.leaseToken);
+});
