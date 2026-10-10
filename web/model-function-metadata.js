@@ -1,3 +1,4 @@
+import { validateAutomaticFactorConfig, validEconomicTransform, ECONOMIC_TYPES } from './factor-preprocess-contract.js';
 /** Strict metadata contract shared with statistical_quant/model_function.py. */
 export function validateMetadata(a, {require: ok, keys, number, equal}) {
   const int = (x, lo, hi) => Number.isInteger(x) && x >= lo && x <= hi;
@@ -32,30 +33,27 @@ export function validateMetadata(a, {require: ok, keys, number, equal}) {
     if (a.estimator.kind !== 'constant') {
       ok((a.transforms.winsorLower !== null) === p.winsorize && (a.transforms.scaleMean !== null) === p.standardize, '训练变换与自动预处理声明不一致');
     }
-    keys(p.automatic, ['schema'], '自动预处理声明');
-    ok(p.automatic.schema === 'auto-factor-preprocess/1', '自动预处理版本无效');
+    let automaticConfig;
+    try { automaticConfig = validateAutomaticFactorConfig(p.automatic, c.factors); }
+    catch (error) { ok(false, error.message); }
+    const typed = automaticConfig.schema === 'auto-factor-preprocess/2';
     const policy = c.automatic;
-    keys(policy, ['schema','inputStage','scaling','fitPopulation','factors'], '自动因子构建');
-    ok(policy.schema === 'auto-factor-preprocess/1' && policy.inputStage === 'after_per_leg_semantic_transform_and_origin_aggregation' && policy.scaling === 'train_fold_median_iqr' && policy.fitPopulation === 'asset_rows_global_dates', '自动因子构建口径无效');
+    keys(policy, ['schema','inputStage','scaling','fitPopulation','factors', ...(typed ? ['stateFeatures'] : [])], '自动因子构建');
+    ok(policy.schema === automaticConfig.schema && policy.inputStage === 'after_per_leg_semantic_transform_and_origin_aggregation' && policy.scaling === 'train_fold_median_iqr' && policy.fitPopulation === 'asset_rows_global_dates', '自动因子构建口径无效');
+    if (typed) ok(policy.stateFeatures === 'asset_returns_basket_gross/1', '状态输入定义无效');
     const factors = c.factors.filter(f => f.role !== 'hedge');
     ok(Array.isArray(policy.factors) && policy.factors.length === factors.length, '自动因子定义数量无效');
-    const variants = {
-      identity: {kind:'identity'},
-      log_positive: {kind:'log_positive',invalid:'missing'},
-      log1p_nonnegative: {kind:'log1p_nonnegative',invalid:'missing'},
-      reciprocal_nonzero: {kind:'reciprocal_nonzero',invalid:'missing'},
-      percent_to_fraction: {kind:'percent_to_fraction',divisor:100},
-      return_over_trailing_volatility: {kind:'return_over_trailing_volatility',returnLag:1,volatilityWindow:20,volatilityLag:1,ddof:1,minVolatility:1e-8,invalid:'missing'}
-    };
     const features = [];
     policy.factors.forEach((f, index) => {
-      keys(f, ['feature','expression','direction','scope','transform','aggregation'], '自动因子');
+      keys(f, ['feature','expression','direction','scope','transform','aggregation', ...(typed ? ['economicType','sourceUnit','clock'] : [])], '自动因子');
       const original = factors[index];
       ok(f.feature === 'factor:' + original.id && f.expression === original.expression && f.direction === original.direction && ['asset','global'].includes(f.scope) && f.aggregation === (f.scope === 'global' ? 'global_once' : 'signed_origin_dollar_over_gross'), '自动因子来源不一致');
-      const variant = Object.hasOwn(variants, f.transform?.kind) ? variants[f.transform.kind] : null;
-      ok(!!variant, '不支持的经济变换');
-      keys(f.transform, Object.keys(variant), '经济变换');
-      ok(Object.keys(variant).every(key => f.transform[key] === variant[key]), '经济变换参数无效');
+      ok(validEconomicTransform(f.transform, policy.schema), '经济变换参数无效');
+      if (typed) {
+        ok(ECONOMIC_TYPES.includes(f.economicType) && typeof f.sourceUnit === 'string' && f.sourceUnit.length > 0 && f.sourceUnit.length <= 80 && /^[\x00-\x7f]*$/.test(f.sourceUnit) && ['research_sessions','observed_source_sessions_asof'].includes(f.clock), '因子经济含义无效');
+        const override = automaticConfig.overrides?.[original.id];
+        if (override) ok(Object.keys(override.transform).every(key => override.transform[key] === f.transform[key]), '因子变换与保存的覆盖配置不一致');
+      }
       features.push(f.feature);
     });
     const builtins = ['volatility20', ...(['mean_reversion','pair_reversion'].includes(s.family)

@@ -23,6 +23,7 @@ jobs:
       - run: npm ci
       - run: PYTHONPATH=engine .venv/bin/python -m pytest -q engine/tests
       - run: PYTHONPATH=engine .venv/bin/python scripts/export-financial-definitions.py --check
+      - run: PYTHONPATH=engine .venv/bin/python scripts/export-factor-quantity-fields.py --check
       - run: npm run check
       - run: npm test
       - run: npm run build
@@ -32,6 +33,7 @@ jobs:
       - run: node web/tests/factor-workbench-dom.mjs
       - run: node web/tests/research-step-dom.mjs
       - run: node web/tests/model-input-definitions-dom.mjs
+      - run: node web/tests/factor-transform-audit-dom.mjs
       - run: node web/tests/universe-filter-dom.mjs
       - run: node web/tests/universe-legacy-dom.mjs
       - run: node web/tests/market-preparation-dom.mjs

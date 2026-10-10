@@ -1,3 +1,4 @@
+import { AUTOMATIC_FACTOR_SCHEMAS } from '../factor-preprocess-contract.js';
 import { STEPS, validateStrategy } from './defaults.js';
 import contextRegistry from '../../engine/atlas_quant/context_sources.json' with { type: 'json' };
 
@@ -47,7 +48,7 @@ export function stepErrors(strategy, step, options = {}) {
   if (step === 'state' && options.easy)
     errors = errors.map(error => error.includes('事件模型需要') ? '添加带可用时间的事件输入，或在 Studio 配置。' : error);
   if (step === 'state') {
-    const format = 'auto-factor-preprocess/1', automatic = strategy.preprocess?.automatic?.schema === format;
+    const format = strategy.preprocess?.automatic?.schema, automatic = AUTOMATIC_FACTOR_SCHEMAS.includes(format);
     const fields = strategy.factors.flatMap(factor => typeof factor.expression === 'string' ? factor.expression.match(/\bext_ctx_[A-Za-z0-9_]*\b/g) || [] : []);
     if (fields.some(field => !contextSources.has(field)))
       errors.push('指数因子来源未登记，请更换因子。');

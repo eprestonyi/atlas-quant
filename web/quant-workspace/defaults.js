@@ -1,3 +1,5 @@
+import { typedFactorDescriptor } from '../factor-preprocess-semantics.js';
+import { LATEST_AUTOMATIC_FACTOR_SCHEMA, validateAutomaticFactorConfig } from '../factor-preprocess-contract.js';
 // Versioned research defaults and client-side protocol checks; server validation remains authoritative.
 export const RESEARCH_MODE = 'statistical_quant';
 export const STEPS = [
@@ -51,7 +53,7 @@ export function defaultStrategy({ automatic = false } = {}) {
       standardize: true,
       decorrelation: 'drop_correlated',
       correlationThreshold: 0.9,
-      ...(automatic ? { automatic: { schema: 'auto-factor-preprocess/1' } } : {}),
+      ...(automatic ? { automatic: { schema: LATEST_AUTOMATIC_FACTOR_SCHEMA } } : {}),
     },
     target: { kind: 'asset_price', horizonSessions: 5 },
     model: { family: 'mean_reversion', estimator: 'auto', trainWindow: 504, refitDays: 20,
@@ -225,10 +227,15 @@ export function validateStrategy(
     add('最多 32 个不同因子；每个因子需有定义、公式、方向和有效角色。');
   const automatic = s.preprocess?.automatic;
   if (automatic !== undefined) {
-    if (!automatic || typeof automatic !== 'object' || Array.isArray(automatic) ||
-        Object.keys(automatic).length !== 1 || automatic.schema !== 'auto-factor-preprocess/1')
-      add('自动因子处理版本无效，请在 Studio 检查研究配置。');
-    else if (s.factors.some(f => typeof f.expression === 'string' && f.expression.replace(/[\s()]/g, '') === 'raw_close'))
+    try { validateAutomaticFactorConfig(automatic, s.factors); }
+    catch (error) { add(error.message + '，请在 Studio 检查研究配置。'); }
+    if (automatic?.schema === LATEST_AUTOMATIC_FACTOR_SCHEMA && Array.isArray(s.factors)) {
+      for (const factor of s.factors.filter(f => f.role !== 'hedge')) {
+        try { typedFactorDescriptor(factor, automatic.overrides?.[factor.id]); }
+        catch (error) { add(error.message); }
+      }
+    }
+    if (s.factors.some(f => typeof f.expression === 'string' && f.expression.replace(/[\s()]/g, '') === 'raw_close'))
       add('自动价格处理请使用复权 close；raw_close 仅供 Studio 显式定义。');
   }
   section = 'model';

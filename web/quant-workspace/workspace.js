@@ -1,3 +1,5 @@
+import { typedFactorDescriptor } from '../factor-preprocess-semantics.js';
+import { LATEST_AUTOMATIC_FACTOR_SCHEMA, ECONOMIC_TRANSFORMS, ECONOMIC_TRANSFORM_LABELS } from '../factor-preprocess-contract.js';
 import { financialProfile, datasetLocation } from './datasets/protocol.js';
 import { financialAdmission, financialBindingErrors } from './financial/research-binding.js';
 import { SOURCE_LABELS, scopeKey, activeBinding, bindingFields, restoreBindings, marketBindingErrors } from './research-data-binding.js';
@@ -297,10 +299,24 @@ window.AtlasQuantV4 = {
 
       return `<div class="sq-legacy sq-universe">${C.legacy.flow.universePage()}</div>`;
     }
+    function selectedFactorLabel(factor) {
+      const automatic = s.strategy.preprocess?.automatic;
+      const display = { ...factor, name: C.findFactor(factor.id)?.name || factor.name || factor.id };
+      if (automatic?.schema === LATEST_AUTOMATIC_FACTOR_SCHEMA && factor.role !== 'hedge') {
+        try { display.automaticProcessing = { schema: automatic.schema, descriptor: typedFactorDescriptor(factor, automatic.overrides?.[factor.id]) }; }
+        catch { /* The step guard displays the actionable error. */ }
+      }
+      return automaticFactorLabel(display, factor.role === 'hedge' ? false : automatic?.schema);
+    }
+    function factorTransformControl(factor) {
+      if (!isStudio() || factor.role === 'hedge' || s.strategy.preprocess?.automatic?.schema !== LATEST_AUTOMATIC_FACTOR_SCHEMA) return '';
+      const selected = s.strategy.preprocess.automatic.overrides?.[factor.id]?.transform?.kind || '';
+      return `<label class="sq-field"><span>经济变换</span><select data-sq-factor-transform="${e(factor.id)}"><option value="">自动 · 按经济类型</option>${Object.entries(ECONOMIC_TRANSFORM_LABELS).map(([kind,label]) => `<option value="${e(kind)}" ${kind === selected ? 'selected' : ''}>${e(label)}</option>`).join('')}</select></label>`;
+    }
     function statePage() {
       if (boundDataset()) return panel('因子库', `<div class="ds-members">${s.datasetBinding.selectedStateIds.map((id) => `<label class="fin-checkbox"><input type="checkbox" data-sq-dataset-state="${e(id)}" ${s.strategy.factors.some((f) => f.expression === id) ? 'checked' : ''}>${e(s.datasetBinding.stateDefinitions?.find((x) => x.id === id)?.name || s.strategy.factors.find((f) => f.id === id)?.name || id)}</label>`).join('')}</div>`);
       const factors = s.strategy.factors;
-      const selected = `<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>已选因子 <span>${factors.length} / 32</span></h2></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(automaticFactorLabel({...f,name:C.findFactor(f.id)?.name||f.name||f.id},s.strategy.preprocess?.automatic?.schema==='auto-factor-preprocess/1'))}</strong>${isStudio() ? `<code>${e(f.expression)}</code>` : ''}</div>${isStudio() ? `<label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option><option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>对冲暴露</option><option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入</option></select></label>` : ''}${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('')}<div class="sq-drop-caption">${i('plus')}拖入因子</div></div>`;
+      const selected = `<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>已选因子 <span>${factors.length} / 32</span></h2></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(selectedFactorLabel(f))}</strong>${isStudio() ? `<code>${e(f.expression)}</code>` : ''}</div>${isStudio() ? `<label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option><option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>对冲暴露</option><option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入</option></select></label>` : ''}${factorTransformControl(f)}${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('')}<div class="sq-drop-caption">${i('plus')}拖入因子</div></div>`;
       const tabs = [['catalog', '因子库'], ['industries', '行业 / ETF'], ['builder', '构建因子'], ...(isStudio() ? [['modules', '状态模块'], ['fields', '数据库字段']] : [])];
       const active = tabs.some(([id]) => id === ui.featureTab) ? ui.featureTab : 'catalog';
       const library = active === 'industries' ? industryBrowser.view() : active === 'modules' ? catalog.view('state') : `<div class="sq-legacy sq-factor-library">${active === 'builder' ? C.legacy.builder({ compact: true }) : active === 'fields' ? C.legacy.fieldBrowser() : C.legacy.catalogBrowser({ compact: true })}</div>`;
@@ -958,8 +974,8 @@ window.AtlasQuantV4 = {
       const action = element.dataset.sq,
         id = element.dataset.id;
       if (action === 'select-mode') {
-        if (ui.firstDraft && !ui.activeId && !s.strategy.universe.symbols.length && !s.strategy.factors.length && id === 'easy') {
-          s.strategy.preprocess.automatic = { schema: 'auto-factor-preprocess/1' };
+        if (ui.firstDraft && !ui.activeId && !s.strategy.universe.symbols.length && !s.strategy.factors.length) {
+          s.strategy.preprocess.automatic = { schema: LATEST_AUTOMATIC_FACTOR_SCHEMA };
           persistDraft();
         }
         ui.firstDraft = false;
@@ -967,7 +983,7 @@ window.AtlasQuantV4 = {
       }
       if (action === 'new') {
         C.legacy.flow.reset();
-        s.strategy = defaultStrategy({ automatic: !isStudio() });
+        s.strategy = defaultStrategy({ automatic: true });
         ui.firstDraft = false;
         s.strategyId = null;
         s.strategyVersion = null;
@@ -1045,6 +1061,7 @@ window.AtlasQuantV4 = {
       }
       if (action === 'remove-factor') {
         s.strategy.factors = s.strategy.factors.filter((x) => x.id !== id);
+        if (s.strategy.preprocess?.automatic?.overrides) delete s.strategy.preprocess.automatic.overrides[id];
         s.strategy.portfolio.factorExposureLimits = (
           s.strategy.portfolio.factorExposureLimits || []
         ).filter((x) => x.factorId !== id);
@@ -1199,11 +1216,25 @@ window.AtlasQuantV4 = {
         persistDraft();
         render();
       }
+      if (element.dataset.sqFactorTransform) {
+        const automatic = s.strategy.preprocess?.automatic, id = element.dataset.sqFactorTransform;
+        const factor = s.strategy.factors.find(x => x.id === id);
+        if (isStudio() && automatic?.schema === LATEST_AUTOMATIC_FACTOR_SCHEMA && factor && factor.role !== 'hedge') {
+          if (!element.value) { if (automatic.overrides) delete automatic.overrides[id]; }
+          else if (Object.hasOwn(ECONOMIC_TRANSFORMS,element.value)) {
+            automatic.overrides ||= {};
+            Object.defineProperty(automatic.overrides,id,{value:{transform:structuredClone(ECONOMIC_TRANSFORMS[element.value])},enumerable:true,writable:true,configurable:true});
+          }
+          persistDraft(); render();
+        }
+      }
       if (element.dataset.sqFactorRole) {
         s.strategy.factors.find(
           (x) => x.id === element.dataset.sqFactorRole,
         ).role = element.value;
+        if (element.value === 'hedge' && s.strategy.preprocess?.automatic?.overrides) delete s.strategy.preprocess.automatic.overrides[element.dataset.sqFactorRole];
         persistDraft();
+        render();
       }
       if (element.dataset.sqBasketSymbol) {
         const b = s.strategy.target.basket,

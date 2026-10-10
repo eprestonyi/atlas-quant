@@ -45,6 +45,9 @@ export const reportFeatureLabeler = (report, catalog = []) => createFeatureLabel
 export function constructedFeatureLabel(name, construction) {
   const kind = construction?.transform?.kind;
   if (kind === 'return_over_trailing_volatility') return /价格/.test(name) ? name.replace(/价格/g, '波动率标准化收益') : `${name} · 波动率标准化收益`;
+  if (kind === 'first_difference' && construction.economicType === 'log_price') return /价格/.test(name) ? name.replace(/价格/g, '对数收益率') : `${name} · 对数收益率`;
+  if (kind === 'simple_return' || kind === 'log_return') { const suffix = kind === 'simple_return' ? '简单收益率' : '对数收益率'; return /价格/.test(name) ? name.replace(/价格/g, suffix) : `${name} · ${suffix}`; }
+  if (kind === 'signed_log1p') return `${name} · 带符号数量压缩`;
   if (kind === 'log_positive') return `${name} · ln`;
   if (kind === 'log1p_nonnegative') return `${name} · ln(1+x)`;
   if (kind === 'reciprocal_nonzero') return `${name} · 倒数`;
@@ -53,6 +56,8 @@ export function constructedFeatureLabel(name, construction) {
 
 export function automaticFactorLabel(factor, enabled = false) {
   const name = factor?.name || factor?.label || factor?.id || '未命名';
+  if (enabled === 'auto-factor-preprocess/2' && factor?.automaticProcessing?.schema === enabled && factor.automaticProcessing.descriptor?.expression === factor.expression) return constructedFeatureLabel(name, factor.automaticProcessing.descriptor);
   if (!enabled || !/^(open|high|low|close|ext_ctx_[a-z0-9_]+_(open|high|low|close))$/.test(factor?.expression || '')) return name;
-  return /价格/.test(name) ? name.replace(/价格/g, '波动率标准化收益') : `${name} · 波动率标准化收益`;
+  const suffix = enabled === 'auto-factor-preprocess/2' ? '简单收益率' : '波动率标准化收益';
+  return /价格/.test(name) ? name.replace(/价格/g, suffix) : `${name} · ${suffix}`;
 }

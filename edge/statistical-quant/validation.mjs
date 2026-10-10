@@ -1,3 +1,5 @@
+import { typedFactorDescriptor } from '../../web/factor-preprocess-semantics.js';
+import { validateAutomaticFactorConfig } from '../../web/factor-preprocess-contract.js';
 import contextRegistry from '../../engine/atlas_quant/context_sources.json' with {type:'json'};
 const contextAliases = new Set(contextRegistry.items.flatMap(s => (s.api === 'yfinance_history' ? ['close','vol'] : s.api === 'sw_daily' ? ['close','vol','amount','pe','pb','total_mv','float_mv'] : ['close','vol','amount']).map(f => 'ext_ctx_'+(s.aliasKey || s.ts_code.toLowerCase().replace('.', '_'))+'_'+f)));
 import financialDefinitions from '../financial/definitions.json' with { type: 'json' };
@@ -222,9 +224,14 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
     correlationThreshold: number(pre.correlationThreshold ?? 0.9, '相关阈值', 0.5, 1)
   };
   if (pre.automatic !== undefined) {
-    keys(pre.automatic, ['schema'], '自动因子处理');
-    if (pre.automatic.schema !== 'auto-factor-preprocess/1') fail('自动因子处理版本无效');
-    preprocess.automatic = {schema: 'auto-factor-preprocess/1'};
+    try { preprocess.automatic = validateAutomaticFactorConfig(pre.automatic, cleanFactors); }
+    catch (error) { fail(error.message); }
+    if (preprocess.automatic.schema === 'auto-factor-preprocess/2') {
+      for (const factor of cleanFactors.filter(f => f.role !== 'hedge')) {
+        try { typedFactorDescriptor(factor, preprocess.automatic.overrides?.[factor.id]); }
+        catch (error) { fail(error.message); }
+      }
+    }
     if (cleanFactors.some(f => f.expression.replace(/[\s()]/g, '') === 'raw_close'))
       fail('自动价格处理请使用复权 close；raw_close 仅供 Studio 显式定义');
   }

@@ -81,6 +81,13 @@ def build_catalog():
         if 'us_daily_adj' in datasets:
             factors[-1].update(historyStatus='adapter_supported_history_unverified',
                                historyAvailabilityReason='ETF 历史待验；XSD、XLK 的已检样本未返回记录。')
+        from .statistical_quant.typed_preprocessing import descriptor, SCHEMA
+        from .engine import ResearchError
+        try:
+            processing = {"schema": SCHEMA, "status": "defined", "descriptor": descriptor(factors[-1])}
+        except ResearchError as exc:
+            processing = {"schema": SCHEMA, "status": "requires_explicit_choice", "code": exc.code}
+        factors[-1]["automaticProcessing"] = processing
 
     # Easy users choose a familiar raw concept; the versioned automatic
     # preprocessing policy chooses its economic transform before fold fitting.

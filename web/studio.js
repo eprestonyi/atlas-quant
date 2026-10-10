@@ -1,3 +1,4 @@
+import { typedFactorDescriptor } from './factor-preprocess-semantics.js';
 import { automaticFactorLabel } from './quant-workspace/feature-labels.js';
 import { providerLabel } from './quant-workspace/source-labels.js';
 /* Atlas Quant v2: accessible research composer and independent studio workspaces. */
@@ -34,8 +35,9 @@ import { providerLabel } from './quant-workspace/source-labels.js';
     const isStudio=()=>s.view==='studio';
     const stage=()=>stages.some(x=>x[0]===s.studioStep)?s.studioStep:'data';
     const status=x=>typeof x?.availability==='string'?x.availability:(x?.availability?.status||(['ready','partial','schema_only','needs_mapping','unavailable','requires_data'].includes(x?.status)?x.status:null)||(x?.expression?'ready':'unknown'));
-    const availability=x=>({ready:'可研究',partial:'部分接入',schema_only:'仅字段定义',needs_mapping:'待时间 / 标的映射',unavailable:'暂不可用',requires_data:'需要补充数据',unknown:'待核验'}[status(x)]||status(x));
-    const reason=x=>x?.availability?.reason||x?.availabilityReason||x?.reason||'';
+    const processingIssue=x=>{if(s.strategy.research?.mode!=='statistical_quant'||s.quantMode==='studio'||s.strategy.preprocess?.automatic?.schema!=='auto-factor-preprocess/2'||!x?.expression)return '';try{typedFactorDescriptor({...x,id:x.id||'input',direction:x.direction===-1?-1:1},s.strategy.preprocess.automatic.overrides?.[x.id]);return '';}catch(error){return error.message;}};
+    const availability=x=>processingIssue(x)?'需选择处理':({ready:'可研究',partial:'部分接入',schema_only:'仅字段定义',needs_mapping:'待时间 / 标的映射',unavailable:'暂不可用',requires_data:'需要补充数据',unknown:'待核验'}[status(x)]||status(x));
+    const reason=x=>processingIssue(x)||x?.availability?.reason||x?.availabilityReason||x?.reason||'';
     const ready=x=>status(x)==='ready';
     const requiredFields=x=>x?.requiredFields||x?.fields||x?.metadata?.fields||(x?.alias?[x.alias]:[]);
     function expectedFieldId(alias,x){const fields=requiredFields(x);if(x?.fieldIds?.[alias])return x.fieldIds[alias];if(x?.fieldId&&fields.length===1&&fields[0]===alias)return x.fieldId;if(x?.alias===alias&&x?.id)return x.id;const field=v.fieldCatalog.items.find(f=>f.alias===alias);if(field)return field.id;const recipe=C.factors().find(f=>f.fieldId&&(f.requiredFields||[]).length===1&&f.requiredFields[0]===alias);return recipe?.fieldId||null;}
@@ -43,13 +45,13 @@ import { providerLabel } from './quant-workspace/source-labels.js';
     const uploadEvidenceCache=new WeakMap();
     function uploadEvidence(dataset){let cached=uploadEvidenceCache.get(dataset);if(cached)return cached;const rows=dataset.rows||[],metadata=dataset.provenance?.externalFields||{},columns=new Set(),external={};for(const row of rows)for(const key of Object.keys(row))columns.add(key);for(const [alias,m] of Object.entries(metadata)){const companion=alias+'__available_date';let valid=/^(pcd|fd|ext|model)_[a-z0-9_]{1,60}$/.test(alias)&&m&&typeof m==='object'&&['number','decimal','integer'].includes(m.dataType)&&m.availabilityPolicy==='point_in_time_asof'&&m.availableDateColumn===companion&&typeof m.source==='string'&&m.source.trim()&&typeof m.path==='string'&&m.path.trim()&&columns.has(alias)&&columns.has(companion),observed=0;if(valid)for(const row of rows){const value=row[alias];if(value===undefined||value===null)continue;const available=String(row[companion]||''),date=new Date(`${available.slice(0,4)}-${available.slice(4,6)}-${available.slice(6,8)}T00:00:00Z`);if(typeof value!=='number'||!Number.isFinite(value)||!/^\d{8}$/.test(available)||Number.isNaN(+date)||date.toISOString().slice(0,10).replaceAll('-','')!==available||available>String(row.trade_date)){valid=false;break;}observed++;}external[alias]={valid:Boolean(valid&&observed),path:m?.path};}cached={columns,external};uploadEvidenceCache.set(dataset,cached);return cached;}
     function uploaded(x){const fields=requiredFields(x);if(s.dataSource!=='upload'||!s.dataset?.rows?.length||!fields.length||x?.numericEligible===false)return false;const evidence=uploadEvidence(s.dataset);return fields.every(alias=>{if(!/^(pcd|fd|ext|model)_/.test(alias))return evidence.columns.has(alias);const info=evidence.external[alias],expected=expectedFieldId(alias,x);return info?.valid&&(!alias.startsWith('pcd_')||!expected||info.path===expected);});}
-    const canUse=x=>ready(x)||mapped(x)||uploaded(x);
+    const canUse=x=>!processingIssue(x)&&(ready(x)||mapped(x)||uploaded(x));
     const contextualStatus=x=>!ready(x)?mapped(x)?'已配置映射，运行时校验':uploaded(x)?'已导入 PIT 字段，运行时校验':'':'';
     const contextualChip=x=>contextualStatus(x)?`<span class="v2-context-status">${e(contextualStatus(x))}</span>`:'';
     const databaseName=x=>({MKT:'MKT · 市场数据',EXT:'EXT · 外部研究与估计',PCD:'PCD · 公司事实',MODEL:'MODEL · 派生研究',FD:'财务指标适配器',PCD_DERIVED:'PCD 衍生定义',COMMUNITY:'社区贡献'}[x]||x);
     const categoryName=x=>({area:'地域',exchange:'交易所',index:'精选指数',industry:'行业',sw_industry:'申万行业',industry_exchange:'行业 × 交易所',industry_region:'行业 × 地域',market:'市场板块'}[x]||x);
     const subsetRule=u=>u?.recommendationMethod?.includes('symbol_code')?`目录默认按代码升序取前 ${u.recommendedSymbols?.length||20} 只，仅为研究子集，不代表收益筛选。`:'目录推荐仅定义研究范围，不代表收益筛选；可自行调整成员。';
-    const itemName=x=>x.expression?automaticFactorLabel(x,s.strategy.research?.mode==='statistical_quant'&&s.strategy.preprocess?.automatic?.schema==='auto-factor-preprocess/1'):x.name||x.label||x.id||x.field||'未命名';
+    const itemName=x=>x.expression?automaticFactorLabel(x,s.strategy.research?.mode==='statistical_quant'&&s.strategy.preprocess?.automatic?.schema):x.name||x.label||x.id||x.field||'未命名';
     const count=n=>n!==null&&n!==undefined&&Number.isFinite(Number(n))?Number(n).toLocaleString():'—';
     const labelOptions=(arr,val)=>arr.map(x=>{const key=typeof x==='string'?x:x.id||x.value||x.name;return `<option value="${e(key)}" ${key===val?'selected':''}>${e(typeof x==='string'?databaseName(x):x.name||x.label||key)}</option>`;}).join('');
     const chip=x=>`<span class="v2-status ${ready(x)?'ready':''}"><i></i>${e(availability(x))}</span>`;

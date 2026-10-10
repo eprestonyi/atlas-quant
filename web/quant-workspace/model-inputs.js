@@ -16,7 +16,13 @@ const BUILTIN_DEFINITION = Object.freeze({
 function constructionDefinition(artifact, input, factor, symbol) {
   const asset = artifact.scope?.targetKind === 'asset_price' && artifact.identity?.scale === 'origin_known_gross_absolute_leg_value';
   const descriptor = artifact.featureConstruction?.automatic?.factors?.find(item => item.feature === input.name);
-  if (!factor) return { equations: Object.hasOwn(BUILTIN_DEFINITION, input.name) ? [`${symbol} = ${BUILTIN_DEFINITION[input.name]}`] : [], operations: [], descriptor: null };
+  if (!factor) {
+    const typed = asset && artifact.featureConstruction?.automatic?.stateFeatures === 'asset_returns_basket_gross/1';
+    const lag = /^(change|trend)([0-9]+)$/.exec(input.name)?.[2];
+    const window = /^state_deviation([0-9]+)$/.exec(input.name)?.[1];
+    const formula = typed ? input.name === 'volatility20' ? 'sampleSD(rₜ₋₁₉, …, rₜ; ddof = 1), rₜ = Pₜ / Pₜ₋₁ − 1' : lag ? `Pₜ / Pₜ₋${lag} − 1` : window ? `Pₜ / mean(Pₜ₋${Number(window)-1}, …, Pₜ) − 1` : null : BUILTIN_DEFINITION[input.name];
+    return { equations: formula ? [`${symbol} = ${formula}`] : [], operations: typed ? ['收益率状态'] : [], descriptor: null };
+  }
   if (!descriptor && artifact.featureConstruction?.schema === 'origin-state-features/2') return { equations: [], operations: ['构建定义缺失'], descriptor: null };
   if (!descriptor) return { equations: [`dⱼ,ₜ = ${factor.expression}`, `${symbol} = ${asset ? '' : 'Σⱼ(qⱼ pⱼ,ₜ / scale) × '}${factor.direction} × dⱼ,ₜ`], operations: [asset ? '个股输入' : '篮子聚合'], descriptor: null };
   const { transform: t, scope, direction } = descriptor;
@@ -24,16 +30,20 @@ function constructionDefinition(artifact, input, factor, symbol) {
   const member = scope === 'global' ? '' : 'ⱼ,';
   const formulas = {
     identity: [`${out} = ${raw}`],
+    first_difference: [`${out} = ${raw} − d${member}ₜ₋₁`],
+    simple_return: [`${out} = ${raw} / d${member}ₜ₋₁ − 1`, '当前或前一期 d ≤ 0 → null'],
+    log_return: [`${out} = ln(${raw} / d${member}ₜ₋₁)`, '当前或前一期 d ≤ 0 → null'],
+    signed_log1p: [`${out} = sign(${raw}) × ln(1 + |${raw}| / ${t.referenceUnit})`, `参考量 = ${t.referenceUnit} ${descriptor.sourceUnit || '原始单位'}`],
     log_positive: [`${out} = ln(${raw})`, `${raw} ≤ 0 → null`],
     log1p_nonnegative: [`${out} = ln(1 + ${raw})`, `${raw} < 0 → null`],
     reciprocal_nonzero: [`${out} = 1 / ${raw}`, `${raw} = 0 → null`],
     percent_to_fraction: [`${out} = ${raw} / ${t.divisor}`],
     return_over_trailing_volatility: [`r${member}ₜ = ${raw} / d${member}ₜ₋₁ − 1`, `σ${member}ₜ = sampleSD(r${member}ₜ₋${t.volatilityWindow}, …, r${member}ₜ₋${t.volatilityLag}; ddof = ${t.ddof})`, `${out} = r${member}ₜ / σ${member}ₜ`, `d ≤ 0 或 σ${member}ₜ ≤ ${t.minVolatility} 或历史不足 → null`]
   };
-  const labels = {identity:'原值',log_positive:'对数',log1p_nonnegative:'log1p',reciprocal_nonzero:'倒数',percent_to_fraction:'百分比转小数',return_over_trailing_volatility:'收益 / 历史波动'};
+  const labels = {first_difference:'一阶差分',simple_return:'简单收益率',log_return:'对数收益率',signed_log1p:'原单位带符号数量压缩',identity:'原值',log_positive:'对数',log1p_nonnegative:'log1p',reciprocal_nonzero:'倒数',percent_to_fraction:'百分比转小数',return_over_trailing_volatility:'收益 / 历史波动'};
   return { descriptor, equations: [`${raw} = ${descriptor.expression}`, ...(formulas[t.kind] || ['未识别的经济变换']), `${out} 非有限 → null`,
     `${symbol} = ${scope === 'global' || asset ? `${direction} × ${out}` : `Σⱼ(qⱼ pⱼ,ₜ / scale) × ${direction} × ${out}`}`],
-    operations: [labels[t.kind] || t.kind, scope === 'global' ? '全局一次' : asset ? '个股输入' : '篮子聚合'] };
+    operations: [labels[t.kind] || t.kind, ...(descriptor.clock === 'observed_source_sessions_asof' ? ['来源交易期 → as-of 对齐'] : []), scope === 'global' ? '全局一次' : asset ? '个股输入' : '篮子聚合'] };
 }
 
 // These are the portable function's actual numerical inputs. A factor expression

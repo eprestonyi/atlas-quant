@@ -103,3 +103,5 @@
 
 .sq-industry-proxies{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:12px}.sq-industry-proxies>span{font-size:11px;color:var(--muted,#8d9788)}
 .sq-model-equation{max-height:280px;overflow:auto}
+
+.sq-factor-transform-audit{min-width:0}.sq-transform-chain{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;margin:12px 0}.sq-transform-table{font-size:12px}.sq-transform-table th{max-width:260px;overflow-wrap:anywhere}.sq-transform-values{display:flex;flex-direction:column;gap:6px;white-space:nowrap}.sq-factor-transform-audit .sq-table-scroll{margin:18px 0;max-width:100%}
