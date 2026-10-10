@@ -1,5 +1,5 @@
 import { isReturnFunction, returnUnit, returnTiming } from './return-study.js';
-import { createFeatureLabeler } from './feature-labels.js';
+import { createFeatureLabeler, constructedFeatureLabel } from './feature-labels.js';
 import { modelFormula, basisTerm } from './report-model.js';
 import { featureSymbol, renderFunctionInputs, inputDefinition } from './model-inputs.js';
 import { FUNCTION_SCHEMAS } from '../model-function-runtime.js';
@@ -113,9 +113,10 @@ export function createModelFunctionEditor(C, F) {
   function returnFactorFields(state) {
     let rows;try{rows=JSON.parse(state.fields.rows);}catch{return '';}
     if(!Array.isArray(rows)||rows.length!==1)return '';
+    const label=createFeatureLabeler({factors:state.artifact.featureConstruction.factors,catalog:C.state?.catalog?.factors||[]});
     return `<div class="sq-form-grid">${state.artifact.inputSchema.map((x,index)=>{
       const d=inputDefinition(state.artifact,index),value=rows[0]?.[x.name];
-      return `<label class="sq-field"><span>${e(d.factor?.name||d.factor?.id||x.name)} · R${index+1}</span><input type="number" step="any" data-mfe-factor="${e(x.name)}" value="${value==null?'':e(value)}" placeholder="未提供"><small>${e(d.construction.operations.join(' · '))}</small></label>`;
+      return `<label class="sq-field"><span>${e(constructedFeatureLabel(label(x.name),d.construction.descriptor))} · R${index+1}</span><input type="number" step="any" data-mfe-factor="${e(x.name)}" value="${value==null?'':e(value)}" placeholder="未提供"><small>${e(d.construction.operations.join(' · '))}</small></label>`;
     }).join('')}</div>`;
   }
   function returnView(state, eligible) {
