@@ -43,6 +43,7 @@ PATHS = {
     "snapshotRows": ("snapshot", "/rows"),
     "snapshotContextSources": ("snapshot", "/provenance/contextSources"),
     "plannedOrigins": ("coverage", "/origins"),
+    "researchPanel": ("forecast", "/factorResearch/panel/rows"),
 }
 IDENTITIES = {"forecasts": "forecastId", "baselineRows": "forecastId",
               "targets": "id", "modelFits": "id",
@@ -534,7 +535,8 @@ class BundleAudit:
                     "Missing baseline predictions")
         else:
             require(self.collections.get("baselineRows", {}).get("rowCount", 0) == 0, "Unexpected baseline predictions")
-        keys = ("date", "targetId", "entryDate", "targetDate")
+        return_study = f.get('studyProtocol') == 'asset-return-study/1'
+        keys = ("date", "targetId", "responseStartDate", "responseEndDate") if return_study else ("date", "targetId", "entryDate", "targetDate")
         for collection, fits in (("forecasts", "modelFits"), ("baselineRows", "baselineModelFits")):
             if collection not in self.collections:
                 continue
@@ -551,17 +553,27 @@ class BundleAudit:
                     require(not plan["inputValid"] and row["status"] == "invalid", "Undeclared unavailable target")
                 else:
                     target = self.lookup("targets", row["targetId"])
-                    formed = target["formationEnd"]
+                    formed = target.get("formationEnd")
                     if formed is not None:
                         require(formed < row["date"], "Target uses future formation data")
                     else:
-                        require(target["construction"] in ("single_asset", "fixed"),
+                        require(target["construction"] in ("single_asset", "fixed", "independent_asset_close_to_close"),
                                 "Estimated target lacks formation cutoff")
                 if row["modelFitId"] is not None:
                     fit = self.lookup(fits, row["modelFitId"])
+                    if return_study:
+                        require(fit['targetId'] == row['targetId'] and fit['targetSymbol'] == row['assetSymbol'],
+                                'Return row uses another asset model')
                     require(fit["fitDate"] <= row["date"] and
                             (fit["labelEndMax"] is None or fit["labelEndMax"] < fit["fitDate"]),
                             "Prediction uses future model fit/labels")
+                if return_study:
+                    from return_study_audit import check_return_row
+                    require(target['symbols'] == [row['assetSymbol']], 'Return target asset mismatch')
+                    if row['status'] == 'valid':
+                        require(plan['inputValid'] and row['modelFitId'], 'Valid response lacks inputs/model')
+                    check_return_row(row, r['strategy'], self.near, require)
+                    continue
                 if row["status"] != "valid":
                     continue
                 require(plan["inputValid"] and row["modelFitId"], "Valid prediction lacks inputs/model")
@@ -575,6 +587,42 @@ class BundleAudit:
                     self.near(row["forecastError"], row["realizedFuture"]-v, "forecast error")
                     self.near(row["realizedFuture"]-p, -row["edgeGap"]+row["forecastError"], "actual decomposition")
         require(r["execution"]["forecastArtifactId"] == m["forecastArtifactId"], "Execution reference mismatch")
+        if return_study:
+            self.validate_return_panel()
+
+    def validate_return_panel(self):
+        """Calendar product and target arithmetic from frozen prices, no engine imports."""
+        from return_study_audit import check_return_source
+        forecast, report = self.documents['forecast'], self.documents['report']
+        panel = forecast['factorResearch']['panel']
+        require(panel['schema'] == 'asset-return-panel/1' and panel['complete'] is True,
+                'Incomplete return panel')
+        targets = {row['id']: row for row in self.rows('targets')}
+        symbols = report['strategy']['universe']['symbols']
+        require(sorted(panel['symbols']) == sorted(symbols) and len(targets) == len(symbols),
+                'Research collection identity mismatch')
+        days = panel['dates']
+        require(days and days == sorted(set(days)), 'Invalid panel calendar')
+        require(panel['rowCount'] == self.count('researchPanel') == len(days)*len(symbols),
+                'Panel is not the complete date by asset product')
+        seen = set()
+        for row in self.rows('researchPanel'):
+            key = (row['date'], row['targetId'])
+            require(key not in seen and key[0] in days and key[1] in targets, 'Panel identity mismatch')
+            require(targets[key[1]]['symbols'] == [row['assetSymbol']], 'Panel asset differs from target')
+            require(row['schema'] == 'asset-return-panel-row/1' and type(row['inputValid']) is bool,
+                    'Invalid panel record')
+            require(set(row['features']) == {'factor:'+f['id'] for f in report['strategy']['factors']},
+                    'Panel does not expose exactly the selected factors')
+            require(all(v is None or type(v) in (int, float) and math.isfinite(v) for v in row['features'].values()),
+                    'Panel contains nonnumeric economic features')
+            seen.add(key)
+        if 'snapshot' in self.documents:
+            snapshot = dict(self.documents['snapshot'], rows=list(self.rows('snapshotRows')))
+            check_return_source(self.rows('forecasts'), report['strategy'], snapshot, self.near, require)
+            check_return_source(self.rows('researchPanel'), report['strategy'], snapshot, self.near, require)
+        require(report['execution']['enabled'] is False and report['metrics'] is None,
+                'Return study cannot publish trading performance')
 
     def count(self, name):
         return self.collections.get(name, {}).get("rowCount", 0)

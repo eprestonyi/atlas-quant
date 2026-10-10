@@ -12,17 +12,18 @@ v0.5 加入完整分片产物、按需报告和独立分片审计。[传输协�
 
 ## 研究协议
 
+新建普通研究使用 [asset-return-study/1](docs/ASSET_RETURN_CONTRACT.md)：集合共享因子定义，每只证券独立拟合处理参数、估计器与系数，保留完整日期 × 证券面板。
+
 ```text
-V[t,h] = F_h(X_t) ≈ E[P[t+h] | I_t]
-e[t,h] = P[t] - V[t,h]
-P[t+h] - P[t] = -e[t,h] + (P[t+h] - V[t,h])
+r[i,t,h] = close[i,t+h] / close[i,t] - 1
+response[i,t,h] = r[i,t,h] / scale[i,t]
+response_hat[i,t,h] = F_i(X[i,t])
+conditionalPrice[i,t,h] = close[i,t] * (1 + scale[i,t] * response_hat[i,t,h])
 ```
 
-V 是指定期限的预期市场价格或冻结数量篮子状态，不必是当前内在价值。篮子的每条腿、单位、形成截止日和数量在一次预测中固定；PCA 或回归对冲负责定义目标，不能直接代替预测器。
+响应可选简单收益率（scale=1）或以区间起点已知的历史波动率乘 √h 标准化。`forecast` 使用当时已知因子解释后续收益；`association` 拟合同期间量的关系，其函数也可在明确的 `future_scenario` 模式输入未来因子假设。同期拟合与条件情景不能当作已知输入的未来预测。
 
-收盘后产生信息，下一交易日开盘才能入场。因此 F 同时估计预期入场值和目标日值；执行采用两者之差，不能将收盘到次日开盘已经发生的变化计入预期可赚收益。实际 PnL 由真实模拟成交、费用和每日现金加有符号持仓计算。
-
-[数理与产品协议](docs/FORECAST_RESEARCH_CONTRACT.md) · [精确配置和结果 schema](docs/STATISTICAL_QUANT_SCHEMA.md) · [API](docs/STATISTICAL_QUANT_API.md)
+新的可移植 F/4 只有一个响应输出，不创建入场报价或交易。历史 `asset_price` / `frozen_basket` 继续保留原双输出 F/1–3、冻结数量及次日开盘执行语义，不迁移旧报告。[精确配置和版本边界](docs/STATISTICAL_QUANT_SCHEMA.md) · [API](docs/STATISTICAL_QUANT_API.md)
 
 ## 工作区
 
@@ -30,15 +31,15 @@ V 是指定期限的预期市场价格或冻结数量篮子状态，不必是当
 
 - 股票池逐层取交集、合并、增加和剔除，显示每一步计数。筛选结果全量冻结；分页只影响显示，没有勾选研究子集、取前 N 只或自动截断。数据来源与预测期限位于研究机制页；训练集、测试集和滚动设置位于研究窗口页。当前成员不能冒充历史指数成分。[集合规则](docs/UNIVERSE_SELECTION.md) · [完整集合准入](docs/FILTER_UNIVERSE_ADMISSION.md)
 - 普通研究通过模块选择和因子拖放建立配置；Studio 展开参数、DSL/Python 代码与 AI 审阅。两种界面共用同一研究版本。
-- Easy 由研究机制处理目标构造；配对研究明确选择两个对象，其他高级篮子控制留在 Studio。缺少必要输入时在所属步骤阻止前进。目标支持单资产价格、固定数量篮子、两腿 OLS 篮子和 PCA 残差篮子；OLS 不等于协整证明，PCA 不保证均值回归。
-- 轻松模式五选一：状态均值回归、配对相对价值、趋势条件预测、基本面条件预测、事件条件预测。系统在所选机制内比较预先限定的 8 个候选配置，包括无变化、历史漂移、Ridge、Elastic Net、Histogram Gradient Boosting。准入依据完整数据、范围和运行端实际能力；不支持的组合明确拒绝，不默默换模型。
+- Easy 由研究机制处理目标构造；配对研究明确选择两个对象，其他高级篮子控制留在 Studio。缺少必要输入时在所属步骤阻止前进。普通研究目标为逐证券收益；配对与高级篮子保留独立历史协议。OLS 不等于协整证明，PCA 不保证均值回归。
+- 轻松模式五选一：状态均值回归、配对相对价值、趋势条件预测、基本面条件预测、事件条件预测。自动搜索在每只证券内比较预先限定的 22 个候选配置，包括零收益、历史均值、正则线性、多项式、变换基函数、逐因子组合与树模型。准入依据完整数据、范围和运行端实际能力；不支持的组合明确拒绝，不默默换模型。
 - 预处理只在训练集拟合；按日期进行嵌套验证、标签成熟筛选和顺序样本外检验。终端报告期按预先声明的时钟滚动重拟合，可以使用此前已经成熟的报告期标签。
-- 新建研究使用类型化预处理 `/2`：价格默认转为简单收益率、市值取对数、估值倍数取倒数、百分数只换算一次；复合表达式也检查经济单位。Studio 可逐因子固定选择对数收益或历史波动率调整收益等变换。全局输入按独立训练日期处理，海外单来源因子先按原始观察序列计算，再映射到研究日历。训练折另行拟合截尾、填补与尺度；报告“因子处理”页保存这些参数和实际输入方程，旧研究保持原版本。[规则](docs/AUTOMATIC_FACTOR_PREPROCESS_V2.md) · [独立验算与文献](docs/FACTOR_TRANSFORM_CONTRACT.md)
-- 加入预测因子时，另行拟合相同目标、有效样本、验证日期和候选预算的 state-only 对照。对冲因子改变目标，不冒充纯预测因子增量。
-- 聚合误差提供日期聚类的循环块 bootstrap 区间与块长敏感性；样本不足明确不可用。它依赖时间序列假设，不是单个价格的预测区间，也不纠正反复试策略的选择偏差。
-- 完整预测包含未交易、失效和未成熟记录。报告能追溯 P、V、e、实际值、预测误差、目标定义、模型拟合与成交引用。
+- 新建研究使用类型化预处理 `/2`：价格默认转为简单收益率、市值取对数、估值倍数取倒数、百分数只换算一次；复合表达式也检查经济单位。Studio 可逐因子固定选择对数收益或历史波动率调整收益等变换。全局输入按独立训练日期处理，预测研究的海外单来源因子先按原始观察序列计算，再映射到研究日历；同期价格因子按相同研究日历的响应区间端点构造。训练折另行拟合截尾、填补与尺度；报告“因子处理”页保存这些参数和实际输入方程，旧研究保持原版本。[规则](docs/AUTOMATIC_FACTOR_PREPROCESS_V2.md) · [独立验算与文献](docs/FACTOR_TRANSFORM_CONTRACT.md)
+- 新收益研究只使用所选因子，显式保留零收益与历史均值候选；没有隐藏的自有价格特征。历史双价格协议继续保留原 state-only 对照。
+- 新收益报告逐证券显示样本外误差与零收益对照，当前不提供收益显著性认证。历史双价格报告的块 bootstrap 统计保持原语义，不移作新响应的区间。
+- 完整面板保留预热、缺失和未成熟记录；输出标明区间起止、因子时点、标准化尺度、观测响应与预测残差。
 - F 可检查实际特征顺序、变换、参数及训练范围，并下载到本地求值。用户修改参数保存为独立的 `UNVALIDATED_USER_EDIT`，不继承原模型检验。树参数保存在函数产物内；结构与来源核对不等于独立重训证明。
-- 因子报告列出缺失率、分位数、IC / Rank IC、描述性关联、相关与协方差，以及经验联合、边际和双向条件分布。当前 16 因子容量口径覆盖其全部输入配对；历史报告保留原计算预算，不用新代码改写旧证据。
+- 因子报告按证券列出缺失率、分位数、时序 Pearson / Spearman、描述性关联、相关与协方差及经验联合分布；单证券时序相关不标成横截面 IC。历史报告保持原统计口径。
 - 历史执行回放仍可独立改变方向、阈值、仓位、对冲和成本，不重新拟合或取数。新因子研究关闭执行；新的策略工作区将另行接入。
 
 模块目录是版本化职责和可组合配置。**原子模块、参数配方、字段定义、已跑实验、已验证 alpha 是不同事物。** 本次有限模型集与数百种兼容配方没有被称作数百种有效策略。做市、波动率/衍生品、复制关系/结构套利保留独立工作区边界，本版未实现。
@@ -70,18 +71,14 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip check
 npm ci
 
-# 第一步：完整预测研究与私有冻结输入。
-.venv/bin/python scripts/local-run.py engine/examples/statistical-quant.json --source demo --output private/forecast.json --snapshot-output private/input.json
-.venv/bin/python scripts/audit-report.py private/forecast.json
-
-# 第二步：只复用原预测和原输入进行执行。
-.venv/bin/python scripts/replay-execution.py private/forecast.json private/input.json --output private/execution.json
-.venv/bin/python scripts/audit-report.py private/execution.json --source-report private/forecast.json
+# 逐证券收益研究；此协议不进入交易执行。
+.venv/bin/python scripts/local-run.py engine/examples/asset-return-study.json --source demo --output private/returns.json --snapshot-output private/return-input.json
+.venv/bin/python scripts/audit-report.py private/returns.json
 ```
 
 样例为固定 seed 的 **SYNTHETIC 教学数据**，不能证明市场规律。相同依赖和配置的预测报告可逐字复现。`audit-report.py` 只使用 Python 标准库，独立核对产物哈希、预测恒等式、交易引用、费用、T+1 数量、现金、持仓与净值，不调用引擎辅助函数或数据供应商。
 
-v0.5 的分片目录保存完整预测、去因子对照、拟合前观察计划、报告及冻结输入。目标目录必须不存在，私有输入不会提交到仓库：
+收益研究也支持 `--bundle-output`，增加完整 `researchPanel` 与逐资产函数；运行 `audit-bundle.py` 可核对。以下为保留的历史双价格研究与执行回放示例，仅用于 `statistical-quant.json`，不可对新收益研究调用 replay。目标目录必须不存在，私有输入不会提交到仓库：
 
 ```sh
 .venv/bin/python scripts/local-run.py engine/examples/statistical-quant.json --source demo --bundle-output private/forecast-bundle
@@ -140,6 +137,8 @@ CI 运行 Python/Node 回归、真实 DOM 操作及两次确定性预测，再�
 ## 容量与历史兼容
 
 候选容量按明确的来源与计算口径分别准入。完整 1,000 股、366 自然日以内的量价自动拟合已有本地受监督容量证据，但仍需完整 HTTP 来源到 F、双包审计及生产验收；不对任意机制、因子数或期限开放。财务来源 dataset/3 和 financial_bundle/2 使用独立格式，旧 reader、预算与生产开关不被放宽。详见[自动拟合容量](docs/AUTO_FACTOR_CAPACITY_CANDIDATE.md)、[市场数据准备](docs/MARKET_PREPARATION.md)和[财务来源格式](docs/FINANCIAL_GRAPH_DATASET_V3.md)。
+
+新收益研究当前支持 1–50 个资产、1–252 交易日期限、最多 110,000 行完整面板与 25,000 个终端观察。每次研究预声明最多 20,000 次拟合与 1,800 秒引擎预算，托管进程可施加更严格上限；不接受自动截取股票或截断面板。
 
 以下是历史研究入口的兼容边界，不是新完整筛选流程的子集选择步骤。
 

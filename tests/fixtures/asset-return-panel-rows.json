@@ -1,0 +1,121 @@
+{
+  "source": "Frozen synthetic production canary, v0.13.0; selected rows copied unchanged, no fit or provider call in this fixture.",
+  "reportSha256": "6ead9906a4ed7ac94ba1b4c02e1d9e4bee1c9b017317a2ac7e1cdf52b3d370f6",
+  "schema": "asset-return-panel-fixture/1",
+  "rows": [
+    {
+      "assetSymbol": "000001.SZ",
+      "date": "20240102",
+      "featureDate": "20240102",
+      "features": {
+        "factor:amount": 12.09977360630927,
+        "factor:volume": 10.470476094800963
+      },
+      "inputValid": false,
+      "invalidReason": "response_normalizer_unavailable",
+      "observedResponse": null,
+      "observedReturn": 0.004849926583732733,
+      "originPrice": 50.910346154130586,
+      "responseEndDate": "20240109",
+      "responseScale": null,
+      "responseStartDate": "20240102",
+      "schema": "asset-return-panel-row/1",
+      "targetId": "target_11b73a17ac272f0e0e9e664a"
+    },
+    {
+      "assetSymbol": "000001.SZ",
+      "date": "20240130",
+      "featureDate": "20240130",
+      "features": {
+        "factor:amount": 12.774595670415371,
+        "factor:volume": 11.090232811195438
+      },
+      "inputValid": true,
+      "invalidReason": null,
+      "observedResponse": 0.09520386686642723,
+      "observedReturn": 0.0025861846194839,
+      "originPrice": 54.02518602573826,
+      "responseEndDate": "20240206",
+      "responseScale": 0.027164701441301373,
+      "responseStartDate": "20240130",
+      "schema": "asset-return-panel-row/1",
+      "targetId": "target_11b73a17ac272f0e0e9e664a"
+    },
+    {
+      "assetSymbol": "000001.SZ",
+      "date": "20250630",
+      "featureDate": "20250630",
+      "features": {
+        "factor:amount": 13.434765212867068,
+        "factor:volume": 11.471790921611673
+      },
+      "inputValid": true,
+      "invalidReason": null,
+      "observedResponse": null,
+      "observedReturn": null,
+      "originPrice": 71.24213084110926,
+      "responseEndDate": null,
+      "responseScale": 0.023562477364000935,
+      "responseStartDate": "20250630",
+      "schema": "asset-return-panel-row/1",
+      "targetId": "target_11b73a17ac272f0e0e9e664a"
+    },
+    {
+      "assetSymbol": "600000.SH",
+      "date": "20240102",
+      "featureDate": "20240102",
+      "features": {
+        "factor:amount": 13.022868139373807,
+        "factor:volume": 11.288856485579517
+      },
+      "inputValid": false,
+      "invalidReason": "response_normalizer_unavailable",
+      "observedResponse": null,
+      "observedReturn": -0.004378910000952585,
+      "originPrice": 56.20932814335792,
+      "responseEndDate": "20240109",
+      "responseScale": null,
+      "responseStartDate": "20240102",
+      "schema": "asset-return-panel-row/1",
+      "targetId": "target_66bef2c5205c05db6664535c"
+    },
+    {
+      "assetSymbol": "600000.SH",
+      "date": "20240130",
+      "featureDate": "20240130",
+      "features": {
+        "factor:amount": 11.94064925431484,
+        "factor:volume": 10.231459477945954
+      },
+      "inputValid": true,
+      "invalidReason": null,
+      "observedResponse": -0.07936414330392402,
+      "observedReturn": -0.0018824926186542523,
+      "originPrice": 55.22600066363755,
+      "responseEndDate": "20240206",
+      "responseScale": 0.023719686753818657,
+      "responseStartDate": "20240130",
+      "schema": "asset-return-panel-row/1",
+      "targetId": "target_66bef2c5205c05db6664535c"
+    },
+    {
+      "assetSymbol": "600000.SH",
+      "date": "20250630",
+      "featureDate": "20250630",
+      "features": {
+        "factor:amount": 13.313443422292876,
+        "factor:volume": 11.30316693326614
+      },
+      "inputValid": true,
+      "invalidReason": null,
+      "observedResponse": null,
+      "observedReturn": null,
+      "originPrice": 74.77833773383054,
+      "responseEndDate": null,
+      "responseScale": 0.024430420856064314,
+      "responseStartDate": "20250630",
+      "schema": "asset-return-panel-row/1",
+      "targetId": "target_66bef2c5205c05db6664535c"
+    }
+  ]
+}

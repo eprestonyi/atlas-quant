@@ -1,7 +1,7 @@
 /** Numeric-only portable F(X). Shared by the browser and private Worker API. */
 import { validateMetadata } from './model-function-metadata.js';
 export const FUNCTION_SCHEMA = 'atlas-model-function/1';
-export const FUNCTION_SCHEMAS = Object.freeze([FUNCTION_SCHEMA, 'atlas-model-function/2', 'atlas-model-function/3']);
+export const FUNCTION_SCHEMAS = Object.freeze([FUNCTION_SCHEMA, 'atlas-model-function/2', 'atlas-model-function/3', 'atlas-model-function/4']);
 export const FUNCTION_HASH = 'sha256-canonical-f64-json/1';
 export const FUNCTION_LIMITS = Object.freeze({ bytes: 2 * 1024 * 1024, features: 128, terms: 1024, rows: 256, trees: 256, nodes: 255, operations: 2000000 });
 const OUTPUTS = ['entry_level_change_over_known_gross', 'exit_level_change_over_known_gross'];
@@ -83,7 +83,9 @@ export async function validateFunction(artifact) {
   try { text = JSON.stringify(artifact); } catch { throw new ModelFunctionError('函数仅支持无环的 JSON 值'); }
   require(new TextEncoder().encode(text).length <= FUNCTION_LIMITS.bytes, '函数超过大小预算');
   keys(artifact, ['schema', 'hashAlgorithm', 'artifactId', 'inputSchema', 'transforms', 'estimator', 'training', 'scope', 'outputs', 'identity', 'provenance', 'editPolicy', 'lineage', 'featureConstruction'], '函数');
-  require(FUNCTION_SCHEMAS.includes(artifact.schema) && artifact.hashAlgorithm === FUNCTION_HASH && equal(artifact.outputs, OUTPUTS), '函数格式或输出版本不匹配');
+  const scalar = artifact.schema === 'atlas-model-function/4', outputCount = scalar ? 1 : 2;
+  const validOutputs = scalar ? Array.isArray(artifact.outputs) && artifact.outputs.length === 1 && ['asset_return','volatility_standardized_asset_return'].includes(artifact.outputs[0]) : equal(artifact.outputs, OUTPUTS);
+  require(FUNCTION_SCHEMAS.includes(artifact.schema) && artifact.hashAlgorithm === FUNCTION_HASH && validOutputs, '函数格式或输出版本不匹配');
   const {artifactId, ...content} = artifact;
   require(typeof artifactId === 'string' && /^[a-f0-9]{64}$/.test(artifactId) && artifactId === await functionDigest(content), '函数内容身份不一致');
   const inputs = artifact.inputSchema;
@@ -101,15 +103,15 @@ export async function validateFunction(artifact) {
   if (t.scaleScale) require(t.scaleScale.every(x => x > 0), '标准化尺度必须为正');
   const e = artifact.estimator;
   require(object(e), '估计器无效');
-  if (e.kind === 'constant') { keys(e, ['kind', 'value'], '常量模型'); vector(e.value, 2, '常量'); }
+  if (e.kind === 'constant') { keys(e, ['kind', 'value'], '常量模型'); vector(e.value, outputCount, '常量'); }
   else if (e.kind === 'linear') {
     keys(e, ['kind', 'coefficients', 'intercepts'], '线性模型');
-    vector(e.intercepts, 2, '截距');
-    require(Array.isArray(e.coefficients) && e.coefficients.length === 2, '系数形状无效');
+    vector(e.intercepts, outputCount, '截距');
+    require(Array.isArray(e.coefficients) && e.coefficients.length === outputCount, '系数形状无效');
     e.coefficients.forEach(x => vector(x, n, '系数'));
   } else if (e.kind === 'basis_linear') {
     keys(e, ['kind','coefficients','intercepts','terms','termCenter','termScale','signedExpm1AbsoluteInputCap'], '基函数模型');
-    require(artifact.schema === 'atlas-model-function/3' && Array.isArray(e.terms) && e.terms.length > 0 && e.terms.length <= FUNCTION_LIMITS.terms && e.signedExpm1AbsoluteInputCap === 3, '基函数字典无效');
+    require((scalar || artifact.schema === 'atlas-model-function/3') && Array.isArray(e.terms) && e.terms.length > 0 && e.terms.length <= FUNCTION_LIMITS.terms && e.signedExpm1AbsoluteInputCap === 3, '基函数字典无效');
     const index = x => Number.isInteger(x) && x >= 0 && x < n;
     const seen = new Set();
     for (const term of e.terms) {
@@ -127,12 +129,12 @@ export async function validateFunction(artifact) {
       const identity = canonicalFunctionText(term);
       require(!seen.has(identity), '基函数项重复'); seen.add(identity);
     }
-    vector(e.intercepts,2,'截距'); vector(e.termCenter,e.terms.length,'基函数中心'); vector(e.termScale,e.terms.length,'基函数尺度');
-    require(e.termScale.every(x => x > 0) && Array.isArray(e.coefficients) && e.coefficients.length === 2, '基函数尺度或系数无效');
+    vector(e.intercepts,outputCount,'截距'); vector(e.termCenter,e.terms.length,'基函数中心'); vector(e.termScale,e.terms.length,'基函数尺度');
+    require(e.termScale.every(x => x > 0) && Array.isArray(e.coefficients) && e.coefficients.length === outputCount, '基函数尺度或系数无效');
     e.coefficients.forEach(x => vector(x,e.terms.length,'基函数系数'));
   } else if (e.kind === 'histogram_trees') {
     keys(e, ['kind', 'nodeFields', 'thresholdRule', 'leafValuesIncludeLearningRate', 'outputs'], '树模型');
-    require(equal(e.nodeFields, NODE_FIELDS) && e.thresholdRule === 'left_if_less_equal' && e.leafValuesIncludeLearningRate === true && Array.isArray(e.outputs) && e.outputs.length === 2, '树模型编码不兼容');
+    require(equal(e.nodeFields, NODE_FIELDS) && e.thresholdRule === 'left_if_less_equal' && e.leafValuesIncludeLearningRate === true && Array.isArray(e.outputs) && e.outputs.length === outputCount, '树模型编码不兼容');
     for (const out of e.outputs) {
       keys(out, ['baseline', 'trees'], '森林输出');
       require(number(out.baseline) && Array.isArray(out.trees) && out.trees.length > 0 && out.trees.length <= FUNCTION_LIMITS.trees, '森林预算或基准值无效');
@@ -143,13 +145,16 @@ export async function validateFunction(artifact) {
   validateMetadata(artifact, {require, keys, number, equal});
   const kinds = {no_change:'constant',historical_drift:'constant',ridge:'linear',elastic_net:'linear',hist_gradient_boosting:'histogram_trees',polynomial_ridge:'basis_linear',polynomial_elastic_net:'basis_linear',transformed_ridge:'basis_linear',factorwise_basis:'basis_linear'};
   require(e.kind === kinds[artifact.provenance.estimator], '估计器编码与来源不一致');
-  require((artifact.schema === 'atlas-model-function/3') === (e.kind === 'basis_linear'), '基函数版本与估计器不匹配');
+  require(scalar || (artifact.schema === 'atlas-model-function/3') === (e.kind === 'basis_linear'), '基函数版本与估计器不匹配');
   require(e.kind !== 'constant' || Object.values(t).every(x => x === null), '常量函数不能带有被忽略的变换');
   return artifact;
 }
 
-export async function evaluateFunction(artifact, {rows, currentState, scale}) {
+export async function evaluateFunction(artifact, input) {
   const a = await validateFunction(artifact);
+  require(object(input), '需要函数输入对象');
+  const {rows, currentState, scale} = input;
+  if (a.schema === 'atlas-model-function/4') validateReturnContext(a, input);
   require(Array.isArray(rows) && rows.length <= FUNCTION_LIMITS.rows, '单次函数试算最多256行');
   const names = a.inputSchema.map(x => x.name), t = a.transforms, estimator = a.estimator;
   let operations = 0;
@@ -202,6 +207,7 @@ export async function evaluateFunction(artifact, {rows, currentState, scale}) {
     });
   });
   require(output.every(x => x.every(number)), '函数计算超出有限数值范围');
+  if (a.schema === 'atlas-model-function/4') return returnResult(a, input, output.map(x => x[0]));
   const result = {artifactId: a.artifactId, normalizedChanges: output, evidenceStatus: a.lineage.status};
   require((currentState === undefined) === (scale === undefined), '当前状态与尺度必须一起提供');
   if (currentState !== undefined) {
@@ -213,6 +219,37 @@ export async function evaluateFunction(artifact, {rows, currentState, scale}) {
       require([expectedEntry, expectedFuture, e, expectedChange].every(number), '价格还原或偏离超出有限数值范围');
       return {expectedEntry, expectedFuture, e, expectedChange};
     });
+  }
+  return result;
+}
+
+function validateReturnContext(a, input) {
+  keys(input, ['rows','mode', ...['originPrice','originVolatility'].filter(key => Object.hasOwn(input,key))], '收益函数输入');
+  require(a.scope.studyMode === 'forecast' ? input.mode === 'forecast' : ['association','future_scenario'].includes(input.mode), '函数用途与拟合模式不一致');
+  const normalized = a.featureConstruction.targetSpecification.normalization.kind === 'trailing_volatility';
+  require(normalized || input.originVolatility === undefined, '普通收益函数不接受波动率还原参数');
+  require(input.mode !== 'future_scenario' || input.originPrice !== undefined, '情景试算需要起点价格');
+  require(!normalized || input.originPrice === undefined || input.originVolatility !== undefined, '波动标准化收益还原价格需要起点已知波动率');
+}
+
+function returnResult(a, input, predictedResponse) {
+  const {rows, mode, originPrice, originVolatility} = input;
+  const normalization = a.featureConstruction.targetSpecification.normalization;
+  const result = {artifactId:a.artifactId, predictedResponse, outputUnit:a.outputs[0], mode, evidenceStatus:a.lineage.status, scenarioOnly:mode === 'future_scenario'};
+  if (originPrice !== undefined) {
+    vector(originPrice,rows.length,'起点价格'); require(originPrice.every(x => x > 0),'起点价格须为正');
+  }
+  if (originVolatility !== undefined) {
+    vector(originVolatility,rows.length,'起点已知波动率');
+    require(originVolatility.every(x => x > normalization.minimum),'起点已知波动率不足');
+  }
+  if (normalization.kind === 'none' || originVolatility !== undefined) {
+    result.simpleReturns = predictedResponse.map((x,i) => x * (normalization.kind === 'none' ? 1 : originVolatility[i] * Math.sqrt(a.scope.horizonSessions)));
+    require(result.simpleReturns.every(number),'收益还原超出有限数值范围');
+    if (originPrice !== undefined) {
+      result.conditionalPrices = result.simpleReturns.map((x,i) => originPrice[i] * (1+x));
+      require(result.conditionalPrices.every(number),'条件价格超出有限数值范围');
+    }
   }
   return result;
 }

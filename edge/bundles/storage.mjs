@@ -421,7 +421,9 @@ export async function uploadChunk(
     for (let index = 0; index < rows.length; index++)
       indexes.push(
         await recordIndex(collectionId, rows[index], descriptor.start + index, ordinal, index, {
-          marketHedgeTargets
+          marketHedgeTargets,
+          returnStudy: parsed.metadata.forecast.sourceStrategy?.research?.returnStudy ?? null,
+          returnFactorNames: parsed.metadata.forecast.sourceStrategy?.factors?.map(f => 'factor:'+f.id) ?? null
         })
       );
   const key = `bundle/${job.owner}/${stage.id}/${collectionId}/${ordinal}-${descriptor.sha256}.json`;

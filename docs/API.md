@@ -1,6 +1,14 @@
-# Atlas Quant v0.3 API
+# Atlas Quant API and legacy compatibility
 
 同源 API 根路径为 `/quant/api`。JSON 错误格式为 `{"error":{"code":"...","message":"..."}}`。以下契约面向当前源码；部署能力以 `GET /health` 为准。浏览器写请求使用 `Content-Type: application/json`，不允许跨站请求；private 端点需要先通过 `GET /session` 建立 HttpOnly 工作区 cookie。
+
+## 新建收益研究
+
+统计研究版本化入口使用 `/experiments`、`/runs/:id/report` 与可移植函数 API，详见 [STATISTICAL_QUANT_API.md](STATISTICAL_QUANT_API.md)。新默认协议是 [asset-return-study/1](ASSET_RETURN_CONTRACT.md)：共享因子定义、逐证券独立模型、简单收益或历史波动率标准化响应。`forecast`、同期 `association` 与明确的未来因子情景有不同信息边界。F/4 输出一个响应，不要求预期入场与未来价格两个值。
+
+Runner 必须声明 `returnStudyFormats:["asset-return-study/1"]`；仅返回旧预测格式不能领取新任务。新报告通过 `studyProtocol` 与 observation/panel schema 分流，保留完整日期 × 资产面板与逐资产详情。新协议关闭交易执行，旧 `/executions` 回放不适用。实际开放能力以 health 和准入结果为准。
+
+下文的 v0.3 `stat_arb` / v0.2 长仓配置及其旧 `/runs` 语义仅用于兼容；目录、工作区权限与代码审阅接口仍按各端点适用范围使用，不把残差交易模板冒充新因子研究。
 
 ## 发现目录
 

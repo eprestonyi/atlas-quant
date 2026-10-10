@@ -68,6 +68,7 @@ export function createReportSource({ api, render }) {
               (!Number.isInteger(response.nextOffset) || response.nextOffset <= entry.offset))
           )
             throw Error('报告分页返回格式无效，未将预览视为完整结果。');
+          if (entry.targetId && response.items.some(item=>item.targetId !== entry.targetId && !(entry.collection==='targets' && item.id===entry.targetId))) throw Error('报告分页包含其他资产的记录，未显示混合结果。');
         } else if (!Array.isArray(response.points) || response.points.length > 1000) {
           throw Error('净值曲线超过有界预览限制。');
         }
@@ -104,6 +105,7 @@ export function createReportSource({ api, render }) {
         key,
         queryKey: state.key,
         kind: 'page',
+        targetId: filters.targetId || '', collection,
         offset: state.offset,
         loading: true,
         loaded: false,

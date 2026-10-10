@@ -14,8 +14,8 @@ const BUILTIN_DEFINITION = Object.freeze({
 });
 
 function constructionDefinition(artifact, input, factor, symbol) {
-  const asset = artifact.scope?.targetKind === 'asset_price' && artifact.identity?.scale === 'origin_known_gross_absolute_leg_value';
-  const descriptor = artifact.featureConstruction?.automatic?.factors?.find(item => item.feature === input.name);
+  const asset = artifact.scope?.targetKind === 'asset_return' || artifact.scope?.targetKind === 'asset_price' && artifact.identity?.scale === 'origin_known_gross_absolute_leg_value';
+  const descriptor = (artifact.featureConstruction?.inputs || artifact.featureConstruction?.automatic?.factors)?.find(item => item.feature === input.name);
   if (!factor) {
     const typed = asset && artifact.featureConstruction?.automatic?.stateFeatures === 'asset_returns_basket_gross/1';
     const lag = /^(change|trend)([0-9]+)$/.exec(input.name)?.[2];
@@ -28,22 +28,23 @@ function constructionDefinition(artifact, input, factor, symbol) {
   const { transform: t, scope, direction } = descriptor;
   const raw = scope === 'global' ? 'dₜ' : 'dⱼ,ₜ', out = scope === 'global' ? 'gₜ' : 'gⱼ,ₜ';
   const member = scope === 'global' ? '' : 'ⱼ,';
+  const lag=String(t.lag || 1).replace(/\d/g,digit=>SUBSCRIPT[Number(digit)]);
   const formulas = {
     identity: [`${out} = ${raw}`],
-    first_difference: [`${out} = ${raw} − d${member}ₜ₋₁`],
-    simple_return: [`${out} = ${raw} / d${member}ₜ₋₁ − 1`, '当前或前一期 d ≤ 0 → null'],
-    log_return: [`${out} = ln(${raw} / d${member}ₜ₋₁)`, '当前或前一期 d ≤ 0 → null'],
+    first_difference: [`${out} = ${raw} − d${member}ₜ₋${lag}`],
+    simple_return: [`${out} = ${raw} / d${member}ₜ₋${lag} − 1`, '当前或前一期 d ≤ 0 → null'],
+    log_return: [`${out} = ln(${raw} / d${member}ₜ₋${lag})`, '当前或前一期 d ≤ 0 → null'],
     signed_log1p: [`${out} = sign(${raw}) × ln(1 + |${raw}| / ${t.referenceUnit})`, `参考量 = ${t.referenceUnit} ${descriptor.sourceUnit || '原始单位'}`],
     log_positive: [`${out} = ln(${raw})`, `${raw} ≤ 0 → null`],
     log1p_nonnegative: [`${out} = ln(1 + ${raw})`, `${raw} < 0 → null`],
     reciprocal_nonzero: [`${out} = 1 / ${raw}`, `${raw} = 0 → null`],
     percent_to_fraction: [`${out} = ${raw} / ${t.divisor}`],
-    return_over_trailing_volatility: [`r${member}ₜ = ${raw} / d${member}ₜ₋₁ − 1`, `σ${member}ₜ = sampleSD(r${member}ₜ₋${t.volatilityWindow}, …, r${member}ₜ₋${t.volatilityLag}; ddof = ${t.ddof})`, `${out} = r${member}ₜ / σ${member}ₜ`, `d ≤ 0 或 σ${member}ₜ ≤ ${t.minVolatility} 或历史不足 → null`]
+    return_over_trailing_volatility: [`r${member}ₜ = ${raw} / d${member}ₜ₋${lag} − 1`, `σ${member}ₜ = sampleSD(r${member}ₜ₋${t.volatilityWindow}, …, r${member}ₜ₋${t.volatilityLag}; ddof = ${t.ddof})`, `${out} = r${member}ₜ / σ${member}ₜ`, `d ≤ 0 或 σ${member}ₜ ≤ ${t.minVolatility} 或历史不足 → null`]
   };
   const labels = {first_difference:'一阶差分',simple_return:'简单收益率',log_return:'对数收益率',signed_log1p:'原单位带符号数量压缩',identity:'原值',log_positive:'对数',log1p_nonnegative:'log1p',reciprocal_nonzero:'倒数',percent_to_fraction:'百分比转小数',return_over_trailing_volatility:'收益 / 历史波动'};
   return { descriptor, equations: [`${raw} = ${descriptor.expression}`, ...(formulas[t.kind] || ['未识别的经济变换']), `${out} 非有限 → null`,
     `${symbol} = ${scope === 'global' || asset ? `${direction} × ${out}` : `Σⱼ(qⱼ pⱼ,ₜ / scale) × ${direction} × ${out}`}`],
-    operations: [labels[t.kind] || t.kind, ...(descriptor.clock === 'observed_source_sessions_asof' ? ['来源交易期 → as-of 对齐'] : []), scope === 'global' ? '全局一次' : asset ? '个股输入' : '篮子聚合'] };
+    operations: [labels[t.kind] || t.kind, ...(descriptor.timing ? [descriptor.timing.kind === 'matched_period' ? `${descriptor.timing.horizonSessions} 日同期输入` : '起点已知输入'] : []), ...(descriptor.clock === 'observed_source_sessions_asof' ? ['来源交易期 → as-of 对齐'] : []), scope === 'global' ? '全局一次' : asset ? '个股输入' : '篮子聚合'] };
 }
 
 // These are the portable function's actual numerical inputs. A factor expression
@@ -60,7 +61,7 @@ export function inputDefinition(artifact, index) {
   const equations = [`${r} = input[${JSON.stringify(input.name)}]`, `${u} = ${filled}`,
     `${symbol} = ${t.scaleMean ? `(${u} − ${t.scaleMean[index]}) / ${t.scaleScale[index]}` : u}`];
   return { input, factor, symbol, equations, construction,
-    operations: [...construction.operations, t.winsorLower && '截尾', t.imputeMedian && '缺失填充', t.scaleMean && (artifact.featureConstruction?.schema === 'origin-state-features/2' ? 'median / IQR' : '标准化')].filter(Boolean) };
+    operations: [...construction.operations, t.winsorLower && '截尾', t.imputeMedian && '缺失填充', t.scaleMean && (['origin-state-features/2','asset-return-features/1'].includes(artifact.featureConstruction?.schema) ? 'median / IQR' : '标准化')].filter(Boolean) };
 }
 
 export function renderFunctionInputs(C, F, artifact) {

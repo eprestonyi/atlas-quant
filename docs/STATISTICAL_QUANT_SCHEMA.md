@@ -1,8 +1,18 @@
-# Statistical Quant 0.4 interface
+# Statistical Quant versioned interfaces
 
 Implementation contract, 2026-10-08. This file specifies the rebuild; an endpoint or model is not considered implemented merely because it appears here. `schemaVersion=2`, `research.mode=statistical_quant`. Historical v1 configurations retain their original semantics.
 
-## Input
+## Default independent return study
+
+New ordinary research declares `research.returnStudy:{schema:"asset-return-study/1",mode:"forecast"|"association"}`, `target.kind:"asset_return"`, `model.parameterSharing:"per_target"`, automatic preprocessing `/2`, and `execution.enabled:false`. The exact schema, F/4 inference arguments, timing and complete-panel fields are in [ASSET_RETURN_CONTRACT.md](ASSET_RETURN_CONTRACT.md). A runnable configuration is [asset-return-study.json](../engine/examples/asset-return-study.json).
+
+Shared factor definitions produce independent per-security fit populations, transforms and coefficients. The response is close-to-close simple return or return divided by origin-known trailing volatility × sqrt(h); h is 1–252. Forecast uses origin-known inputs for a future interval. Association uses matched-period inputs and can be evaluated as an explicitly supplied future-factor scenario. It does not claim to know future factors or to forecast from today's information. Own contemporaneous price identities are rejected.
+
+F/4 contains one output. Report artifacts retain envelope schema 1 with `studyProtocol:"asset-return-study/1"`; observation rows use `asset-return-observation/1`, and the full `researchPanel` contains every declared date × asset, including missing/warmup/tail cells. Each asset has its own candidate functions and diagnostics. Single-asset temporal correlations are not cross-sectional IC. No pooled price target, placeholder entry output or executable trade is created. Legacy execution replay rejects this protocol.
+
+## Legacy dual-price input (without research.returnStudy)
+
+The remaining tables, entry/exit equations and execution rules in this document apply only to saved `asset_price` / `frozen_basket` configurations without `research.returnStudy`. They preserve F/1–3 and their historical hashes; they are not the default return-study contract.
 
 ```json
 {
@@ -51,7 +61,7 @@ Asset targets produce one forecast per selected symbol with quantity 1. Frozen b
 
 Only predictor/event factors enter conditional prediction; hedge factors are allowed only for PCA basket construction. Fundamental requires selected predictor expressions containing an actual fundamental field (`fd_`, `pcd_`, or supported daily_basic valuation/financial columns). Event requires at least one role:event expression with PIT `ext_`/`pcd_`/`fd_` inputs and enough observed nonzero-event training dates; names or catalogue entries do not supply events. Unsupported data fails without a synthetic fallback. Model families select state features and economic hypotheses; estimator grids supply distinct fitted functions. Mean-reversion families report state-effect diagnostics, not a presumed negative coefficient. AR1/OU are not implemented estimators.
 
-## Targets and validation
+## Legacy price targets and validation
 
 At origin close t, predict two normalized level changes relative to known current state S and gross scale G>0:
 
@@ -73,9 +83,9 @@ When predictor/event factor columns are supplied, `diagnostics.factorIncrement` 
 
 `inputCoverage` records observed feature counts and invalid input reasons. A fundamental study requires actual observed fundamental predictor values at its usable origins; all-null columns cannot be labeled a conditional model even if a constant baseline could run. An event study additionally requires observed nonzero events. A rolling terminal fit that loses enough usable training inputs produces invalid forecasts with `model_unavailable`; all origins remain, and no alternative estimator is silently substituted. Such fits have `status:invalid` and a safe reason in `modelFits`.
 
-## Result
+## Legacy price result
 
-Envelope: `schemaVersion:2,status,engineVersion:'0.4.0',strategy,research,provenance,forecasts,validation,selection,metrics,equity,trades,execution,factors,warnings`.
+Envelope: `schemaVersion:2,status,engineVersion:<actual engine version>,strategy,research,provenance,forecasts,validation,selection,metrics,equity,trades,execution,factors,warnings`.
 
 `forecasts` contains `schemaVersion:1,artifactId,predictionConfigHash,dataFingerprint,rows,totalRows,truncated:false,targetDefinitions,modelFits,diagnostics,sourceStrategy`. Each row contains:
 

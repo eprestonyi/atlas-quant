@@ -47,6 +47,28 @@ export async function verifyRecords(env, stage, parsed) {
       invalid('完整集合计数不一致：' + collection.id);
   }
   if ([...actual.keys()].some((id) => !parsed.collections.has(id))) invalid('索引含未声明集合');
+  if (parsed.metadata.forecast?.studyProtocol === 'asset-return-study/1') {
+    const panel = parsed.metadata.forecast.factorResearch.panel;
+    await rejectIfRows(env,
+      `SELECT p.ordinal FROM quant_bundle_records p WHERE p.stage_id=? AND p.collection='researchPanel'
+       AND (p.date NOT IN (SELECT value FROM json_each(?)) OR NOT EXISTS (
+         SELECT 1 FROM quant_bundle_records t WHERE t.stage_id=p.stage_id AND t.collection='targets' AND t.row_id=p.target_id))`,
+      [stage.id, JSON.stringify(panel.dates)], '研究面板含未声明的日期或资产');
+    await rejectIfRows(env,
+      `SELECT t.ordinal FROM quant_bundle_records t WHERE t.stage_id=? AND t.collection='targets'
+       AND (json_extract(t.metadata,'$.kind') IS NOT 'asset_return' OR json_array_length(t.metadata,'$.symbols') IS NOT 1
+         OR json_extract(t.metadata,'$.symbols[0]') NOT IN (SELECT value FROM json_each(?)))`,
+      [stage.id, JSON.stringify(panel.symbols)], '收益研究目标与集合成员不一致');
+    await rejectIfRows(env,
+      `SELECT json_extract(metadata,'$.symbols[0]') symbol FROM quant_bundle_records WHERE stage_id=? AND collection='targets'
+       GROUP BY symbol HAVING count(*)<>1`, [stage.id], '同一资产出现重复目标');
+    await rejectIfRows(env,
+      `SELECT f.ordinal FROM quant_bundle_records f LEFT JOIN quant_bundle_records t
+       ON t.stage_id=f.stage_id AND t.collection='targets' AND t.row_id=f.target_id
+       WHERE f.stage_id=? AND f.collection IN ('forecasts','baselineRows','researchPanel')
+       AND (t.ordinal IS NULL OR json_extract(f.metadata,'$.assetSymbol') IS NOT json_extract(t.metadata,'$.symbols[0]'))`,
+      [stage.id], '收益记录的证券与逐资产目标不一致');
+  }
   const primary = [
     'forecasts',
     ...(parsed.metadata.coverage.baselineRequired ? ['baselineRows'] : [])
@@ -59,6 +81,8 @@ export async function verifyRecords(env, stage, parsed) {
       WHERE f.stage_id=? AND f.collection=? AND (p.ordinal IS NULL OR f.date IS NOT p.date OR f.target_id IS NOT p.target_id
         OR json_extract(f.metadata,'$.entryDate') IS NOT json_extract(p.metadata,'$.entryDate')
         OR json_extract(f.metadata,'$.targetDate') IS NOT json_extract(p.metadata,'$.targetDate')
+        OR json_extract(f.metadata,'$.responseStartDate') IS NOT json_extract(p.metadata,'$.responseStartDate')
+        OR json_extract(f.metadata,'$.responseEndDate') IS NOT json_extract(p.metadata,'$.responseEndDate')
         OR (f.target_id='unavailable' AND (f.status!='invalid' OR json_extract(p.metadata,'$.inputValid')!=0)))`,
       [stage.id, collection],
       '预测顺序或端点未覆盖独立计划'
@@ -86,6 +110,12 @@ export async function verifyRecords(env, stage, parsed) {
       [fitCollection, stage.id, collection],
       '有效预测引用失效拟合记录'
     );
+    if (parsed.metadata.forecast?.studyProtocol === 'asset-return-study/1') {
+      await rejectIfRows(env,
+        `SELECT f.ordinal FROM quant_bundle_records f JOIN quant_bundle_records m ON m.stage_id=f.stage_id AND m.collection=? AND m.row_id=f.fit_id
+         WHERE f.stage_id=? AND f.collection=? AND f.target_id IS NOT m.target_id`,
+        [fitCollection, stage.id, collection], '收益记录引用了另一资产的参数方程');
+    }
   }
   await rejectIfRows(
     env,

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 2,
+  "name": "逐证券收益因子研究",
+  "universe": {"symbols": ["000001.SZ", "600000.SH"], "start": "20230101", "end": "20250930"},
+  "research": {"mode": "statistical_quant", "observationDays": 1, "returnStudy": {"schema": "asset-return-study/1", "mode": "forecast"}},
+  "factors": [
+    {"id": "own_return", "expression": "close", "direction": 1, "role": "predictor"},
+    {"id": "volume", "expression": "vol", "direction": 1, "role": "predictor"},
+    {"id": "turnover", "expression": "amount", "direction": 1, "role": "predictor"}
+  ],
+  "preprocess": {"automatic": {"schema": "auto-factor-preprocess/2"}},
+  "target": {"kind": "asset_return", "horizonSessions": 5, "normalization": {"kind": "none"}},
+  "model": {"family": "mean_reversion", "estimator": "auto", "parameterSharing": "per_target", "trainWindow": 504, "refitDays": 20, "search": {"schema": "factor-model-search/1"}},
+  "validation": {"holdoutFraction": 0.2, "minTrainDates": 80, "innerFolds": 2, "outerFolds": 2},
+  "execution": {"enabled": false}
+}

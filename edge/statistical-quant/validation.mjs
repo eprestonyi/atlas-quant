@@ -1,4 +1,5 @@
 import { typedFactorDescriptor } from '../../web/factor-preprocess-semantics.js';
+import { normalizeReturnStudy, assertReturnStudyScope } from './return-study.mjs';
 import { validateAutomaticFactorConfig } from '../../web/factor-preprocess-contract.js';
 import contextRegistry from '../../engine/atlas_quant/context_sources.json' with {type:'json'};
 const contextAliases = new Set(contextRegistry.items.flatMap(s => (s.api === 'yfinance_history' ? ['close','vol'] : s.api === 'sw_daily' ? ['close','vol','amount','pe','pb','total_mv','float_mv'] : ['close','vol','amount']).map(f => 'ext_ctx_'+(s.aliasKey || s.ts_code.toLowerCase().replace('.', '_'))+'_'+f)));
@@ -183,7 +184,7 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
   Object.assign(universe, validateUniverseState(u, { strictSnapshot: true }));
   if (u.presetId !== undefined) universe.presetId = text(u.presetId, '票池ID', 120);
   if (u.snapshotDate !== undefined) universe.snapshotDate = date(u.snapshotDate);
-  const r = keys(input.research, ['mode', 'observationDays'], '研究模式');
+  const r = keys(input.research, ['mode', 'observationDays', 'returnStudy'], '研究模式');
   if (r.mode !== 'statistical_quant') fail('需要 statistical_quant 模式');
   const factors = input.factors ?? [];
   if (!Array.isArray(factors) || factors.length > 32) fail('最多32个因子');
@@ -237,12 +238,14 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
   }
   if (cleanFactors.some(f => validateExpression(f.expression).fields.some(x => x.startsWith('ext_ctx_'))) && !preprocess.automatic)
     fail('指数上下文因子需要自动因子处理');
-  const t = keys(input.target, ['kind', 'horizonSessions', 'basket'], '预测目标');
+  const t = keys(input.target, ['kind', 'horizonSessions', 'basket', 'normalization'], '预测目标');
+  const returnContract = normalizeReturnStudy(r, t, {keys, number, fail});
   const target = {
-    kind: choice(t.kind, ['asset_price', 'frozen_basket'], '目标类型'),
-    horizonSessions: number(t.horizonSessions ?? 5, '预测期限', 1, 60, true)
+    kind: choice(t.kind, ['asset_price', 'frozen_basket', 'asset_return'], '目标类型'),
+    horizonSessions: number(t.horizonSessions ?? 5, '预测期限', 1, returnContract ? 252 : 60, true)
   };
-  if (target.kind === 'asset_price') {
+  if (returnContract) target.normalization = returnContract.normalization;
+  if (target.kind !== 'frozen_basket') {
     if (t.basket !== undefined) fail('单资产目标不得携带篮子定义');
   } else {
     const b = keys(
@@ -306,7 +309,7 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
   }
   if ('parameterSharing' in m) {
     model.parameterSharing = choice(m.parameterSharing,['pooled','per_target'],'模型参数作用域');
-    if (model.parameterSharing === 'per_target' && target.kind !== 'asset_price') fail('逐标的模型需要逐只股票目标');
+    if (model.parameterSharing === 'per_target' && !['asset_price', 'asset_return'].includes(target.kind)) fail('逐标的模型需要逐只股票目标');
     if (model.parameterSharing === 'per_target' && universe.symbols.length > 50) fail('逐标的模型本次最多 50 个成员');
   }
   if (model.family === 'pair_reversion' && target.basket?.method !== 'pair_ols')
@@ -373,13 +376,14 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
   for (const binding of Object.values(dataBindings.pcd ?? {}))
     if (binding.records.some((r) => !universe.symbols.includes(r.ts_code)))
       fail('PCD绑定包含股票池外成员');
-  return {
+  const result = {
     schemaVersion: 2,
     name: text(input.name, '研究名称', 80),
     universe,
     research: {
       mode: 'statistical_quant',
-      observationDays: number(r.observationDays ?? 1, '观察间隔', 1, 60, true)
+      observationDays: number(r.observationDays ?? 1, '观察间隔', 1, 60, true),
+      ...(returnContract ? {returnStudy: returnContract.returnStudy} : {})
     },
     factors: cleanFactors,
     preprocess,
@@ -391,6 +395,8 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
     costs: validateCosts(input.costs),
     dataBindings
   };
+  assertReturnStudyScope(result, fail);
+  return result;
 }
 
 /** Read compatibility for early, server-stored candidates; public input stays strict.

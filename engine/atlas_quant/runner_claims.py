@@ -24,6 +24,7 @@ def claim_request(request_id, *, financial_datasets=False, market_datasets=False
             "factorPreprocessFormats": ["auto-factor-preprocess/1", "auto-factor-preprocess/2"],
             "contextSourceFormats": ["named-index-history/1", "named-market-history/2", "named-market-history/3"],
             "functionSearchFormats": ["factor-model-search/1"]}
+    request["returnStudyFormats"] = ["asset-return-study/1"]
     if financial_datasets is True:
         request["transportFormats"].append("atlas.quant.financial_bundle/1")
         request["datasetFormats"] = ["atlas.quant.research_dataset/2"]

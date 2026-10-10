@@ -52,6 +52,7 @@ COLLECTIONS = {
 OPTIONAL_COLLECTIONS = {
     "snapshotContextSources": ("snapshot", "/provenance/contextSources"),
     "modelSearchCandidates": ("forecast", "/diagnostics/modelSearch/candidates"),
+    "researchPanel": ("forecast", "/factorResearch/panel/rows"),
 }
 
 
@@ -496,6 +497,33 @@ class BundleReader:
                 seen.add(key)
             return seen
         targets, fits = ids("targets"), ids("modelFits")
+        is_return = forecast_meta.get("studyProtocol") == "asset-return-study/1"
+        if is_return:
+            strategy = forecast_meta["sourceStrategy"]
+            target_records = {row['id']: row for row in self.rows('targets')}
+            fit_records = {row['id']: row for row in self.rows('modelFits')}
+            panel = forecast_meta.get("factorResearch", {}).get("panel", {})
+            symbols = strategy["universe"]["symbols"]
+            days = panel.get("dates", [])
+            if (strategy.get('research', {}).get('returnStudy', {}).get('schema') != 'asset-return-study/1'
+                    or coverage.get('studyProtocol') != 'asset-return-study/1'
+                    or panel.get("schema") != "asset-return-panel/1" or panel.get("complete") is not True
+                    or not days or days != sorted(set(days))
+                    or sorted(panel.get("symbols", [])) != sorted(symbols)
+                    or len(targets) != len(symbols)
+                    or self.collections.get("researchPanel", {}).get("rowCount") != len(days)*len(symbols)
+                    or panel.get("rowCount") != len(days)*len(symbols)):
+                fail("BUNDLE_COVERAGE", "收益研究缺少完整的日期与资产面板。")
+            seen, allowed_days = set(), set(days)
+            expected_features = {'factor:'+f['id'] for f in strategy['factors']}
+            for row in self.rows("researchPanel"):
+                key = (row.get("date"), row.get("targetId"))
+                if (key in seen or key[0] not in allowed_days or key[1] not in targets
+                        or target_records[key[1]].get('symbols') != [row.get('assetSymbol')]
+                        or not isinstance(row.get('features'), dict) or set(row['features']) != expected_features
+                        or any(v is not None and (type(v) not in (int, float) or not math.isfinite(v)) for v in row['features'].values())):
+                    fail("BUNDLE_COVERAGE", "收益研究面板身份不完整或重复。")
+                seen.add(key)
         if coverage["baselineRequired"]:
             if "baselineModelFits" not in self.collections:
                 fail("BUNDLE_REFERENCE", "因子基线缺少模型拟合引用。")
@@ -504,7 +532,7 @@ class BundleReader:
         for collection, model_ids in [("forecasts", fits)] + ([("baselineRows", baseline_fits)] if coverage["baselineRequired"] else []):
             origins, row_ids, previous_date = set(), set(), ""
             for plan, row in zip_longest(self.rows("plannedOrigins"), self.rows(collection)):
-                if plan is None or row is None or any(plan.get(k) != row.get(k) for k in ("date", "targetId", "entryDate", "targetDate")):
+                if plan is None or row is None or any(plan.get(k) != row.get(k) for k in ("date", "targetId", "entryDate", "targetDate", "responseStartDate", "responseEndDate")):
                     fail("BUNDLE_COVERAGE", "预测记录未完整匹配拟合前计划。")
                 origin = (plan.get("date"), plan.get("targetId"))
                 row_id = row.get("forecastId")
@@ -512,10 +540,16 @@ class BundleReader:
                         or origin[0] < previous_date or type(plan.get("inputValid")) is not bool
                         or not isinstance(row_id, str) or not row_id or row_id in row_ids
                         or row.get("status") not in {"valid", "invalid"}
-                        or row.get("modelFitId") not in model_ids):
+                        or (row.get("modelFitId") not in model_ids and not (forecast_meta.get("studyProtocol") == "asset-return-study/1" and row.get("status") == "invalid" and row.get("modelFitId") is None))):
                     fail("BUNDLE_COVERAGE", "预测计划或身份重复、无序或无效。")
                 if row.get("targetId") not in targets and not (row["status"] == "invalid" and row["targetId"] == "unavailable" and plan["inputValid"] is False):
                     fail("BUNDLE_REFERENCE", "预测引用了不存在的冻结目标。")
+                if is_return:
+                    target = target_records.get(row['targetId'], {})
+                    fit = fit_records.get(row.get('modelFitId'), {})
+                    if (target.get('symbols') != [row.get('assetSymbol')]
+                            or fit and (fit.get('targetId') != row['targetId'] or fit.get('targetSymbol') != row['assetSymbol'])):
+                        fail('BUNDLE_REFERENCE', '收益观察使用了其他资产的模型或目标。')
                 if row["status"] == "valid" and not plan["inputValid"]:
                     fail("BUNDLE_COVERAGE", "无效输入不能变成有效预测。")
                 origins.add(origin)

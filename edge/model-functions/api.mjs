@@ -58,7 +58,7 @@ export async function resolveFunction(env,owner,source) {
   assertFunctionSource(artifact,fit,parsed.metadata.forecast.sourceStrategy);
   if (parsed.metadata.forecast.sourceStrategy.model.parameterSharing === 'per_target') {
     const target = (await detailRecord(env,stage,parsed,new URLSearchParams({collection:'targets',id:fit.targetId}))).item;
-    if (target.kind !== 'asset_price' || target.symbols?.length !== 1 || target.symbols[0] !== fit.targetSymbol)
+    if (!['asset_price','asset_return'].includes(target.kind) || target.symbols?.length !== 1 || target.symbols[0] !== fit.targetSymbol)
       fail('函数与逐标的研究目标不一致','FUNCTION_SOURCE_MISMATCH',503);
   }
   return {ref,artifact};
@@ -99,7 +99,7 @@ export async function modelFunctionsApi(req,env,path,owner) {
     }
     if (path==='/model-functions/evaluate' && req.method==='POST') {
       const input=await body(req,1024*1024);
-      if (!exact(input,['source','input',...(Object.hasOwn(input,'edits')?['edits']:[])]) || !obj(input.input) || Object.keys(input.input).some(k=>!['rows','currentState','scale'].includes(k)))fail('函数试算输入无效');
+      if (!exact(input,['source','input',...(Object.hasOwn(input,'edits')?['edits']:[])]) || !obj(input.input) || Object.keys(input.input).some(k=>!['rows','currentState','scale','mode','originPrice','originVolatility'].includes(k)))fail('函数试算输入无效');
       await rate(env,'model-function-eval:'+owner,30,60);
       const {artifact}=await resolveFunction(env,owner,input.source);
       const fn=Object.hasOwn(input,'edits')?await deriveFunction(artifact,input.edits):artifact;

@@ -1,0 +1,77 @@
+/** Protocol/DOM fixtures only. No provider, fitting, browser layout or production claim. */
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {JSDOM} from 'jsdom';
+import {returnFunctionFixture,sealReturnFunction} from '../../tests/fixtures/model-function-v4.mjs';
+import {evaluateFunction} from '../model-function-runtime.js';
+import {createForms} from '../quant-workspace/forms.js';
+import {createForecastReports} from '../quant-workspace/reports.js';
+import {createModelFunctionEditor} from '../quant-workspace/model-function-editor.js';
+import {defaultStrategy} from '../quant-workspace/defaults.js';
+import {renderSavedModel} from '../quant-workspace/report-model.js';
+import {inputDefinition} from '../quant-workspace/model-inputs.js';
+const dom=new JSDOM('<main></main><div id="modal"></div>',{url:'http://localhost/quant/'});globalThis.document=dom.window.document;
+const e=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const source={runId:'11111111-1111-4111-8111-111111111111',bundleId:'b'.repeat(64),modelFitId:'asset-fit'};
+let calls=[],artifact=await returnFunctionFixture({mode:'association',normalized:true}),renderer;
+const C={state:{runId:source.runId,reportTransport:null,catalog:{factors:[]}},esc:e,icon:()=>'',fmt:(x,n=2)=>x==null?'—':Number(x).toFixed(n),pct:x=>x==null?'—':(x*100).toFixed(2)+'%',dateText:x=>x||'—',render:()=>renderer?.(),openModal:(_,html)=>{document.querySelector('#modal').innerHTML=html;},toast(){},download(){},api:async(path,options)=>{calls.push({path,body:options?.body&&JSON.parse(options.body)});const input=JSON.parse(options.body).input;return {inferenceOnly:true,newValidationPerformed:false,result:await evaluateFunction(artifact,input)};}};
+const F=createForms(C),editor=createModelFunctionEditor(C,F),host=document.querySelector('#modal');
+const show=a=>{artifact=a;host.innerHTML=editor.render({functionArtifact:a},source);};
+const field=(key,value)=>{const el=host.querySelector(`[data-mfe-input="${key}"]`);assert(el,key);el.value=value;editor.onInput(el);};
+const click=async action=>{const el=host.querySelector(`[data-sq="${action}"]`);assert(el,action);await editor.handle(el);};
+C.state.catalog.factors=[{...artifact.featureConstruction.factors[0],name:'沪深300 · 价格'}];
+show(artifact);assert.equal(host.querySelector('[data-mfe-factor]').dataset.mfeFactor,'factor:market');assert(host.querySelector('[data-mfe-factor]').closest('label').textContent.includes('沪深300 · 简单收益率 · R1'));assert(!host.querySelector('[data-mfe-factor]').closest('label').textContent.includes('价格'));assert.equal(host.querySelectorAll('[data-mfe-param*="/estimator/coefficients/1/"]').length,0);assert(host.querySelector('[data-mfe-param="/estimator/coefficients/0/0"]'));assert(!host.textContent.includes('预期入场'));assert(!host.querySelector('[data-mfe-input="currentState"]'));
+assert(host.textContent.includes('5 日同期输入'));assert(inputDefinition(artifact,0).construction.equations.some(x=>x.includes('ₜ₋₅')));
+field('rows',JSON.stringify([{'factor:market':.03}]));field('mode','future_scenario');await click('mfe-evaluate');assert.equal(calls.length,0,'missing scenario context blocks API');assert(host.textContent.includes('情景推演需要'));
+field('originPrice','100');field('originVolatility','0.02');await click('mfe-evaluate');assert.equal(calls.at(-1).body.input.mode,'future_scenario');assert(!Object.hasOwn(calls.at(-1).body.input,'scale'));assert(host.textContent.includes('未来情景的条件响应'));assert(!host.textContent.includes('预期入场'));assert(host.textContent.includes('不是当期信息预测'));assert.equal(host.querySelector('[data-mfe-stale]').hidden,true);
+field('originPrice','101');assert.equal(host.querySelector('[data-mfe-stale]').hidden,false);
+const forecast=await returnFunctionFixture();show(forecast);assert(!host.querySelector('[data-mfe-input="mode"]'),'forecast F does not offer future-factor scenario');field('rows',JSON.stringify([{'factor:market':.03}]));await click('mfe-evaluate');assert.equal(calls.at(-1).body.input.mode,'forecast');assert.deepEqual(calls.at(-1).body.input.rows,[{'factor:market':.03}]);
+for(const kind of ['constant','basis_linear','histogram_trees']){const a=await returnFunctionFixture({kind});show(a);assert(!host.querySelector('[data-mfe-param*="/1/"]'));document.querySelector('main').innerHTML=renderSavedModel(C,F,{functionArtifact:a});assert(document.querySelector('[data-return-model]'));assert(!document.querySelector('main').textContent.includes('入场'));}
+
+// Distinct fitted assets are never collapsed or shown across one another.
+const a=await returnFunctionFixture(),b=structuredClone(a);b.scope.symbols=['000001.SZ'];b.estimator.coefficients[0][0]=-.77;await sealReturnFunction(b);
+const s=defaultStrategy({automatic:true,returnStudy:true});s.universe.symbols=[a.scope.symbols[0],b.scope.symbols[0]];s.factors=structuredClone(a.featureConstruction.factors);
+const assets=[{targetId:'asset:A',targetSymbol:a.scope.symbols[0],researchCandidateId:'asset:A::ridge',selectedCandidateId:'asset:A::ridge',modelFitId:'fit:A'},{targetId:'asset:B',targetSymbol:b.scope.symbols[0],researchCandidateId:'asset:B::ridge',selectedCandidateId:'asset:B::ridge',modelFitId:'fit:B'}];
+const candidates=assets.map((x,i)=>({id:x.researchCandidateId,targetId:x.targetId,symbols:[x.targetSymbol],status:'valid',estimator:'ridge',functionArtifact:[a,b][i],fit:{id:x.modelFitId,targetId:x.targetId},validationScore:.001+i*.001}));
+const rows=assets.flatMap((x,i)=>Array.from({length:3},(_,j)=>({date:'2024010'+(j+2),assetSymbol:x.targetSymbol,targetId:x.targetId,featureDate:'20240102',responseStartDate:'20240102',responseEndDate:j===2?null:'20240109',informationCutoff:'20240102_AFTER_CLOSE',status:j===2?'invalid':'valid',invalidReason:j===2?'target_outside_available_calendar':null,predictedResponse:(i+1)*.01,observedResponse:j===2?null:(i+1)*.02,predictedReturn:(i+1)*.01,observedReturn:j===2?null:(i+1)*.02,responseResidual:j===2?null:(i+1)*.01,features:{'factor:market':i+.001},inputValid:true,responseScale:1})));
+const report={schemaVersion:2,strategy:s,execution:{enabled:false},provenance:{synthetic:true},forecasts:{artifactId:'a'.repeat(64),studyProtocol:'asset-return-study/1',sourceStrategy:s,rows,targetDefinitions:assets.map(x=>({id:x.targetId,symbols:[x.targetSymbol]})),modelFits:assets.map((x,i)=>({id:x.modelFitId,targetId:x.targetId,functionArtifact:[a,b][i]})),diagnostics:{assetModels:assets,perTarget:assets.map((x,i)=>({...x,metrics:{observations:2,mse:i+.123}})),modelSearch:{schema:'factor-model-search-report/1',parameterSharing:'per_target',selectedCandidateId:'per_target',selectedCandidateIds:assets.map(x=>x.selectedCandidateId),candidates}},factorResearch:{panel:{schema:'asset-return-panel/1',complete:true,rowCount:rows.length,rows},diagnostics:{features:assets.map((x,i)=>({targetId:x.targetId,targetSymbol:x.targetSymbol,name:'factor:market',definition:s.factors[0],distribution:{count:2,mean:i+10,std:.01},missing:{count:0},timeSeriesCorrelation:{pearson:.5,spearman:.6},descriptiveFit:{rSquared:.4}})),perTarget:assets.map(x=>({targetId:x.targetId,dependence:{featureNames:['factor:market'],correlation:[[1]],covariance:[[.3]],pairCounts:[[2]]}})),dependence:{jointDistributions:[]}}}}};
+const frozen=JSON.stringify(report),main=document.querySelector('main'),reports=createForecastReports(C,F);renderer=()=>{main.innerHTML=reports.render(report);};renderer();
+assert.equal(main.querySelector('#sq-return-asset').options.length,2);assert.equal(main.querySelector('[data-saved-function]').dataset.savedFunction,a.artifactId);assert(!main.querySelector('#sq-model-candidate').textContent.includes('asset:B'));
+const select=main.querySelector('#sq-return-asset');select.value='asset:B';reports.onChange(select);assert.equal(main.querySelector('[data-saved-function]').dataset.savedFunction,b.artifactId);assert(!main.querySelector('#sq-model-candidate').textContent.includes('asset:A'));
+await reports.handle(main.querySelector('[data-sq="return-tab"][data-id="observations"]'));assert.equal(main.querySelectorAll('tbody tr').length,3);assert(main.textContent.includes('target_outside_available_calendar'));assert(main.querySelectorAll('svg').length===2);assert(!main.textContent.includes('预期入场'));assert(main.textContent.includes('已知截止 20240102_AFTER_CLOSE'));
+await reports.handle(main.querySelector('[data-sq="return-tab"][data-id="panel"]'));assert.equal(main.querySelectorAll('tbody tr').length,3);assert(main.textContent.includes('1.001'));assert(!main.textContent.includes('0.001'));
+await reports.handle(main.querySelector('[data-sq="return-tab"][data-id="statistics"]'));assert(main.textContent.includes('11.00000'));assert(!main.textContent.includes('10.00000'));assert(!main.textContent.includes('横截面 IC / Rank IC'));
+await reports.handle(main.querySelector('[data-sq="return-tab"][data-id="correlations"]'));assert(main.textContent.includes('0.3000'));
+await reports.handle(main.querySelector('[data-sq="return-tab"][data-id="validation"]'));assert(main.textContent.includes('1.123000'));assert(!main.textContent.includes('0.123000'));assert.equal(JSON.stringify(report),frozen);
+
+// Exercise the real bounded report client with owner bundle identities and
+// target-filtered API pages; doubles supply frozen values, never compute F.
+const oldApi=C.api, queries=[];let mixPanel=false;
+const collections={modelSearchCandidates:candidates,modelFits:report.forecasts.modelFits,forecasts:rows,researchPanel:rows,perTarget:report.forecasts.diagnostics.perTarget,factorFeatures:report.forecasts.factorResearch.diagnostics.features,factorJointDistributions:[],outerFolds:[]};
+C.state.reportTransport={format:'atlas.quant.bundle',version:1,bundleId:source.bundleId,logicalArtifactId:report.forecasts.artifactId,complete:true,collections:Object.fromEntries(Object.keys(collections).map(key=>[key,{count:collections[key].length}])),downloadUrl:'/private/report'};
+C.api=async path=>{const url=new URL(path,'http://localhost'),collection=url.searchParams.get('collection'),targetId=url.searchParams.get('targetId');queries.push({collection,targetId});if(url.pathname.endsWith('/detail'))return {bundleId:source.bundleId,item:collections[collection].find(x=>x.id===url.searchParams.get('id'))};assert(targetId,'every return-report page is asset-scoped');const items=collections[collection].filter(x=>x.targetId===targetId);return {bundleId:source.bundleId,items:mixPanel&&collection==='researchPanel'?[rows[0]]:items,total:items.length,offset:0,hasMore:false};};
+const remoteReports=createForecastReports(C,F);renderer=()=>{main.innerHTML=remoteReports.render(report);};renderer();
+const drain=async()=>{for(let i=0;i<5;i++)await new Promise(r=>setTimeout(r,5));};await drain();assert.equal(main.querySelector('[data-saved-function]').dataset.savedFunction,a.artifactId);
+const assetSelect=main.querySelector('#sq-return-asset');assetSelect.value='asset:B';remoteReports.onChange(assetSelect);await drain();assert.equal(main.querySelector('[data-saved-function]').dataset.savedFunction,b.artifactId);
+for(const tab of ['observations','statistics','validation']){await remoteReports.handle(main.querySelector(`[data-sq="return-tab"][data-id="${tab}"]`));await drain();assert.equal(main.querySelector('[data-return-target]').dataset.returnTarget,'asset:B');}
+mixPanel=true;await remoteReports.handle(main.querySelector('[data-sq="return-tab"][data-id="panel"]'));await drain();assert(main.textContent.includes('报告分页包含其他资产'));assert(!main.querySelector('tbody tr'),'cross-asset records are not displayed');
+assert(queries.filter(x=>x.targetId).some(x=>x.collection==='factorFeatures'&&x.targetId==='asset:B'));assert(queries.filter(x=>x.targetId).some(x=>x.collection==='researchPanel'&&x.targetId==='asset:B'));C.api=oldApi;
+// Actual engine panel rows have fourteen keys and no forecast informationCutoff.
+// Copying forecast-shaped rows into a panel fixture hid the missing-field bug.
+const actualPanel=JSON.parse(await readFile(new URL('../../tests/fixtures/asset-return-panel-rows.json',import.meta.url),'utf8')).rows;
+const panelKeys=['schema','date','targetId','assetSymbol','inputValid','invalidReason','featureDate','responseStartDate','responseEndDate','originPrice','responseScale','observedReturn','observedResponse','features'].sort();
+for(const row of actualPanel)assert.deepEqual(Object.keys(row).sort(),panelKeys);
+const actualAssets=[...new Map(actualPanel.map(x=>[x.targetId,{targetId:x.targetId,targetSymbol:x.assetSymbol}])).values()];
+const actualReport={...report,forecasts:{...report.forecasts,rows:[],modelFits:[],diagnostics:{assetModels:actualAssets},factorResearch:{panel:{schema:'asset-return-panel/1',complete:true,rowCount:actualPanel.length,rows:actualPanel}}}};
+C.state.reportTransport=null;const actualReports=createForecastReports(C,F);renderer=()=>{main.innerHTML=actualReports.render(actualReport);};renderer();
+await actualReports.handle(main.querySelector('[data-sq="return-tab"][data-id="panel"]'));
+for(const asset of actualAssets){
+ const selector=main.querySelector('#sq-return-asset');selector.value=asset.targetId;actualReports.onChange(selector);
+ const displayed=[...main.querySelectorAll('tbody tr')],expected=actualPanel.filter(x=>x.targetId===asset.targetId);
+ assert.equal(main.querySelector('thead th').textContent,'因子观察日');assert.equal(displayed.length,3);
+ assert.deepEqual(displayed.map(x=>x.cells[0].textContent),expected.map(x=>x.featureDate));
+ assert.equal(main.querySelectorAll('tbody td:first-child small').length,0);assert(!main.textContent.includes('已知截止'));
+ assert(main.textContent.includes('response_normalizer_unavailable'));assert.equal(displayed.at(-1).cells[1].textContent,'20250630 → —');
+}
+console.log(JSON.stringify({singleOutputEditor:true,scenarioSeparated:true,requiredScenarioContext:true,returnInputsNotPricePair:true,allEstimatorDisplays:true,perAssetCandidates:true,perAssetPanel:true,actualFourteenFieldPanel:true,observationDateNotAvailabilityCutoff:true,perAssetStatistics:true,tailPreserved:true,legacyTestsSeparate:true,fixtureOnly:true}));
+dom.window.close();

@@ -18,6 +18,7 @@ import numpy as np
 SCHEMA = "atlas-model-function/1"
 AUTOMATIC_FUNCTION_SCHEMA = "atlas-model-function/2"
 BASIS_FUNCTION_SCHEMA = "atlas-model-function/3"
+RETURN_FUNCTION_SCHEMA = "atlas-model-function/4"
 HASH_ALGORITHM = "sha256-canonical-f64-json/1"
 MAX_BYTES = 2 * 1024 * 1024
 MAX_FEATURES = 128
@@ -72,9 +73,8 @@ def _seal(value):
     return value
 
 
-def export_function(model, training, strategy):
-    """Export learned numerical parameters only; unsupported tree shapes fail closed."""
-    import sklearn
+def _export_components(model):
+    """Share the fitted numeric encoding across scalar and legacy dual outputs."""
     if isinstance(model.predictor, np.ndarray):
         estimator = {"kind": "constant", "value": model.predictor.tolist()}
         transforms = {"imputeMedian": None, "winsorLower": None, "winsorUpper": None,
@@ -87,16 +87,16 @@ def export_function(model, training, strategy):
                       "scaleMean": model.audit.get("scalerMean"), "scaleScale": model.audit.get("scalerScale")}
         if "basisFit" in model.audit:
             basis = model.audit["basisFit"]
-            estimator = {"kind": "basis_linear", "coefficients": np.asarray(fitted.coef_).tolist(),
-                         "intercepts": np.asarray(fitted.intercept_).tolist(),
+            estimator = {"kind": "basis_linear", "coefficients": np.atleast_2d(fitted.coef_).tolist(),
+                         "intercepts": np.atleast_1d(fitted.intercept_).tolist(),
                          "terms": copy.deepcopy(basis["terms"]), "termCenter": basis["termCenter"],
                          "termScale": basis["termScale"], "signedExpm1AbsoluteInputCap": 3.}
         elif hasattr(fitted, "coef_"):
-            estimator = {"kind": "linear", "coefficients": np.asarray(fitted.coef_).tolist(),
-                         "intercepts": np.asarray(fitted.intercept_).tolist()}
+            estimator = {"kind": "linear", "coefficients": np.atleast_2d(fitted.coef_).tolist(),
+                         "intercepts": np.atleast_1d(fitted.intercept_).tolist()}
         else:
             outputs = []
-            for output in fitted.estimators_:
+            for output in getattr(fitted, "estimators_", [fitted]):
                 if output.is_categorical_ is not None and np.any(output.is_categorical_):
                     _bad("categorical histogram trees are unsupported")
                 trees = []
@@ -112,6 +112,17 @@ def export_function(model, training, strategy):
                 outputs.append({"baseline": float(output._baseline_prediction[0, 0]), "trees": trees})
             estimator = {"kind": "histogram_trees", "nodeFields": ["value", "feature", "threshold", "left", "right", "leaf", "missingLeft"],
                          "thresholdRule": "left_if_less_equal", "leafValuesIncludeLearningRate": True, "outputs": outputs}
+    return estimator, transforms
+
+
+def export_function(model, training, strategy):
+    """Export learned numerical parameters only; unsupported shapes fail closed."""
+    import sklearn
+    from .return_study.contract import enabled
+    if enabled(strategy):
+        from .return_study.function import export_function as export_return
+        return export_return(model, training, strategy)
+    estimator, transforms = _export_components(model)
     automatic = "automatic" in strategy["preprocess"]
     if automatic:
         from .preprocessing import automatic_metadata
@@ -226,6 +237,11 @@ def _metadata(a):
             quantities = basket.get("quantities")
             if set(basket) != {"method", "symbols", "formationDays", "quantities"} or not isinstance(quantities, dict) or set(quantities) != set(members) or any(not _numeric(v) or abs(v)>1e6 for v in quantities.values()) or not any(quantities.values()):
                 _bad("invalid frozen quantities")
+    _common_metadata(a)
+
+
+def _common_metadata(a):
+    """Immutable estimator provenance and explicit edit ancestry for every F."""
     provenance = a["provenance"]
     _keys(provenance, ("estimator", "parameters", "sklearnVersion"))
     from .models import GRIDS
@@ -258,18 +274,25 @@ def validate_function(artifact):
         valid_hash = artifact.get("artifactId") == function_digest({k: v for k, v in artifact.items() if k != "artifactId"})
     except (TypeError, ValueError, OverflowError, RecursionError):
         _bad("non-finite, recursive or non-JSON object")
-    if len(raw) > MAX_BYTES or artifact.get("schema") not in (SCHEMA, AUTOMATIC_FUNCTION_SCHEMA, BASIS_FUNCTION_SCHEMA) or artifact.get("hashAlgorithm") != HASH_ALGORITHM or not valid_hash:
+    if len(raw) > MAX_BYTES or artifact.get("schema") not in (SCHEMA, AUTOMATIC_FUNCTION_SCHEMA, BASIS_FUNCTION_SCHEMA, RETURN_FUNCTION_SCHEMA) or artifact.get("hashAlgorithm") != HASH_ALGORITHM or not valid_hash:
         _bad("schema, content hash or size mismatch")
     expected = {"schema", "hashAlgorithm", "inputSchema", "featureConstruction", "transforms", "estimator", "training", "scope", "outputs", "identity", "provenance", "editPolicy", "lineage", "artifactId"}
-    if set(artifact) != expected or artifact["outputs"] != OUTPUTS:
+    is_return = artifact["schema"] == RETURN_FUNCTION_SCHEMA
+    output_count = 1 if is_return else 2
+    if set(artifact) != expected or (not is_return and artifact["outputs"] != OUTPUTS):
         _bad("unexpected artifact fields or outputs")
     identity = {"entry": "currentState + scale * output[0]", "future": "currentState + scale * output[1]",
                 "e": "currentState - expectedFuture", "expectedChange": "-e", "scale": "origin_known_gross_absolute_leg_value"}
-    if artifact["identity"] != identity:
+    if not is_return and artifact["identity"] != identity:
         _bad("unexpected context-to-value identity")
     if not isinstance(artifact["lineage"], dict) or artifact["lineage"].get("status") not in ("fitted", "UNVALIDATED_USER_EDIT"):
         _bad("invalid lineage")
-    _metadata(artifact)
+    if is_return:
+        from .return_study.function import validate_metadata
+        validate_metadata(artifact)
+        _common_metadata(artifact)
+    else:
+        _metadata(artifact)
     inputs = artifact["inputSchema"]
     if not isinstance(inputs, list) or not 1 <= len(inputs) <= MAX_FEATURES:
         _bad("invalid input schema")
@@ -286,6 +309,8 @@ def validate_function(artifact):
         allowed = feature_names(artifact["scope"]["family"], artifact["featureConstruction"]["automatic"])
         if set(names) - allowed:
             _bad("input is not a declared constructed feature")
+    if is_return and set(names) - {item["feature"] for item in artifact["featureConstruction"]["inputs"]}:
+        _bad("return input is not a declared selected factor")
     n = len(names)
     t = artifact["transforms"]
     if not isinstance(t, dict) or set(t) != {"imputeMedian", "winsorLower", "winsorUpper", "scaleMean", "scaleScale"}:
@@ -304,17 +329,17 @@ def validate_function(artifact):
     if not isinstance(e, dict):
         _bad("invalid estimator")
     if e.get("kind") == "constant" and set(e) == {"kind", "value"}:
-        _vector(e["value"], 2)
+        _vector(e["value"], output_count)
     elif e.get("kind") == "linear" and set(e) == {"kind", "coefficients", "intercepts"}:
-        _vector(e["intercepts"], 2)
-        if not isinstance(e["coefficients"], list) or len(e["coefficients"]) != 2:
+        _vector(e["intercepts"], output_count)
+        if not isinstance(e["coefficients"], list) or len(e["coefficients"]) != output_count:
             _bad("invalid coefficient shape")
         for output in e["coefficients"]:
             _vector(output, n)
     elif e.get("kind") == "basis_linear" and set(e) == {"kind", "coefficients", "intercepts", "terms", "termCenter", "termScale", "signedExpm1AbsoluteInputCap"}:
         from .basis_models import MAX_TERMS
         terms = e["terms"]
-        if artifact["schema"] != BASIS_FUNCTION_SCHEMA or not isinstance(terms, list) or not 1 <= len(terms) <= MAX_TERMS or e["signedExpm1AbsoluteInputCap"] != 3:
+        if artifact["schema"] not in (BASIS_FUNCTION_SCHEMA, RETURN_FUNCTION_SCHEMA) or not isinstance(terms, list) or not 1 <= len(terms) <= MAX_TERMS or e["signedExpm1AbsoluteInputCap"] != 3:
             _bad("invalid basis dictionary")
         for term in terms:
             if not isinstance(term, dict):
@@ -333,14 +358,14 @@ def validate_function(artifact):
                 _bad("unsupported basis term")
         if len({json.dumps(term, sort_keys=True) for term in terms}) != len(terms):
             _bad("duplicate basis terms")
-        _vector(e["intercepts"], 2)
+        _vector(e["intercepts"], output_count)
         _vector(e["termCenter"], len(terms)); _vector(e["termScale"], len(terms))
-        if any(value <= 0 for value in e["termScale"]) or not isinstance(e["coefficients"], list) or len(e["coefficients"]) != 2:
+        if any(value <= 0 for value in e["termScale"]) or not isinstance(e["coefficients"], list) or len(e["coefficients"]) != output_count:
             _bad("invalid basis scale or coefficient shape")
         for output in e["coefficients"]:
             _vector(output, len(terms))
     elif e.get("kind") == "histogram_trees" and set(e) == {"kind", "nodeFields", "thresholdRule", "leafValuesIncludeLearningRate", "outputs"}:
-        if e["nodeFields"] != ["value", "feature", "threshold", "left", "right", "leaf", "missingLeft"] or e["thresholdRule"] != "left_if_less_equal" or e["leafValuesIncludeLearningRate"] is not True or not isinstance(e["outputs"], list) or len(e["outputs"]) != 2:
+        if e["nodeFields"] != ["value", "feature", "threshold", "left", "right", "leaf", "missingLeft"] or e["thresholdRule"] != "left_if_less_equal" or e["leafValuesIncludeLearningRate"] is not True or not isinstance(e["outputs"], list) or len(e["outputs"]) != output_count:
             _bad("invalid histogram encoding")
         for output in e["outputs"]:
             if not isinstance(output, dict) or set(output) != {"baseline", "trees"} or not _numeric(output["baseline"]) or not isinstance(output["trees"], list) or not 1 <= len(output["trees"]) <= MAX_TREES:
@@ -376,18 +401,23 @@ def validate_function(artifact):
         _bad("constant function cannot carry ignored transforms")
     if e["kind"] != "constant" and t["imputeMedian"] is None:
         _bad("trained median required")
-    if (artifact["schema"] == BASIS_FUNCTION_SCHEMA) != (e["kind"] == "basis_linear"):
+    if not is_return and (artifact["schema"] == BASIS_FUNCTION_SCHEMA) != (e["kind"] == "basis_linear"):
         _bad("basis function schema and estimator disagree")
-    if automatic and e["kind"] != "constant":
+    if (automatic or is_return) and e["kind"] != "constant":
         pre = artifact["featureConstruction"]["preprocess"]
         if (t["winsorLower"] is not None) != pre["winsorize"] or (t["scaleMean"] is not None) != pre["standardize"]:
             _bad("frozen transforms disagree with automatic preprocessing controls")
     return artifact
 
 
-def predict_function(artifact, rows, *, current_state=None, scale=None):
+def predict_function(artifact, rows, *, current_state=None, scale=None, mode=None, origin_price=None, origin_volatility=None):
     """Evaluate numeric JSON only. Source expressions/metadata are never executed."""
     a = validate_function(artifact)
+    is_return = a["schema"] == RETURN_FUNCTION_SCHEMA
+    if is_return and (current_state is not None or scale is not None):
+        _bad("return functions do not accept legacy price-state context")
+    if not is_return and any(v is not None for v in (mode, origin_price, origin_volatility)):
+        _bad("legacy functions do not accept return-study context")
     if not isinstance(rows, list) or len(rows) > 25000:
         _bad("rows must be a bounded list")
     names = [x["name"] for x in a["inputSchema"]]
@@ -416,7 +446,7 @@ def predict_function(artifact, rows, *, current_state=None, scale=None):
             terms = (expand(X, e["terms"])-e["termCenter"])/e["termScale"]
             result = terms @ np.asarray(e["coefficients"]).T + e["intercepts"]
         else:
-            result = np.zeros((len(rows), 2))
+            result = np.zeros((len(rows), len(a["outputs"])))
             for output_i, output in enumerate(e["outputs"]):
                 result[:, output_i] = output["baseline"]
                 for tree in output["trees"]:
@@ -430,6 +460,9 @@ def predict_function(artifact, rows, *, current_state=None, scale=None):
                         result[row_i, output_i] += tree[node_i][0]
     if not np.isfinite(result).all():
         _bad("non-finite prediction")
+    if is_return:
+        from .return_study.function import response_document
+        return response_document(a, result[:, 0].tolist(), mode, origin_price, origin_volatility)
     response = {"artifactId": a["artifactId"], "normalizedChanges": result.tolist(), "evidenceStatus": a["lineage"]["status"]}
     if (current_state is None) != (scale is None):
         _bad("current_state and scale must be supplied together")
@@ -483,7 +516,7 @@ def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description="Evaluate or derive a non-executable JSON F(X).")
     parser.add_argument("artifact", type=Path)
-    parser.add_argument("input", type=Path, help="JSON {rows, currentState?, scale?}")
+    parser.add_argument("input", type=Path, help="JSON rows plus the declared price-state or return-study context")
     parser.add_argument("--edits", type=Path, help="optional restricted numeric JSON edits")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -496,7 +529,15 @@ def main(argv=None):
     inputs = json.loads(args.input.read_text())
     if args.edits:
         artifact = edit_function(artifact, json.loads(args.edits.read_text()))
-    result = predict_function(artifact, inputs["rows"], current_state=inputs.get("currentState"), scale=inputs.get("scale"))
+    allowed = {"rows", "mode", "originPrice", "originVolatility"} if artifact.get("schema") == RETURN_FUNCTION_SCHEMA else {"rows", "currentState", "scale"}
+    if not isinstance(inputs, dict) or set(inputs) - allowed or "rows" not in inputs:
+        _bad("unexpected evaluation fields")
+    if artifact.get("schema") == RETURN_FUNCTION_SCHEMA:
+        for key in ("originPrice", "originVolatility"):
+            if key in inputs and not isinstance(inputs[key], list):
+                _bad("optional return context must be a numeric vector, not null")
+    result = predict_function(artifact, inputs["rows"], current_state=inputs.get("currentState"), scale=inputs.get("scale"),
+                              mode=inputs.get("mode"), origin_price=inputs.get("originPrice"), origin_volatility=inputs.get("originVolatility"))
     if args.edits:
         result["derivedArtifact"] = artifact
     args.output.write_text(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2) + "\n")

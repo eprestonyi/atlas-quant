@@ -499,3 +499,16 @@ test('typed v2 jobs cannot be reserved or recovered by v1-only runners', async (
   const downgrade=await claim(requestId,old);assert.equal(downgrade.status,409);assert.equal((await downgrade.json()).error.code,'RUNNER_UPGRADE_REQUIRED');
   const recovered=await(await claim(requestId,current)).json();assert.equal(recovered.job.leaseToken,first.job.leaseToken);
 });
+
+test('scalar return contracts require exact capability on reserve and durable recovery', async () => {
+  const spec={schemaVersion:2,name:'return study claim',universe:{symbols:['000001.SZ'],start:'20230101',end:'20250930'},research:{mode:'statistical_quant',observationDays:1,returnStudy:{schema:'asset-return-study/1',mode:'forecast'}},factors:[{id:'size',expression:'circ_mv',direction:1,role:'predictor'}],preprocess:{automatic:{schema:'auto-factor-preprocess/2'}},target:{kind:'asset_return',horizonSessions:5,normalization:{kind:'none'}},model:{family:'trend',estimator:'ridge',parameterSharing:'per_target'},execution:{enabled:false}};
+  const id=await seed('requires-return-study',spec),old={engineVersion:'99.0.0',factorPreprocessFormats:['auto-factor-preprocess/2']};
+  for(const request of [undefined,randomUUID()]) {
+    const denied=await claim(request,old);assert.equal(denied.status,200);assert.equal((await denied.json()).job,null);
+    assert.equal((await read(id)).status,'queued');
+  }
+  const requestId=randomUUID(),current={...old,returnStudyFormats:['asset-return-study/1']};
+  const first=await(await claim(requestId,current)).json();assert.equal(first.job.id,id);
+  const downgrade=await claim(requestId,old);assert.equal(downgrade.status,409);
+  const recovered=await(await claim(requestId,current)).json();assert.equal(recovered.job.leaseToken,first.job.leaseToken);
+});
