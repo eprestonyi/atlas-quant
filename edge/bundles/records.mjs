@@ -5,6 +5,8 @@ import { DATE, BUNDLE_PROFILE } from './profile.mjs';
 import { byteLength, object } from './json.mjs';
 import { marketHedgeMetadata } from '../market-preparation/hedge-index.mjs';
 import { validateReturnRecord, validateReturnPanelRecord } from './return-records.mjs';
+import {validateFunction} from '../../web/model-function-runtime.js';
+import {assertFunctionSource} from '../model-functions/source.mjs';
 
 const fail = (message) => {
   throw new ApiError('BUNDLE_RECORD', message);
@@ -21,6 +23,8 @@ const date = (value, optional = false) => {
 };
 const any = (value) =>
   Array.isArray(value) ? value.length > 0 : object(value) ? Object.keys(value).length > 0 : false;
+const canonical = value => Array.isArray(value) ? value.map(canonical) : object(value)
+  ? Object.fromEntries(Object.keys(value).sort().map(key => [key,canonical(value[key])])) : value;
 
 /** Shared identity validation for both snapshot index policies. */
 export function snapshotRecordKey(row) {
@@ -54,9 +58,13 @@ export async function recordIndex(
   ordinal,
   chunkOrdinal,
   itemIndex,
-  { marketHedgeTargets = null, returnStudy = null, returnFactorNames = null } = {}
+  { marketHedgeTargets = null, returnStudy = null, returnFactorNames = null,
+    returnEvidence = null, returnStrategy = null } = {}
 ) {
   if (!object(row)) fail('记录须为对象');
+  const timed = returnStudy?.schema === 'asset-return-study/2';
+  if (returnStudy && !(timed ? Object.keys(returnStudy).length === 1 :
+      returnStudy.schema === 'asset-return-study/1' && ['forecast','association'].includes(returnStudy.mode))) fail('收益研究协议无效');
   let rowId = null,
     day = null,
     targetId = null,
@@ -68,7 +76,8 @@ export async function recordIndex(
     groupKey = null,
     metadata = {};
   if (['forecasts', 'baselineRows'].includes(collection)) {
-    if (Boolean(returnStudy) !== (row.schema === 'asset-return-observation/1'))
+    if (returnStudy ? row.schema !== (timed ? 'asset-return-observation/2' : 'asset-return-observation/1') :
+        ['asset-return-observation/1','asset-return-observation/2'].includes(row.schema))
       fail('收益记录与研究协议不匹配');
     rowId = identifier(row.forecastId, '预测');
     day = date(row.date);
@@ -77,8 +86,8 @@ export async function recordIndex(
     if (!['valid', 'invalid'].includes(row.status)) fail('预测状态无效');
     status = row.status;
     matured = Number(row.labelMaturedAt !== null && row.labelMaturedAt !== undefined);
-    if (row.schema === 'asset-return-observation/1') {
-      metadata = validateReturnRecord(row, fail);
+    if (returnStudy) {
+      metadata = validateReturnRecord(row, fail, timed ? returnEvidence : null);
       if ((returnStudy.mode === 'forecast' && row.responseStartDate !== row.date) ||
           (returnStudy.mode === 'association' && row.responseEndDate !== row.date))
         fail('收益区间与研究模式不一致');
@@ -135,6 +144,10 @@ export async function recordIndex(
       metadata.responseEndDate = row.responseEndDate ?? null;
     }
   } else if (collection === 'targets') {
+    if (timed && (!returnStrategy || row.studyProtocol !== 'asset-return-study/2' || Object.hasOwn(row,'studyMode') ||
+        row.kind !== 'asset_return' || row.construction !== 'independent_asset_close_to_close' || row.symbols?.length !== 1 ||
+        !returnStrategy.universe.symbols.includes(row.symbols[0]) || row.horizonSessions !== returnStrategy.target.horizonSessions ||
+        JSON.stringify(canonical(row.normalization)) !== JSON.stringify(canonical(returnStrategy.target.normalization)))) fail('时移目标定义与独立资产研究不一致');
     rowId = identifier(row.id, '目标');
     if (
       !Array.isArray(row.symbols) ||
@@ -159,6 +172,12 @@ export async function recordIndex(
       ])
     );
   } else if (['modelFits', 'baselineModelFits'].includes(collection)) {
+    if (timed && row.status === 'valid') {
+      if (!returnStrategy || row.functionArtifact?.schema !== 'atlas-model-function/5') fail('时移研究拟合缺少第五版冻结函数');
+      if (row.functionArtifact.lineage?.status !== 'fitted' || row.functionArtifact.lineage?.parentArtifactId !== null) fail('原始研究归档不能把编辑函数当作已拟合证据');
+      await validateFunction(row.functionArtifact);
+      assertFunctionSource(row.functionArtifact,row,returnStrategy);
+    }
     rowId = identifier(row.id, '拟合');
     targetId = identifier(row.targetId, '拟合资产', true);
     metadata = {
@@ -169,7 +188,8 @@ export async function recordIndex(
       trainEnd: row.trainEnd ?? null,
       labelEndMax: row.labelEndMax ?? null,
       status: row.status ?? null,
-      ...(row.targetId ? {targetId: row.targetId, targetSymbol: row.targetSymbol} : {})
+      ...(row.targetId ? {targetId: row.targetId, targetSymbol: row.targetSymbol} : {}),
+      ...(timed ? {inputAvailableAtMax:row.inputAvailableAtMax ?? null,sampleReadyAtMax:row.sampleReadyAtMax ?? null} : {})
     };
     status = identifier(row.status, '拟合状态', true);
   } else if (collection === 'modelSearchCandidates') {
@@ -186,7 +206,7 @@ export async function recordIndex(
     rowId = row.id !== undefined ? identifier(row.id, '诊断') : null;
   } else if (collection === 'researchPanel') {
     if (!returnStudy) fail('收益面板缺少研究协议');
-    metadata = validateReturnPanelRecord(row,returnFactorNames,fail);
+    metadata = validateReturnPanelRecord(row,returnFactorNames,fail,timed ? returnEvidence : null);
     day = date(row.date);
     targetId = identifier(row.targetId, '面板资产');
     rowId = day + '|' + targetId;
@@ -245,6 +265,10 @@ export async function recordIndex(
     rowId = String(ordinal);
     targetId = identifier(row.targetId, '验证资产', true);
   } else if (row.id !== undefined) rowId = identifier(row.id, '记录');
+  if (timed && ['forecasts','baselineRows','researchPanel'].includes(collection)) {
+    metadata.inputEvidenceHash = await sha(JSON.stringify(canonical(row.inputEvidence)));
+    metadata.inputValid = row.inputValid;
+  }
   const encodedMetadata = JSON.stringify(metadata);
   if (byteLength(encodedMetadata) > 8192) fail('索引元数据超过上限');
   return [

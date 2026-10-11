@@ -1,3 +1,5 @@
+import { validateTimedReturnContext } from '../model-function-timing.js';
+import { availabilityLabel, valueOriginLabel } from './input-evidence.js';
 import { isReturnFunction, returnUnit, returnTiming } from './return-study.js';
 import { createFeatureLabeler, constructedFeatureLabel } from './feature-labels.js';
 import { modelFormula, basisTerm } from './report-model.js';
@@ -73,6 +75,7 @@ export function createModelFunctionEditor(C, F) {
   function resultView(state) {
     if (!state.result) return '';
     const { response, input, inferenceRevision } = state.result, result = response.result;
+    if (state.artifact.schema === 'atlas-model-function/5') return F.panel('函数响应',`<div data-mfe-stale ${inferenceRevision === state.inferenceRevision ? 'hidden' : ''}>${F.note('输入或参数已修改；以下为上次试算。','warning')}</div><code>${e(result.artifactId)}</code>`+table(['行',returnUnit(state.artifact),'还原收益率','条件价格','输入证据'],result.predictedResponse.map((x,n)=>`<tr><td>${n+1}</td><td>${fmt(x,6)}</td><td>${fmt(result.simpleReturns?.[n],6)}</td><td>${fmt(result.conditionalPrices?.[n],6)}</td><td>${e(availabilityLabel(result.availabilityClasses?.[n]))}</td></tr>`))+F.note(result.inputEvidenceStatus==='caller_declared'?'输入来源由用户声明，未核验供应商历史发布时间；本次仅求值，未新增检验。':'未提供输入来源证据；本次仅求值，未新增检验。'));
     if (isReturnFunction(state.artifact)) return F.panel(result.scenarioOnly ? '未来情景的条件响应' : '函数响应', `<div data-mfe-stale ${inferenceRevision === state.inferenceRevision ? 'hidden' : ''}>${F.note('输入或参数已修改；以下为上次试算。','warning')}</div><code>${e(result.artifactId)}</code>`+table(['行',returnUnit(state.artifact),'还原收益率','条件价格'],result.predictedResponse.map((x,n)=>`<tr><td>${n+1}</td><td class="numeric">${fmt(x,6)}</td><td class="numeric">${fmt(result.simpleReturns?.[n],6)}</td><td class="numeric">${fmt(result.conditionalPrices?.[n],6)}</td></tr>`))+F.note(result.scenarioOnly ? '给定未来因子假设的情景响应；不是当期信息预测，也未新增检验。' : '仅对给定输入求值；未读取实时数据或新增统计检验。'));
     return F.panel('用户输入的 F(X) 试算',
       `<div data-mfe-stale ${inferenceRevision === state.inferenceRevision ? 'hidden' : ''}>${F.note('输入或参数已修改；下方仍是上次提交时的试算结果。', 'warning')}</div>` +
@@ -97,6 +100,7 @@ export function createModelFunctionEditor(C, F) {
     return `<section class="mfe-editor" data-mfe-key="${state.key}"><h3>修改与试算 F</h3><pre class="sq-model-equation">${e(formula)}</pre>${F.advanced('函数口径', `<p>${e(transformNote)}两个输出分别描述入场与未来状态相对当前已知尺度的变化。</p><p>观察收盘后，入场为下一官方交易日开盘，未来为其后 h 个交易日开盘。</p>`)}<dl class="sq-key-values"><dt>函数身份</dt><dd><code>${e(a.artifactId)}</code></dd><dt>当前版本来源</dt><dd>${e(a.lineage?.status || '未返回')}</dd><dt>训练截止</dt><dd>${e(a.training?.informationCutoff)}</dd><dt>期限 / 观察间隔</dt><dd>${e(a.scope?.horizonSessions)} / ${e(a.scope?.observationDays)} 交易日</dd><dt>证券范围</dt><dd>${scopeView(a)}</dd></dl>${F.advanced('输出与期限口径', '<p>output[0] 估计下一开盘，output[1] 估计该开盘之后 h 个交易日的开盘。h=1 对应第二个后续交易日开盘，不是下一日收盘。</p><p>观察间隔默认 1 表示每天观察一次，与预测期限 h 分开。具体观察、入场和目标日期见原报告逐条预测；训练截止不是试算输入的观察日期，本页不会推算或补造交易日历。</p>')}${F.advanced('适用范围', F.note('原研究范围以外的适用性尚未验证。输入须按原特征定义构建，不能把任意股票或任意单位直接代入。'))}${state.error ? F.note(state.error, 'error') : ''}${state.notice ? F.note(state.notice) : ''}${renderFunctionInputs(C, F, a)}${parameters(state)}${pending.length ? F.advanced(`待派生参数 · ${pending.length} 项`, table(['路径', '新值', '操作'], pending.map(([path,value]) => `<tr><td><code>${e(path)}</code></td><td>${e(value)}</td><td>${F.button('mfe-remove', '撤销', { id: path, small: true })}</td></tr>`)), true) : ''}<div class="sq-actions">${F.button('mfe-download', '下载当前版本 JSON', { small: true })}${F.button('mfe-resolve', '核验函数来源', { small: true, disabled: !eligible || state.busy })}${F.button('mfe-library', '已保存的函数版本', { small: true })}</div>${F.advanced('下载版本', '<p>下载的是当前已保存版本；未保存的参数修改不包含在 JSON 中。</p>')}${!eligible ? F.note('当前报告没有完整的私有来源引用；可以读取原函数，在线试算和派生保存尚不可用。') : ''}${F.panel('给 F 提供试算输入', field(state, 'rows', 'R 行数组 · 待填示例', '', true) + F.advanced('输入格式', `<p>${e(inputHelp)}</p>`) + `<div class="sq-form-grid">${field(state, 'currentState', '当前状态 P', '单行填数字；多行填等长数组。')}${field(state, 'scale', '当前已知尺度 scale', assetReturn ? '个股价格目标：scale = 当前状态 P，必须为正。' : '原目标的总绝对腿价值，必须为正；须与 P 和模型保持同一单位。')}</div>${F.button('mfe-evaluate', state.busy === 'evaluate' ? '正在试算…' : '运行 F(X) 试算', { primary: true, disabled: !eligible || !!state.busy })}`)}${resultView(state)}${F.panel('保存独立的派生函数', field(state, 'name', '新函数名称') + F.button('mfe-derive', state.busy === 'derive' ? '正在保存…' : '保存新的函数版本', { primary: true, disabled: !eligible || !!state.busy }) + '<span class="sq-status warning">新版本 · 未验证</span>')}${state.saved ? F.panel('已保存派生版本', `<code>${e(state.saved.ref.artifactId)}</code><p>UNVALIDATED_USER_EDIT · 未继承父模型统计检验</p>${F.button('mfe-open-saved', '打开这个函数版本', { id: state.saved.ref.functionId, artifact: state.saved.ref.artifactId, small: true })}`) : ''}${F.advanced('完整输入变换与函数来源', raw({ transforms: a.transforms, featureConstruction: a.featureConstruction, training: a.training, scope: a.scope, provenance: a.provenance, lineage: a.lineage }))}</section>`;
   }
   function returnInput(state, rows) {
+    if (state.artifact.schema === 'atlas-model-function/5') return timedReturnInput(state,rows);
     const mode=state.fields.mode, a=state.artifact, normalized=a.featureConstruction.targetSpecification.normalization.kind==='trailing_volatility';
     if (!(a.scope.studyMode==='association' ? ['association','future_scenario'] : ['forecast']).includes(mode)) throw Error('此函数不接受该输入时间口径。');
     const input={rows,mode};
@@ -110,27 +114,54 @@ export function createModelFunctionEditor(C, F) {
     }
     return input;
   }
+  function timedReturnInput(state,rows) {
+    const a=state.artifact,input={rows}, normalized=a.featureConstruction.targetSpecification.normalization.kind==='trailing_volatility';
+    for(const key of ['originPrice','originVolatility']) {
+      const text=state.fields[key].trim();if(!text)continue;
+      let values;try{values=JSON.parse(text);}catch{throw Error('起点价格与波动率需为有限数字或逐行数组。');}
+      values=Array.isArray(values)?values:[values];
+      if(values.length!==rows.length||values.some(x=>typeof x!=='number'||!Number.isFinite(x)||x<=(key==='originVolatility'?1e-8:0)))throw Error('起点数值须逐行对应，价格与波动率须有效。');
+      input[key]=values;
+    }
+    if(!normalized&&input.originVolatility)throw Error('普通收益不需要波动率还原参数。');
+    if(state.fields.originDates.trim()) {
+      const text=state.fields.originDates.trim();
+      try{input.originDates=text.startsWith('[')?JSON.parse(text):[text.replaceAll('-','')];}catch{throw Error('起点日期需要 YYYYMMDD 或日期数组。');}
+    }
+    if(state.fields.inputEvidence.trim()) {
+      try{input.inputEvidence=JSON.parse(state.fields.inputEvidence);}catch{throw Error('输入来源须为逐行 JSON 数组；留空表示未提供证据。');}
+    }
+    const require=(ok,message)=>{if(!ok)throw Error(message);};
+    const keys=(object,names,label)=>require(object&&typeof object==='object'&&!Array.isArray(object)&&JSON.stringify(Object.keys(object).sort())===JSON.stringify([...names].sort()),label+'字段无效。');
+    validateTimedReturnContext(a,input,{require,keys,number:x=>typeof x==='number'&&Number.isFinite(x)});
+    return input;
+  }
+  function evidenceFields(state,name) {
+    if(state.artifact.schema!=='atlas-model-function/5')return '';
+    let source;try{source=JSON.parse(state.fields.inputEvidence)?.[0]?.[name];}catch{}
+    return `<label class="sq-field"><span>输入来源</span><select data-mfe-evidence-origin="${e(name)}">${!source?'<option value="" selected disabled>未声明</option>':''}${['observed_actual','scenario_assumption'].map(value=>`<option value="${value}" ${source?.valueOrigin===value?'selected':''}>${e(valueOriginLabel(value))}</option>`).join('')}</select></label><details class="mfe-evidence-dates" data-sq-details="evidence-dates-${e(name)}"><summary>输入日期</summary>${[['evaluationDate','观察日'],['availableAt','可用日']].map(([key,title])=>`<label class="sq-field"><span>${title}</span><input type="text" inputmode="numeric" placeholder="YYYYMMDD · 未知留空" data-mfe-evidence-date="${e(name)}" data-evidence-field="${key}" value="${e(source?.[key]||'')}"></label>`).join('')}</details>`;
+  }
   function returnFactorFields(state) {
     let rows;try{rows=JSON.parse(state.fields.rows);}catch{return '';}
     if(!Array.isArray(rows)||rows.length!==1)return '';
     const label=createFeatureLabeler({factors:state.artifact.featureConstruction.factors,catalog:C.state?.catalog?.factors||[]});
     return `<div class="sq-form-grid">${state.artifact.inputSchema.map((x,index)=>{
       const d=inputDefinition(state.artifact,index),value=rows[0]?.[x.name];
-      return `<label class="sq-field"><span>${e(constructedFeatureLabel(label(x.name),d.construction.descriptor))} · R${index+1}</span><input type="number" step="any" data-mfe-factor="${e(x.name)}" value="${value==null?'':e(value)}" placeholder="未提供"><small>${e(d.construction.operations.join(' · '))}</small></label>`;
+      return `<div class="mfe-factor-input" data-mfe-input-column="${e(x.name)}"><label class="sq-field"><span>${e(constructedFeatureLabel(label(x.name),d.construction.descriptor))} · R${index+1}</span><input type="number" step="any" data-mfe-factor="${e(x.name)}" value="${value==null?'':e(value)}" placeholder="未提供"><small>${e(d.construction.operations.join(' · '))}</small></label>${evidenceFields(state,x.name)}</div>`;
     }).join('')}</div>`;
   }
   function returnView(state, eligible) {
-    const a=state.artifact,mode=state.fields.mode,scenario=mode==='future_scenario';
-    const modeControl=a.scope.studyMode==='association'?`<label class="sq-field"><span>输入时间口径</span><select data-mfe-input="mode"><option value="association" ${!scenario?'selected':''}>同期已观测输入</option><option value="future_scenario" ${scenario?'selected':''}>未来因子情景</option></select></label>`:`<span class="sq-status">当期已知输入 → 未来收益</span>`;
+    const a=state.artifact,mode=state.fields.mode,scenario=mode==='future_scenario',timed=a.schema==='atlas-model-function/5';
+    const modeControl=timed?'':a.scope.studyMode==='association'?`<label class="sq-field"><span>输入时间口径</span><select data-mfe-input="mode"><option value="association" ${!scenario?'selected':''}>同期已观测输入</option><option value="future_scenario" ${scenario?'selected':''}>未来因子情景</option></select></label>`:`<span class="sq-status">当期已知输入 → 未来收益</span>`;
     const norm=a.featureConstruction.targetSpecification.normalization.kind==='trailing_volatility';
-    return `<section class="mfe-editor" data-mfe-key="${state.key}"><h3>${e(a.scope.symbols[0])} · 修改与试算 F</h3><pre class="sq-model-equation">Fᵢ,ₕ(X) = ${e(modelFormula(a,0))}</pre><span>${e(returnTiming(a))}</span><dl class="sq-key-values"><dt>函数身份</dt><dd><code>${e(a.artifactId)}</code></dd><dt>训练截止</dt><dd>${e(a.training.informationCutoff)}</dd><dt>收益期限</dt><dd>${e(a.scope.horizonSessions)} 交易日</dd><dt>输出</dt><dd>${e(returnUnit(a))}</dd></dl>${state.error?F.note(state.error,'error'):''}${state.notice?F.note(state.notice):''}${renderFunctionInputs(C,F,a)}${parameters(state)}<div class="sq-actions">${F.button('mfe-download','下载当前版本 JSON',{small:true})}${F.button('mfe-resolve','核验函数来源',{small:true,disabled:!eligible||state.busy})}${F.button('mfe-library','已保存的函数版本',{small:true})}</div>${F.panel(scenario?'未来因子情景':'函数试算',modeControl+returnFactorFields(state)+F.advanced('多行输入 / JSON',field(state,'rows',scenario?'未来假设 R · 经济处理后的因子行':'已观测 R · 经济处理后的因子行','',true))+`<div class="sq-form-grid">${field(state,'originPrice',scenario?'情景起点价格':'起点价格 · 可选')}${norm?field(state,'originVolatility',scenario?'起点历史日波动率':'起点历史日波动率 · 还原收益时填写'):''}</div>`+F.note(scenario?'未来输入是明确的假设，输出仅是条件情景响应。':'R 按冻结定义构建；函数仅应用训练时保存的截尾、填充与缩放。')+F.button('mfe-evaluate',state.busy==='evaluate'?'正在试算…':'运行 F(X) 试算',{primary:true,disabled:!eligible||!!state.busy}))}${resultView(state)}${F.panel('保存独立的派生函数',field(state,'name','新函数名称')+F.button('mfe-derive','保存新的函数版本',{primary:true,disabled:!eligible||!!state.busy})+'<span class="sq-status warning">新版本 · 未验证</span>')}${state.saved?F.panel('已保存派生版本',`<code>${e(state.saved.ref.artifactId)}</code>${F.button('mfe-open-saved','打开这个函数版本',{id:state.saved.ref.functionId,artifact:state.saved.ref.artifactId,small:true})}`):''}${F.advanced('冻结输入与模型',raw(a))}</section>`;
+    return `<section class="mfe-editor" data-mfe-key="${state.key}"><h3>${e(a.scope.symbols[0])} · 修改与试算 F</h3><pre class="sq-model-equation">Fᵢ,ₕ(X) = ${e(modelFormula(a,0))}</pre><span>${e(returnTiming(a))}</span><dl class="sq-key-values"><dt>函数身份</dt><dd><code>${e(a.artifactId)}</code></dd><dt>训练截止</dt><dd>${e(a.training.informationCutoff)}</dd><dt>收益期限</dt><dd>${e(a.scope.horizonSessions)} 交易日</dd><dt>输出</dt><dd>${e(returnUnit(a))}</dd></dl>${state.error?F.note(state.error,'error'):''}${state.notice?F.note(state.notice):''}${renderFunctionInputs(C,F,a)}${parameters(state)}<div class="sq-actions">${F.button('mfe-download','下载当前版本 JSON',{small:true})}${F.button('mfe-resolve','核验函数来源',{small:true,disabled:!eligible||state.busy})}${F.button('mfe-library','已保存的函数版本',{small:true})}</div>${F.panel(scenario?'未来因子情景':'函数试算',modeControl+returnFactorFields(state)+F.advanced('多行输入 / JSON',field(state,'rows',timed?'R · 经济处理后的因子行':scenario?'未来假设 R · 经济处理后的因子行':'已观测 R · 经济处理后的因子行','',true)+(timed?field(state,'inputEvidence','逐输入来源 · 留空不核验','',true):''))+(timed?F.advanced('响应起点',field(state,'originDates','起点日期 t','YYYYMMDD 或逐行日期数组；未指定时不推断可用性。')):'')+`<div class="sq-form-grid">${field(state,'originPrice',scenario?'情景起点价格':'起点价格 · 可选')}${norm?field(state,'originVolatility',scenario?'起点历史日波动率':'起点历史日波动率 · 还原收益时填写'):''}</div>`+F.note(timed?'输入按每项所选的实测或假设来源求值；不会自动读取行情。':scenario?'未来输入是明确的假设，输出仅是条件情景响应。':'R 按冻结定义构建；函数仅应用训练时保存的截尾、填充与缩放。')+F.button('mfe-evaluate',state.busy==='evaluate'?'正在试算…':'运行 F(X) 试算',{primary:true,disabled:!eligible||!!state.busy}))}${resultView(state)}${F.panel('保存独立的派生函数',field(state,'name','新函数名称')+F.button('mfe-derive','保存新的函数版本',{primary:true,disabled:!eligible||!!state.busy})+'<span class="sq-status warning">新版本 · 未验证</span>')}${state.saved?F.panel('已保存派生版本',`<code>${e(state.saved.ref.artifactId)}</code>${F.button('mfe-open-saved','打开这个函数版本',{id:state.saved.ref.functionId,artifact:state.saved.ref.artifactId,small:true})}`):''}${F.advanced('冻结输入与模型',raw(a))}</section>`;
   }
   function render(fit, source, options = {}) {
     const a = fit?.functionArtifact;
     if (!a) return F.note('此拟合记录未保存可移植的 F 函数。不能从旧报告的摘要重建系数或假装导出函数。');
     if (!FUNCTION_SCHEMAS.includes(a.schema) || !hash(a.artifactId) || !Array.isArray(a.inputSchema) || !['constant','linear','basis_linear','histogram_trees'].includes(a.estimator?.kind)) return F.note('函数格式不受支持，未启用编辑。', 'error');
     const identity = JSON.stringify([a.artifactId, source, options.mode]);
-    if (current?.identity !== identity) current = { identity, key: ++sequence, source: structuredClone(source || {}), artifact: structuredClone(a), edits: new Map(), fields: { rows: JSON.stringify([Object.fromEntries(a.inputSchema.map(x => [x.name, null]))], null, 2), currentState: '', scale: '', originPrice:'',originVolatility:'',mode: options.mode || a.scope?.studyMode || 'forecast', name: '派生 F · ' + a.artifactId.slice(0, 10), output: isReturnFunction(a) ? '0' : '1', tree: '0', leaf: '', leafValue: '' }, inferenceRevision: 0, saveRevision: 0, busy: '', error: '', notice: '', result: null, saved: null, request: null };
+    if (current?.identity !== identity) current = { identity, key: ++sequence, source: structuredClone(source || {}), artifact: structuredClone(a), edits: new Map(), fields: { rows: JSON.stringify([Object.fromEntries(a.inputSchema.map(x => [x.name, null]))], null, 2), currentState: '', scale: '', originPrice:'',originVolatility:'',originDates:'',inputEvidence:a.schema==='atlas-model-function/5'?JSON.stringify([Object.fromEntries(a.inputSchema.map(x=>[x.name,{valueOrigin:'scenario_assumption',evaluationDate:null,availableAt:null}]))],null,2):'',mode: options.mode || a.scope?.studyMode || 'forecast', name: '派生 F · ' + a.artifactId.slice(0, 10), output: isReturnFunction(a) ? '0' : '1', tree: '0', leaf: '', leafValue: '' }, inferenceRevision: 0, saveRevision: 0, busy: '', error: '', notice: '', result: null, saved: null, request: null };
     return view(current);
   }
   function mounted(state) { return document.querySelector(`[data-mfe-key="${state.key}"]`); }
@@ -138,7 +169,20 @@ export function createModelFunctionEditor(C, F) {
   function onInput(el) {
     const state = current;
     if (!state || !el.closest?.(`[data-mfe-key="${state.key}"]`)) return;
-    if (el.dataset.mfeFactor) {
+    if (el.dataset.mfeEvidenceOrigin || el.dataset.mfeEvidenceDate) {
+      if(state.artifact.schema!=='atlas-model-function/5')return;
+      const name=el.dataset.mfeEvidenceOrigin||el.dataset.mfeEvidenceDate;
+      if(!state.artifact.inputSchema.some(x=>x.name===name))return;
+      let evidence;try{evidence=JSON.parse(state.fields.inputEvidence);}catch{}
+      if(!Array.isArray(evidence)||evidence.length!==1)evidence=[Object.fromEntries(state.artifact.inputSchema.map(x=>[x.name,{valueOrigin:'scenario_assumption',evaluationDate:null,availableAt:null}]))];
+      if(!evidence[0]||typeof evidence[0]!=='object'||Array.isArray(evidence[0]))evidence[0]={};
+      for(const field of state.artifact.inputSchema)if(!evidence[0][field.name]||typeof evidence[0][field.name]!=='object')evidence[0][field.name]={valueOrigin:'scenario_assumption',evaluationDate:null,availableAt:null};
+      if(el.dataset.mfeEvidenceOrigin)evidence[0][name].valueOrigin=el.value;
+      else if(['evaluationDate','availableAt'].includes(el.dataset.evidenceField))evidence[0][name][el.dataset.evidenceField]=el.value.trim().replaceAll('-','')||null;
+      state.fields.inputEvidence=JSON.stringify(evidence,null,2);state.inferenceRevision++;
+      const text=mounted(state)?.querySelector('[data-mfe-input="inputEvidence"]');if(text)text.value=state.fields.inputEvidence;
+      const stale=mounted(state)?.querySelector('[data-mfe-stale]');if(stale)stale.hidden=false;
+    } else if (el.dataset.mfeFactor) {
       let rows;try{rows=JSON.parse(state.fields.rows);}catch{return;}
       const key=el.dataset.mfeFactor;
       if (!isReturnFunction(state.artifact)||rows.length!==1||!state.artifact.inputSchema.some(x=>x.name===key))return;
@@ -149,11 +193,23 @@ export function createModelFunctionEditor(C, F) {
     else if (el.dataset.mfeInput) {
       const key = el.dataset.mfeInput, changed = state.fields[key] !== el.value;
       state.fields[key] = el.value;
-      if (changed && ['rows','currentState','scale','originPrice','originVolatility','mode'].includes(key)) state.inferenceRevision++;
+      if (changed && ['rows','currentState','scale','originPrice','originVolatility','originDates','inputEvidence','mode'].includes(key)) state.inferenceRevision++;
       if (changed && key === 'name') state.saveRevision++;
       if (changed && key === 'rows' && isReturnFunction(state.artifact)) {
         let rows;try{rows=JSON.parse(el.value);}catch{}
         for(const field of mounted(state)?.querySelectorAll('[data-mfe-factor]')||[]) {field.disabled=!Array.isArray(rows)||rows.length!==1;field.value=field.disabled?'':rows[0]?.[field.dataset.mfeFactor]??'';}
+      }
+      if (changed && ['rows','inputEvidence'].includes(key) && state.artifact.schema==='atlas-model-function/5') {
+        let evidence,rows;try{evidence=JSON.parse(state.fields.inputEvidence);}catch{}try{rows=JSON.parse(state.fields.rows);}catch{}
+        const single=Array.isArray(rows)&&rows.length===1;
+        for(const field of mounted(state)?.querySelectorAll('[data-mfe-evidence-origin],[data-mfe-evidence-date]')||[]) {
+          const name=field.dataset.mfeEvidenceOrigin||field.dataset.mfeEvidenceDate,source=Array.isArray(evidence)&&evidence.length===1?evidence[0]?.[name]:null;
+          field.disabled=!single;
+          if(field.dataset.mfeEvidenceOrigin){
+            if(!field.querySelector('option[value=""]'))field.insertAdjacentHTML('afterbegin','<option value="" disabled>未声明</option>');
+            field.value=source?.valueOrigin||'';
+          } else field.value=source?.[field.dataset.evidenceField]||'';
+        }
       }
     } else return;
     const stale = mounted(state)?.querySelector('[data-mfe-stale]');
@@ -234,7 +290,7 @@ export function createModelFunctionEditor(C, F) {
       if (endpoint === 'evaluate') {
         if (isReturnFunction(state.artifact)) {
           const r=response.result;
-          if (response.inferenceOnly!==true || response.newValidationPerformed!==false || !hash(r?.artifactId) || r.mode!==payload.input.mode || r.outputUnit!==state.artifact.outputs[0] || r.scenarioOnly!==(payload.input.mode==='future_scenario') || !Array.isArray(r.predictedResponse) || r.predictedResponse.length!==payload.input.rows.length || r.predictedResponse.some(x=>!Number.isFinite(x)) || ['simpleReturns','conditionalPrices'].some(key=>r[key]!==undefined&&(!Array.isArray(r[key])||r[key].length!==payload.input.rows.length||r[key].some(x=>!Number.isFinite(x))))) throw Error('收益试算结果或情景边界无效。');
+          if (response.inferenceOnly!==true || response.newValidationPerformed!==false || !hash(r?.artifactId) || r.outputUnit!==state.artifact.outputs[0] || (state.artifact.schema==='atlas-model-function/5' ? Object.hasOwn(r,'mode') || Object.hasOwn(r,'scenarioOnly') || r.inputEvidenceStatus!==(payload.input.inputEvidence?'caller_declared':'not_supplied') || !Array.isArray(r.availabilityClasses) || r.availabilityClasses.length!==payload.input.rows.length || r.availabilityClasses.some(x=>!['conditional_scenario','conditional_realized','availability_unverified','origin_known_declared'].includes(x)) : r.mode!==payload.input.mode || r.scenarioOnly!==(payload.input.mode==='future_scenario')) || !Array.isArray(r.predictedResponse) || r.predictedResponse.length!==payload.input.rows.length || r.predictedResponse.some(x=>!Number.isFinite(x)) || ['simpleReturns','conditionalPrices'].some(key=>r[key]!==undefined&&(!Array.isArray(r[key])||r[key].length!==payload.input.rows.length||r[key].some(x=>!Number.isFinite(x))))) throw Error('收益试算结果或情景边界无效。');
           if ((!edits.length&&r.artifactId!==state.artifact.artifactId)||(edits.length&&r.evidenceStatus!=='UNVALIDATED_USER_EDIT')) throw Error('试算函数身份不一致。');
         } else {
         if (response.inferenceOnly !== true || response.newValidationPerformed !== false || !hash(response.result?.artifactId) || !Array.isArray(response.result.levels) || response.result.levels.length !== payload.input.rows.length) throw Error('试算返回的结果或验证边界无效。');

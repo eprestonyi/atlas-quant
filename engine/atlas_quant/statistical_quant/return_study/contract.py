@@ -2,6 +2,7 @@
 from __future__ import annotations
 import ast
 import copy
+import re
 from ..schema import fail, number
 from ..typed_preprocessing import descriptor, field_quantity
 from ...factors import _parse
@@ -9,6 +10,8 @@ from ...context_sources import context_field
 
 SCHEMA = 'asset-return-study/1'
 FUNCTION_SCHEMA = 'atlas-model-function/4'
+COORDINATE_SCHEMA = 'asset-return-study/2'
+COORDINATE_FUNCTION_SCHEMA = 'atlas-model-function/5'
 PRICE_IDENTITY_FIELDS = {'open', 'high', 'low', 'close', 'raw_close', 'pe', 'pe_ttm', 'pb', 'ps', 'ps_ttm',
                          'total_mv', 'circ_mv', 'float_mv', 'dv_ratio', 'dv_ttm'}
 NORMALIZATION = {'kind': 'trailing_volatility', 'windowSessions': 20, 'ddof': 1,
@@ -17,6 +20,28 @@ NORMALIZATION = {'kind': 'trailing_volatility', 'windowSessions': 20, 'ddof': 1,
 
 def enabled(strategy):
     return isinstance(strategy, dict) and isinstance(strategy.get('research'), dict) and 'returnStudy' in strategy['research']
+
+
+def coordinates_enabled(strategy):
+    return strategy.get('research', {}).get('returnStudy', {}).get('schema') == COORDINATE_SCHEMA
+
+
+def protocol(strategy):
+    return COORDINATE_SCHEMA if coordinates_enabled(strategy) else SCHEMA
+
+
+def normalize_coordinates(factor):
+    """Instance identity is separate from the catalogue definition it came from."""
+    result = copy.deepcopy(factor)
+    base = result.setdefault('baseFactorId', result.get('id'))
+    if not isinstance(base, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', base):
+        fail('RETURN_FACTOR_IDENTITY', '因子来源 ID 无效')
+    timing = result.setdefault('timing', {'anchor': 'target_origin', 'offsetSessions': 0})
+    if (not isinstance(timing, dict) or set(timing) != {'anchor', 'offsetSessions'}
+            or timing.get('anchor') != 'target_origin'
+            or type(timing.get('offsetSessions')) is not int or not -252 <= timing['offsetSessions'] <= 252):
+        fail('RETURN_FACTOR_TIMING', '每个因子需要相对于响应起点的整数交易日偏移（−252 至 252）')
+    return result
 
 
 def target_contract(target):
@@ -63,7 +88,8 @@ def _own_reference(fields, symbols):
 
 
 def input_descriptors(strategy):
-    mode = strategy['research']['returnStudy']['mode']
+    coordinate = coordinates_enabled(strategy)
+    mode = None if coordinate else strategy['research']['returnStudy']['mode']
     horizon = strategy['target']['horizonSessions']
     overrides = strategy['preprocess']['automatic'].get('overrides', {})
     inputs = []
@@ -84,7 +110,12 @@ def input_descriptors(strategy):
             # as-of source prices already admitted on that research calendar.
             item['clock'] = 'research_sessions'
         item['aggregation'] = 'global_once' if item['scope'] == 'global' else 'asset_direct'
-        item['timing'] = {'kind': 'origin_known' if mode == 'forecast' else 'matched_period', 'horizonSessions': horizon}
+        if coordinate:
+            instance = normalize_coordinates(factor)
+            item['baseFactorId'] = instance['baseFactorId']
+            item['timing'] = {**instance['timing'], 'offsetClock': 'research_sessions'}
+        else:
+            item['timing'] = {'kind': 'origin_known' if mode == 'forecast' else 'matched_period', 'horizonSessions': horizon}
         inputs.append(item)
     return inputs
 
@@ -93,7 +124,9 @@ def validate(strategy, *, capacity_profile=None):
     from ..schema import validate as legacy_validate
     original = copy.deepcopy(strategy)
     study = original.get('research', {}).get('returnStudy')
-    if not isinstance(study, dict) or set(study) != {'schema', 'mode'} or study['schema'] != SCHEMA or study['mode'] not in ('forecast', 'association'):
+    coordinate = coordinates_enabled(original)
+    if not isinstance(study, dict) or (study != {'schema': COORDINATE_SCHEMA} if coordinate else
+            set(study) != {'schema', 'mode'} or study['schema'] != SCHEMA or study['mode'] not in ('forecast', 'association')):
         fail('RETURN_STUDY', '收益研究协议或研究时序无效')
     target = target_contract(original.get('target'))
     if original.get('model', {}).get('parameterSharing') != 'per_target':
@@ -107,12 +140,19 @@ def validate(strategy, *, capacity_profile=None):
     if not original.get('factors') or any(f.get('role', 'predictor') == 'hedge' for f in original['factors']):
         fail('RETURN_FACTOR_ROLE', '请明确选择至少一个非对冲输入因子')
     temporary = copy.deepcopy(original)
+    instances = None
+    if coordinate:
+        instances = [normalize_coordinates(factor) for factor in original['factors']]
+        temporary['factors'] = [{k: v for k, v in factor.items() if k not in {'baseFactorId', 'timing'}} for factor in instances]
     temporary['research'].pop('returnStudy')
     temporary['target'] = {'kind': 'asset_price', 'horizonSessions': min(target['horizonSessions'], 60)}
     # Other existing names/fields/PIT bindings retain their established rules.
     result = legacy_validate(temporary, capacity_profile=capacity_profile)
     result['research']['returnStudy'] = study
     result['target'] = target
+    if coordinate:
+        for factor, instance in zip(result['factors'], instances):
+            factor.update(baseFactorId=instance['baseFactorId'], timing=instance['timing'])
     input_descriptors(result)
     return result
 

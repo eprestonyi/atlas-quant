@@ -1,4 +1,5 @@
 /** Scalar return observations have no entry quote or execution edge. */
+import {coordinateKeys,validateReturnEvidence} from './return-evidence.mjs';
 const finite = x => typeof x === 'number' && Number.isFinite(x);
 const near = (a,b) => Math.abs(a-b) <= 1e-10*Math.max(1,Math.abs(a),Math.abs(b));
 const symbol = x => typeof x === 'string' && /^\d{6}\.(SH|SZ)$/.test(x);
@@ -8,16 +9,19 @@ function observedIdentity(row,fail) {
   if (finite(row.observedReturn) && finite(row.responseScale) && row.responseScale > 0 && !finite(row.observedResponse)) fail('已观测收益缺少标准化响应');
 }
 
-export function validateReturnRecord(row, fail) {
+export function validateReturnRecord(row, fail, evidenceContract = null) {
+  const timed = evidenceContract !== null;
   const date = x => typeof x === 'string' && /^\d{8}$/.test(x);
-  if (row.schema !== 'asset-return-observation/1' ||
+  if (row.schema !== (timed ? 'asset-return-observation/2' : 'asset-return-observation/1') ||
       !symbol(row.assetSymbol))
     fail('收益记录身份无效');
+  if (!timed && coordinateKeys.some(key => Object.hasOwn(row,key))) fail('旧收益记录不能混入新版时点证据');
   if (['expectedEntry', 'expectedFuture', 'expectedGrossPnl', 'entryDate'].some(k => Object.hasOwn(row, k)))
     fail('收益记录不得混入旧价格交易输出');
   for (const key of ['responseStartDate', 'responseEndDate', 'featureDate'])
     if (row[key] != null && !date(row[key])) fail('收益观察日期无效');
-  if (row.informationCutoff !== row.date+'_AFTER_CLOSE') fail('收益信息截止必须为观察日收盘后');
+  const cutoff = timed ? row.inputAvailableAt === null ? null : [row.date,row.inputAvailableAt].sort().at(-1)+'_AFTER_CLOSE' : row.date+'_AFTER_CLOSE';
+  if (row.informationCutoff !== cutoff) fail('收益信息截止与实际输入可用日不一致');
   if (row.featureDate !== row.date) fail('因子观察时点不一致');
   if (row.status === 'valid') {
     if (!row.modelFitId || row.targetId === 'unavailable') fail('收益输出缺少逐资产拟合身份');
@@ -36,16 +40,18 @@ export function validateReturnRecord(row, fail) {
   if (finite(row.observedResponse) && finite(row.predictedResponse)) {
     if (!finite(row.responseResidual) || !near(row.responseResidual,row.observedResponse-row.predictedResponse)) fail('收益残差与响应不一致');
   } else if (row.responseResidual != null) fail('没有响应与预测时不能声明残差');
+  const evidence = timed ? validateReturnEvidence(row,evidenceContract,fail) : {};
   return {
-    studyProtocol: 'asset-return-study/1', assetSymbol: row.assetSymbol,
+    studyProtocol: timed ? 'asset-return-study/2' : 'asset-return-study/1', assetSymbol: row.assetSymbol,...evidence,
     responseStartDate: row.responseStartDate ?? null,
     responseEndDate: row.responseEndDate ?? null,
   };
 }
 
-export function validateReturnPanelRecord(row, factorNames, fail) {
-  const expected = ['schema','date','targetId','assetSymbol','inputValid','invalidReason','featureDate','responseStartDate','responseEndDate','originPrice','responseScale','observedReturn','observedResponse','features'];
-  if (JSON.stringify(Object.keys(row).sort()) !== JSON.stringify(expected.sort()) || row.schema !== 'asset-return-panel-row/1' || !symbol(row.assetSymbol)) fail('收益面板记录字段或身份无效');
+export function validateReturnPanelRecord(row, factorNames, fail, evidenceContract = null) {
+  const timed = evidenceContract !== null;
+  const expected = ['schema','date','targetId','assetSymbol','inputValid','invalidReason','featureDate','responseStartDate','responseEndDate','originPrice','responseScale','observedReturn','observedResponse','features',...(timed ? coordinateKeys : [])];
+  if (JSON.stringify(Object.keys(row).sort()) !== JSON.stringify(expected.sort()) || row.schema !== (timed ? 'asset-return-panel-row/2' : 'asset-return-panel-row/1') || !symbol(row.assetSymbol)) fail('收益面板记录字段或身份无效');
   if (typeof row.inputValid !== 'boolean' || (row.inputValid ? row.invalidReason !== null : typeof row.invalidReason !== 'string' || !row.invalidReason || row.invalidReason.length > 100)) fail('收益面板有效性与原因不一致');
   if (row.featureDate !== row.date) fail('收益面板因子时点不一致');
   for (const key of ['date','featureDate','responseStartDate','responseEndDate']) {
@@ -62,5 +68,6 @@ export function validateReturnPanelRecord(row, factorNames, fail) {
   if (!features || typeof features !== 'object' || Array.isArray(features) || !Array.isArray(factorNames) || !factorNames.length || factorNames.length > 32 || new Set(factorNames).size !== factorNames.length || JSON.stringify(Object.keys(features).sort()) !== JSON.stringify([...factorNames].sort()) || Object.values(features).some(x => x !== null && !finite(x))) fail('收益面板必须保留全部所选因子的有限值或明确缺失');
   if (row.inputValid && !Object.values(features).some(finite)) fail('有效收益面板没有已观测因子');
   observedIdentity(row,fail);
-  return {assetSymbol:row.assetSymbol,responseStartDate:row.responseStartDate,responseEndDate:row.responseEndDate};
+  const evidence = timed ? validateReturnEvidence(row,evidenceContract,fail) : {};
+  return {assetSymbol:row.assetSymbol,responseStartDate:row.responseStartDate,responseEndDate:row.responseEndDate,...evidence};
 }

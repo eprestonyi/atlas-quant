@@ -1,7 +1,8 @@
 /** Numeric-only portable F(X). Shared by the browser and private Worker API. */
 import { validateMetadata } from './model-function-metadata.js';
+import {validateTimedReturnContext,timedReturnEvidence} from './model-function-timing.js';
 export const FUNCTION_SCHEMA = 'atlas-model-function/1';
-export const FUNCTION_SCHEMAS = Object.freeze([FUNCTION_SCHEMA, 'atlas-model-function/2', 'atlas-model-function/3', 'atlas-model-function/4']);
+export const FUNCTION_SCHEMAS = Object.freeze([FUNCTION_SCHEMA, 'atlas-model-function/2', 'atlas-model-function/3', 'atlas-model-function/4','atlas-model-function/5']);
 export const FUNCTION_HASH = 'sha256-canonical-f64-json/1';
 export const FUNCTION_LIMITS = Object.freeze({ bytes: 2 * 1024 * 1024, features: 128, terms: 1024, rows: 256, trees: 256, nodes: 255, operations: 2000000 });
 const OUTPUTS = ['entry_level_change_over_known_gross', 'exit_level_change_over_known_gross'];
@@ -83,7 +84,7 @@ export async function validateFunction(artifact) {
   try { text = JSON.stringify(artifact); } catch { throw new ModelFunctionError('函数仅支持无环的 JSON 值'); }
   require(new TextEncoder().encode(text).length <= FUNCTION_LIMITS.bytes, '函数超过大小预算');
   keys(artifact, ['schema', 'hashAlgorithm', 'artifactId', 'inputSchema', 'transforms', 'estimator', 'training', 'scope', 'outputs', 'identity', 'provenance', 'editPolicy', 'lineage', 'featureConstruction'], '函数');
-  const scalar = artifact.schema === 'atlas-model-function/4', outputCount = scalar ? 1 : 2;
+  const scalar = ['atlas-model-function/4','atlas-model-function/5'].includes(artifact.schema), outputCount = scalar ? 1 : 2;
   const validOutputs = scalar ? Array.isArray(artifact.outputs) && artifact.outputs.length === 1 && ['asset_return','volatility_standardized_asset_return'].includes(artifact.outputs[0]) : equal(artifact.outputs, OUTPUTS);
   require(FUNCTION_SCHEMAS.includes(artifact.schema) && artifact.hashAlgorithm === FUNCTION_HASH && validOutputs, '函数格式或输出版本不匹配');
   const {artifactId, ...content} = artifact;
@@ -155,6 +156,7 @@ export async function evaluateFunction(artifact, input) {
   require(object(input), '需要函数输入对象');
   const {rows, currentState, scale} = input;
   if (a.schema === 'atlas-model-function/4') validateReturnContext(a, input);
+  if (a.schema === 'atlas-model-function/5') validateTimedReturnContext(a,input,{require,keys,number});
   require(Array.isArray(rows) && rows.length <= FUNCTION_LIMITS.rows, '单次函数试算最多256行');
   const names = a.inputSchema.map(x => x.name), t = a.transforms, estimator = a.estimator;
   let operations = 0;
@@ -207,7 +209,7 @@ export async function evaluateFunction(artifact, input) {
     });
   });
   require(output.every(x => x.every(number)), '函数计算超出有限数值范围');
-  if (a.schema === 'atlas-model-function/4') return returnResult(a, input, output.map(x => x[0]));
+  if (['atlas-model-function/4','atlas-model-function/5'].includes(a.schema)) return returnResult(a, input, output.map(x => x[0]));
   const result = {artifactId: a.artifactId, normalizedChanges: output, evidenceStatus: a.lineage.status};
   require((currentState === undefined) === (scale === undefined), '当前状态与尺度必须一起提供');
   if (currentState !== undefined) {
@@ -235,7 +237,8 @@ function validateReturnContext(a, input) {
 function returnResult(a, input, predictedResponse) {
   const {rows, mode, originPrice, originVolatility} = input;
   const normalization = a.featureConstruction.targetSpecification.normalization;
-  const result = {artifactId:a.artifactId, predictedResponse, outputUnit:a.outputs[0], mode, evidenceStatus:a.lineage.status, scenarioOnly:mode === 'future_scenario'};
+  const result = {artifactId:a.artifactId, predictedResponse, outputUnit:a.outputs[0], evidenceStatus:a.lineage.status,
+    ...(a.schema === 'atlas-model-function/5' ? timedReturnEvidence(input) : {mode,scenarioOnly:mode === 'future_scenario'})};
   if (originPrice !== undefined) {
     vector(originPrice,rows.length,'起点价格'); require(originPrice.every(x => x > 0),'起点价格须为正');
   }

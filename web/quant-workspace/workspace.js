@@ -1,5 +1,6 @@
 import {returnFactorDescriptors} from '../asset-return-factor-contract.js';
-import { enableReturnStudy, isReturnStudy, leaveReturnStudy, RETURN_MODES, returnUnit, returnTiming, volatilityNormalization } from './return-study.js';
+import { enableReturnStudy, isReturnStudy, leaveReturnStudy, RETURN_MODES, returnUnit, returnTiming, returnStudyLabel, volatilityNormalization } from './return-study.js';
+import { isFactorTimeStudy, createFactorInstance, duplicateFactorInstance, factorOffset, factorTimeLabel } from './factor-time.js';
 import { typedFactorDescriptor } from '../factor-preprocess-semantics.js';
 import { LATEST_AUTOMATIC_FACTOR_SCHEMA, ECONOMIC_TRANSFORMS, ECONOMIC_TRANSFORM_LABELS } from '../factor-preprocess-contract.js';
 import { financialProfile, datasetLocation } from './datasets/protocol.js';
@@ -184,7 +185,7 @@ window.AtlasQuantV4 = {
     function summary() {
       if (legacy() || !isStudio()) return '';
       const st = s.strategy;
-      return `<aside class="sq-summary"><details ${ui.summaryOpen ? 'open' : ''} id="sq-summary"><summary>当前研究协议 <span>${st.universe.symbols.length} 标的 · ${st.factors.length} 因子</span>${i('sliders')}</summary><div><span class="sq-kicker">CONFIGURATION SNAPSHOT</span><h3>${e(st.name)}</h3><dl><dt>研究范围</dt><dd>${st.universe.symbols.length} 个筛选成员</dd><dt>目标</dt><dd>${targetLabel()}</dd><dt>预测期限</dt><dd>${e(st.target.horizonSessions)} 个交易日</dd><dt>模型族</dt><dd>${e(isReturnStudy(st) ? RETURN_MODES[st.research.returnStudy.mode] : FAMILIES[st.model.family]?.name || st.model.family)}</dd><dt>拟合方式</dt><dd>${!isStudio() && !boundDataset() ? '系统按时间验证选择' : e(ESTIMATORS[st.model.estimator] || st.model.estimator)}</dd><dt>观察 / 重拟合</dt><dd>${st.research.observationDays} / ${st.model.refitDays} 日</dd><dt>研究类型</dt><dd>因子模型研究</dd><dt>数据</dt><dd>${e(sourceLabel())}</dd></dl><div class="sq-summary-equation">${isReturnStudy(st) ? `ŷᵢ = Fᵢ,ₕ(X)<br><small>${e(returnTiming(st))}</small>` : "V̂ = F<sub>h</sub>(X<sub>t</sub>)<br><small>e = 当前状态 − 预期未来状态</small>"}</div>${button('save', '保存研究', { icon: 'save', disabled: s.saving })}</div></details></aside>`;
+      return `<aside class="sq-summary"><details ${ui.summaryOpen ? 'open' : ''} id="sq-summary"><summary>当前研究协议 <span>${st.universe.symbols.length} 标的 · ${st.factors.length} 因子</span>${i('sliders')}</summary><div><span class="sq-kicker">CONFIGURATION SNAPSHOT</span><h3>${e(st.name)}</h3><dl><dt>研究范围</dt><dd>${st.universe.symbols.length} 个筛选成员</dd><dt>目标</dt><dd>${targetLabel()}</dd><dt>预测期限</dt><dd>${e(st.target.horizonSessions)} 个交易日</dd><dt>模型族</dt><dd>${e(isReturnStudy(st) ? returnStudyLabel(st) : FAMILIES[st.model.family]?.name || st.model.family)}</dd><dt>拟合方式</dt><dd>${!isStudio() && !boundDataset() ? '系统按时间验证选择' : e(ESTIMATORS[st.model.estimator] || st.model.estimator)}</dd><dt>观察 / 重拟合</dt><dd>${st.research.observationDays} / ${st.model.refitDays} 日</dd><dt>研究类型</dt><dd>因子模型研究</dd><dt>数据</dt><dd>${e(sourceLabel())}</dd></dl><div class="sq-summary-equation">${isReturnStudy(st) ? `ŷᵢ = Fᵢ,ₕ(X)<br><small>${e(returnTiming(st))}</small>` : "V̂ = F<sub>h</sub>(X<sub>t</sub>)<br><small>e = 当前状态 − 预期未来状态</small>"}</div>${button('save', '保存研究', { icon: 'save', disabled: s.saving })}</div></details></aside>`;
     }
     function frame(body) {
       return `<div class="sq-shell">${sidebar()}<main class="sq-main" id="main-content" tabindex="-1">${topbar()}${['modes','statistical','strategies','instruments','monitor'].includes(s.quantStep) || s.view === 'dashboard' ? '' : ['financial', 'datasets'].includes(s.quantStep) ? '<div class="sq-mobile-step"><a href="#quant/studio/financial">财务输入列表</a><a href="#quant/studio/state">返回研究</a></div>' : `<div class="sq-mobile-step"><label for="sq-step-picker">研究步骤</label><select id="sq-step-picker">${STEPS.map((x, n) => `<option value="${x.id}" ${step() === x.id ? 'selected' : ''}>${n + 1}. ${x.name}</option>`).join('')}</select><a href="#quant/researches">研究列表</a></div>`}<div class="sq-content">${s.error ? note(s.error, 'error') + '<button class="sq-button small" data-action="refresh">重新连接服务</button>' : ''}${ui.errors.length ? note(ui.errors.join('；'), 'warning') + button('workspace-retry', '重新读取工作区', { small: true }) : ''}${body}</div><footer class="sq-footer"><span>ATLAS QUANT · OPEN RESEARCH</span><span>预测有据 · 目标固定 · 执行可核对</span></footer></main></div>`;
@@ -303,22 +304,31 @@ window.AtlasQuantV4 = {
     }
     function selectedFactorLabel(factor) {
       const automatic = s.strategy.preprocess?.automatic;
-      const display = { ...factor, name: C.findFactor(factor.id)?.name || factor.name || factor.id };
+      const catalogFactor = C.findFactor(factor.baseFactorId || factor.id);
+      const matchesCatalog = catalogFactor?.expression === factor.expression && (factor.version === undefined || catalogFactor.version === factor.version);
+      const display = { ...factor, name: factor.name || (matchesCatalog ? catalogFactor.name : factor.expression) || factor.baseFactorId || factor.id };
       if (automatic?.schema === LATEST_AUTOMATIC_FACTOR_SCHEMA && factor.role !== 'hedge') {
         try { display.automaticProcessing = { schema: automatic.schema, descriptor: isReturnStudy(s.strategy) ? returnFactorDescriptors({...s.strategy,factors:[factor]})[0] : typedFactorDescriptor(factor, automatic.overrides?.[factor.id]) }; }
         catch { /* The step guard displays the actionable error. */ }
       }
-      return automaticFactorLabel(display, factor.role === 'hedge' ? false : automatic?.schema);
+      return automaticFactorLabel(display, factor.role === 'hedge' ? false : automatic?.schema) + (isFactorTimeStudy(s.strategy) ? ' ' + factorTimeLabel(factor) : '');
     }
     function factorTransformControl(factor) {
       if (!isStudio() || factor.role === 'hedge' || s.strategy.preprocess?.automatic?.schema !== LATEST_AUTOMATIC_FACTOR_SCHEMA) return '';
       const selected = s.strategy.preprocess.automatic.overrides?.[factor.id]?.transform?.kind || '';
       return `<label class="sq-field"><span>经济变换</span><select data-sq-factor-transform="${e(factor.id)}"><option value="">自动 · 按经济类型</option>${Object.entries(ECONOMIC_TRANSFORM_LABELS).map(([kind,label]) => `<option value="${e(kind)}" ${kind === selected ? 'selected' : ''}>${e(label)}</option>`).join('')}</select></label>`;
     }
+    function factorTimeControl(factor) {
+      if (!isFactorTimeStudy(s.strategy)) return '';
+      const offset = factorOffset(factor), mode = offset < 0 ? 'past' : offset > 0 ? 'future' : 'current';
+      const label = selectedFactorLabel(factor);
+      const chip = `<div class="sq-factor-time"><label><span class="sr-only">${e(label)} 的时点</span><select data-sq-factor-time="${e(factor.id)}">${[['current','当期'],['past','过去'],['future','未来']].map(([key,name])=>`<option value="${key}" ${mode === key ? 'selected' : ''}>${name}</option>`).join('')}</select></label>${mode !== 'current' ? `<label class="sq-factor-time-distance"><span class="sr-only">${e(label)} 的偏移交易日</span><input type="number" min="1" max="252" step="1" required data-sq-factor-time-distance="${e(factor.id)}" value="${e(Math.abs(offset))}"><span>交易日</span></label>` : ''}</div>`;
+      return chip + (isStudio() ? `<details class="sq-factor-construction" data-sq-details="factor-construction-${e(factor.id)}"><summary>精确构造</summary><label class="sq-field"><span>因子表达式 / 观察窗</span><input data-sq-factor-expression="${e(factor.id)}" value="${e(factor.expression)}" spellcheck="false"></label><label class="sq-field"><span>相对 t 的交易日偏移</span><input type="number" required min="-252" max="252" step="1" data-sq-factor-offset="${e(factor.id)}" value="${e(offset)}"></label><code>${e(factor.id)}</code></details>` : '');
+    }
     function statePage() {
       if (boundDataset()) return panel('因子库', `<div class="ds-members">${s.datasetBinding.selectedStateIds.map((id) => `<label class="fin-checkbox"><input type="checkbox" data-sq-dataset-state="${e(id)}" ${s.strategy.factors.some((f) => f.expression === id) ? 'checked' : ''}>${e(s.datasetBinding.stateDefinitions?.find((x) => x.id === id)?.name || s.strategy.factors.find((f) => f.id === id)?.name || id)}</label>`).join('')}</div>`);
       const factors = s.strategy.factors;
-      const selected = `<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>${isReturnStudy(s.strategy) ? '共享因子集合' : '已选因子'} <span>${factors.length} / 32</span></h2></div>${factors.map((f) => `<article class="sq-selected-factor"><span class="sq-drag-grip">⠿</span><div><strong>${e(selectedFactorLabel(f))}</strong>${isStudio() ? `<code>${e(f.expression)}</code>` : ''}</div>${isStudio() ? `<label><span class="sr-only">${e(C.findFactor(f.id)?.name || f.id)} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>预测因子</option>${isReturnStudy(s.strategy) ? '' : `<option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>对冲暴露</option>`}<option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入</option></select></label>` : ''}${factorTransformControl(f)}${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + (C.findFactor(f.id)?.name || f.id) })}</article>`).join('')}<div class="sq-drop-caption">${i('plus')}拖入因子</div></div>`;
+      const selected = `<div class="sq-selected-factors" data-sq-drop="state" data-v2-drop="recipe"><div class="sq-section-heading"><h2>${isReturnStudy(s.strategy) ? '共享因子集合' : '已选因子'} <span>${factors.length} / 32</span></h2></div>${factors.map((f) => `<article class="sq-selected-factor" data-factor-instance="${e(f.id)}"><span class="sq-drag-grip">⠿</span><div class="sq-factor-title"><strong>${e(selectedFactorLabel(f))}</strong>${isStudio() ? `<code>${e(f.expression)}</code>` : ''}</div>${isStudio() ? `<label><span class="sr-only">${e(selectedFactorLabel(f))} 的因子角色</span><select data-sq-factor-role="${e(f.id)}"><option value="predictor" ${(f.role || 'predictor') === 'predictor' ? 'selected' : ''}>输入因子</option>${isReturnStudy(s.strategy) ? '' : `<option value="hedge" ${f.role === 'hedge' ? 'selected' : ''}>对冲暴露</option>`}<option value="event" ${f.role === 'event' ? 'selected' : ''}>事件输入</option></select></label>` : ''}${factorTimeControl(f)}${factorTransformControl(f)}${isFactorTimeStudy(s.strategy) ? button('duplicate-factor-time', '＋ 时间版本', { small: true, id: f.id, ariaLabel: '复制时间版本 ' + selectedFactorLabel(f), disabled: factors.length >= 32 }) : ''}${button('remove-factor', '移除', { icon: 'close', small: true, id: f.id, ariaLabel: '移除 ' + selectedFactorLabel(f) })}</article>`).join('')}<div class="sq-drop-caption">${i('plus')}拖入因子</div></div>`;
       const tabs = [['catalog', '因子库'], ['industries', '行业 / ETF'], ['builder', '构建因子'], ...(isStudio() ? [['modules', '状态模块'], ['fields', '数据库字段']] : [])];
       const active = tabs.some(([id]) => id === ui.featureTab) ? ui.featureTab : 'catalog';
       const library = active === 'industries' ? industryBrowser.view() : active === 'modules' ? catalog.view('state') : `<div class="sq-legacy sq-factor-library">${active === 'builder' ? C.legacy.builder({ compact: true }) : active === 'fields' ? C.legacy.fieldBrowser() : C.legacy.catalogBrowser({ compact: true })}</div>`;
@@ -364,7 +374,9 @@ window.AtlasQuantV4 = {
       return panel('篮子定义', `${select('构造方法', 'target.basket.method', { pair_ols: '两腿价格 OLS 配对', pca_residual: 'PCA 投影状态篮子', fixed: '固定数量' })}<div class="sq-basket-heading"><span>篮子成员</span><strong>${(b.symbols || []).length}${b.method === 'pair_ols' ? ' / 2' : ' / 20'}</strong></div><div class="sq-basket-members">${s.strategy.universe.symbols.map((code) => `<label><input type="checkbox" data-sq-basket-symbol="${e(code)}" ${(b.symbols || []).includes(code) ? 'checked' : ''}><span>${e(code)}</span>${b.method === 'fixed' ? `<input type="number" data-sq-quantity="${e(code)}" aria-label="${e(code)} 固定数量" value="${e(b.quantities?.[code] ?? '')}" min="-1000000" max="1000000" step="any" ${(b.symbols || []).includes(code) ? '' : 'disabled'}>` : ''}</label>`).join('') || '<span>暂无筛选成员</span>'}</div><div class="sq-form-grid">${b.method !== 'fixed' ? input('形成窗口', 'target.basket.formationDays', { min: 60, max: 504, unit: '交易日' }) : ''}${b.method === 'pca_residual' ? input('主成分数量', 'target.basket.components', { min: 1, max: Math.min(10, Math.max(1, (b.symbols || []).length - 2)) }) : ''}</div>`);
     }
     function modelPage() {
-      const returnModes = `<div class="sq-choice-grid">${Object.entries(RETURN_MODES).map(([id,name]) => `<button class="sq-choice ${s.strategy.research.returnStudy?.mode === id ? 'selected' : ''}" data-sq="return-mode" data-id="${id}" aria-pressed="${s.strategy.research.returnStudy?.mode === id}"><strong>${e(name)}</strong></button>`).join('')}</div>`;
+      const returnModes = isFactorTimeStudy(s.strategy)
+        ? '<div class="sq-model-placeholder sq-unified-equation"><span>yᵢ,t→t+h = Fᵢ(X₁,t+k₁, …, Xₙ,t+kₙ)</span></div>'
+        : `<div class="sq-data-binding"><span>${e(returnStudyLabel(s.strategy))} · 原保存协议</span>${button('copy-unified-study', '复制为统一方程', {small:true})}</div>`;
       const mechanisms = isReturnStudy(s.strategy) ? returnModes : boundDataset()
         ? `<div class="sq-family-grid"><button class="sq-family selected" type="button" aria-pressed="true" disabled><span>${i('model')}</span><strong>${e(FAMILIES[s.strategy.model.family]?.name || '基本面条件预测')}</strong></button></div>`
         : `<div class="sq-family-grid">${Object.entries(FAMILIES).map(([id, x]) => {
@@ -374,7 +386,7 @@ window.AtlasQuantV4 = {
       const data = boundDataset()
         ? `<div class="sq-data-binding"><span>${e(sourceLabel())}</span><a class="sq-button small" href="${e(datasetLocation(s.datasetBinding.datasetRef)?.page || '#quant/studio/datasets/source')}">查看数据</a></div>`
         : `<div class="sq-legacy">${C.legacy.flow.sourceControls({ compact: true })}</div>`;
-      return panel('研究机制', mechanisms + (isReturnStudy(s.strategy) ? `<div class="sq-actions">${button('legacy-pair-study','配对相对价值研究',{small:true})}</div>` : !boundDataset() ? `<div class="sq-actions">${button('return-mode','逐资产收益研究',{id:'forecast',small:true})}</div>` : '')) + targetPage() +
+      return panel('研究机制', mechanisms + (isReturnStudy(s.strategy) ? `<div class="sq-actions">${button('legacy-pair-study','配对相对价值研究',{small:true})}</div>` : !boundDataset() ? `<div class="sq-actions">${button('copy-unified-study','逐资产因子方程',{small:true})}</div>` : '')) + targetPage() +
         panel('数据', data) +
         (!boundDataset() && ['tushare', 'ready_market'].includes(s.dataSource) ? advanced('数据准备', market.view()) : '') +
         (isStudio() ? advanced('模型设置', `<div class="sq-form-grid">${select('函数估计方式', 'model.estimator', ESTIMATORS)}${input('最少训练日期', 'validation.minTrainDates', { min: 40, max: 252 })}${input('内层时间折数', 'validation.innerFolds', { min: 2, max: 3 })}${input('外层时间折数', 'validation.outerFolds', { min: 2, max: 3 })}</div>`) + advanced('跨数据库时点映射', C.legacy.mappingEditor()) : '');
@@ -386,7 +398,7 @@ window.AtlasQuantV4 = {
         dataset: s.dataset,
         session: s.session,
       });
-      return `${ui.runError ? panel('运行准入未通过', note(ui.runError, 'error')) : ''}${panel('F 模型', `${errors.length ? errors.map((x) => note(x, 'warning')).join('') : ''}<div class="sq-model-placeholder"><span>F<sub>h</sub>(X)</span><strong>尚未拟合</strong></div><dl class="fin-summary"><dt>研究机制</dt><dd>${e(isReturnStudy(s.strategy) ? RETURN_MODES[s.strategy.research.returnStudy.mode] : FAMILIES[s.strategy.model.family]?.name)}</dd><dt>范围</dt><dd>${s.strategy.universe.symbols.length} 个成员 · ${s.strategy.factors.length} 个因子</dd><dt>目标</dt><dd>${targetLabel()} · ${s.strategy.target.horizonSessions} 交易日</dd><dt>数据</dt><dd>${e(sourceLabel())}</dd></dl><div class="sq-actions">${button('save', '保存版本', { icon: 'save' })}${button('export', '导出配置', { icon: 'download' })}${ui.activeId ? button('experiment-detail', '已生成的模型与报告', { id: ui.activeId, icon: 'clock' }) : ''}</div>`)}`;
+      return `${ui.runError ? panel('运行准入未通过', note(ui.runError, 'error')) : ''}${panel('F 模型', `${errors.length ? errors.map((x) => note(x, 'warning')).join('') : ''}<div class="sq-model-placeholder"><span>F<sub>h</sub>(X)</span><strong>尚未拟合</strong></div><dl class="fin-summary"><dt>研究机制</dt><dd>${e(isReturnStudy(s.strategy) ? returnStudyLabel(s.strategy) : FAMILIES[s.strategy.model.family]?.name)}</dd><dt>范围</dt><dd>${s.strategy.universe.symbols.length} 个成员 · ${s.strategy.factors.length} 个因子</dd><dt>目标</dt><dd>${targetLabel()} · ${s.strategy.target.horizonSessions} 交易日</dd><dt>数据</dt><dd>${e(sourceLabel())}</dd></dl><div class="sq-actions">${button('save', '保存版本', { icon: 'save' })}${button('export', '导出配置', { icon: 'download' })}${ui.activeId ? button('experiment-detail', '已生成的模型与报告', { id: ui.activeId, icon: 'clock' }) : ''}</div>`)}`;
     }
     function latestRunStatus(item) {
       if (!Object.hasOwn(item, 'latestRun'))
@@ -937,7 +949,7 @@ window.AtlasQuantV4 = {
       if (item.patchSemantics === 'append_factors') {
         const incoming = patch.factors || [],
           ids = new Set(s.strategy.factors.map((x) => x.id));
-        const unique = incoming.filter((x) => !ids.has(x.id));
+        const unique = isFactorTimeStudy(s.strategy) ? incoming.map(x => createFactorInstance(x)) : incoming.filter((x) => !ids.has(x.id));
         if (s.strategy.factors.length + unique.length > 32)
           throw Error('最多 32 个因子。');
         s.strategy.factors.push(...clone(unique));
@@ -1003,6 +1015,26 @@ window.AtlasQuantV4 = {
         persistDraft();
         location.hash = route('universe');
         render();
+      }
+      if (action === 'copy-unified-study') {
+        const copy = structuredClone(s.strategy), previousFactors = copy.factors;
+        const previousOverrides = copy.preprocess?.automatic?.overrides || {};
+        enableReturnStudy(copy);
+        copy.factors = previousFactors.map(f => createFactorInstance(f));
+        if (copy.preprocess.automatic.overrides) {
+          copy.preprocess.automatic.overrides = Object.fromEntries(copy.factors.flatMap((f,index) => {
+            const old = previousFactors[index];
+            return previousOverrides[old.id] ? [[f.id, structuredClone(previousOverrides[old.id])]] : [];
+          }));
+        }
+        copy.name = (copy.name.slice(0, 65) + ' · 统一方程');
+        s.strategy = copy; s.strategyId = null; s.strategyVersion = null;
+        ui.activeId = null; ui.activeVersion = null; ui.firstDraft = false; ui.runError = ''; ui.pageErrors = [];
+        persistDraft(); location.hash = route('state'); render();
+        toast('已复制为新研究。各因子设为当期，请核对时点与观察窗。');
+      }
+      if (action === 'duplicate-factor-time') {
+        duplicateFactorInstance(s.strategy, id); persistDraft(); render();
       }
       if (action === 'restore-legacy-draft') {
         const saved = JSON.parse(
@@ -1074,6 +1106,7 @@ window.AtlasQuantV4 = {
         render();
       }
       if (action === 'return-mode') {
+        if (isFactorTimeStudy(s.strategy)) return;
         if (isReturnStudy(s.strategy)) s.strategy.research.returnStudy.mode = id;
         else enableReturnStudy(s.strategy,id);
         ui.pageErrors = []; persistDraft(); render();
@@ -1179,8 +1212,42 @@ window.AtlasQuantV4 = {
       setPath(s.strategy, path, value);
       persistDraft();
     }
+    function commitFactorTime(element, change = false) {
+      if (!isFactorTimeStudy(s.strategy)) return false;
+      const id = element.dataset.sqFactorTime || element.dataset.sqFactorTimeDistance || element.dataset.sqFactorOffset || element.dataset.sqFactorExpression;
+      const factor = s.strategy.factors.find(f => f.id === id);
+      if (!factor) return false;
+      const article = element.closest('[data-factor-instance]');
+      if (element.dataset.sqFactorExpression) factor.expression = element.value;
+      else {
+        const current = factorOffset(factor), value = element.value.trim() === '' ? null : Number(element.value);
+        // A number input emits an empty input event while replacing its text.
+        // Preserve the visible past/future choice rather than losing its sign.
+        const mode = article?.querySelector('[data-sq-factor-time]')?.value;
+        const offset = element.dataset.sqFactorTime ? element.value === 'current' ? 0 : (element.value === 'past' ? -1 : 1) * (Math.abs(current) || 1)
+          : element.dataset.sqFactorTimeDistance ? value === null ? null : (mode === 'past' ? -1 : 1) * value : value;
+        factor.timing = {anchor:'target_origin',offsetSessions:offset};
+      }
+      persistDraft();
+      // Save reads state, so input events must commit before blur/change. Do not
+      // replace the whole page on numeric blur: it would detach a clicked Save.
+      if (change && element.dataset.sqFactorTime) render();
+      else if (article) {
+        article.querySelector('.sq-factor-title strong').textContent = selectedFactorLabel(factor);
+        const expression = article.querySelector('.sq-factor-title code');
+        if (expression) expression.textContent = factor.expression;
+        if (element.dataset.sqFactorOffset && Number.isInteger(factorOffset(factor))) {
+          const template = document.createElement('template');template.innerHTML = factorTimeControl(factor);
+          article.querySelector('.sq-factor-time').replaceWith(template.content.querySelector('.sq-factor-time'));
+        }
+        const precision = article.querySelector('[data-sq-factor-offset]');
+        if (precision && precision !== element) precision.value = factorOffset(factor) ?? '';
+      }
+      return true;
+    }
     let recipeTimer;
     function onInput(element) {
+      if (commitFactorTime(element)) return;
       if (element.id === 'sq-recipe-search') {
         ui.recipeQuery = element.value;
         ui.recipePage = 1;
@@ -1203,6 +1270,7 @@ window.AtlasQuantV4 = {
       }
     }
     function onChange(element) {
+      if (commitFactorTime(element, true)) return;
       if (industryBrowser.onChange(element)) return;
       if (market.onChange(element)) return;
       if (element.id === 'sq-compare-kind') {

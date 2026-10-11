@@ -2,7 +2,7 @@ import { validateAutomaticFactorConfig, validEconomicTransform, ECONOMIC_TYPES }
 import { validateReturnMetadata } from './model-function-return-metadata.js';
 /** Strict metadata contract shared with statistical_quant/model_function.py. */
 export function validateMetadata(a, {require: ok, keys, number, equal}) {
-  if (a.schema === 'atlas-model-function/4') {
+  if (['atlas-model-function/4','atlas-model-function/5'].includes(a.schema)) {
     validateReturnMetadata(a, {require:ok,keys,number,equal});
     validateCommonMetadata(a, {require:ok,keys,number,equal});
     return;

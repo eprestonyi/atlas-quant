@@ -50,12 +50,30 @@ def audit(envelope, source=None):
         max_error = max(max_error, difference)
         checks += 1
 
+    def require(condition, message):
+        assert condition, message
+
+    coordinates = None
+    if artifact.get('studyProtocol') == 'asset-return-study/2':
+        from return_study_audit import coordinate_contract, check_return_coordinates, check_return_fit, COORDINATE_KEYS
+        panel = artifact['factorResearch']['panel']
+        assert panel['schema'] == 'asset-return-panel/2' and panel['complete'] is True
+        coordinates = coordinate_contract(result['strategy'], panel['dates'])
+        panel_rows = {(r['date'], r['targetId']): r for r in panel['rows']}
+        assert len(panel_rows) == panel['rowCount'] == len(panel['dates'])*len(panel['symbols'])
+        for row in panel['rows']:
+            check_return_coordinates(row, coordinates, require)
+        for fit in artifact['modelFits']:
+            check_return_fit(fit, require,result['strategy'])
+
     for row in rows:
-        if artifact.get('studyProtocol') == 'asset-return-study/1':
+        if artifact.get('studyProtocol') in {'asset-return-study/1', 'asset-return-study/2'}:
             from return_study_audit import check_return_row
-            def require(condition, message):
-                assert condition, message
             check_return_row(row, result['strategy'], near, require)
+            if coordinates:
+                check_return_coordinates(row, coordinates, require)
+                panel_row = panel_rows[(row['date'], row['targetId'])]
+                assert all(row[key] == panel_row[key] for key in COORDINATE_KEYS), 'Observation/panel evidence differs'
             continue
         if row["status"] != "valid":
             continue

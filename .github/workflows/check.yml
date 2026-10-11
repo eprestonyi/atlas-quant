@@ -44,6 +44,8 @@ jobs:
       - run: node web/tests/model-report-first-dom.mjs
       - run: node web/tests/model-search-report-dom.mjs
       - run: node web/tests/asset-return-dom.mjs
+      - run: node web/tests/factor-time-dom.mjs
+      - run: node web/tests/factor-time-report-dom.mjs
       - run: node web/tests/industry-browser-dom.mjs
       - run: node web/tests/context-source-view-dom.mjs
       - run: node web/tests/financial-workspace-dom.mjs

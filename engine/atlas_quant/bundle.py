@@ -497,7 +497,11 @@ class BundleReader:
                 seen.add(key)
             return seen
         targets, fits = ids("targets"), ids("modelFits")
-        is_return = forecast_meta.get("studyProtocol") == "asset-return-study/1"
+        return_protocol = forecast_meta.get('studyProtocol')
+        is_return = return_protocol in {'asset-return-study/1', 'asset-return-study/2'}
+        timed = return_protocol == 'asset-return-study/2'
+        if return_protocol is not None and not is_return:
+            fail('BUNDLE_COVERAGE', '未知收益研究协议。')
         if is_return:
             strategy = forecast_meta["sourceStrategy"]
             target_records = {row['id']: row for row in self.rows('targets')}
@@ -505,24 +509,46 @@ class BundleReader:
             panel = forecast_meta.get("factorResearch", {}).get("panel", {})
             symbols = strategy["universe"]["symbols"]
             days = panel.get("dates", [])
-            if (strategy.get('research', {}).get('returnStudy', {}).get('schema') != 'asset-return-study/1'
-                    or coverage.get('studyProtocol') != 'asset-return-study/1'
-                    or panel.get("schema") != "asset-return-panel/1" or panel.get("complete") is not True
+            if (strategy.get('research', {}).get('returnStudy', {}).get('schema') != return_protocol
+                    or coverage.get('studyProtocol') != return_protocol
+                    or panel.get("schema") != ('asset-return-panel/2' if timed else 'asset-return-panel/1') or panel.get("complete") is not True
                     or not days or days != sorted(set(days))
                     or sorted(panel.get("symbols", [])) != sorted(symbols)
                     or len(targets) != len(symbols)
                     or self.collections.get("researchPanel", {}).get("rowCount") != len(days)*len(symbols)
                     or panel.get("rowCount") != len(days)*len(symbols)):
                 fail("BUNDLE_COVERAGE", "收益研究缺少完整的日期与资产面板。")
+            if timed:
+                from .bundle_return import COORDINATE_KEYS, evidence_contract, verify_coordinate_row, verify_coordinate_fit
+                if strategy['research']['returnStudy'] != {'schema': 'asset-return-study/2'} or len(days)*len(symbols)*len(strategy['factors']) > 500000:
+                    fail('BUNDLE_COVERAGE', '时移研究协议或逐输入证据预算不一致。')
+                if strategy != document_skeleton(self.manifest, 'report').get('strategy'):
+                    fail('BUNDLE_COVERAGE', '时移研究来源声明与报告不一致。')
+                for target in target_records.values():
+                    if (target.get('kind') != 'asset_return' or target.get('construction') != 'independent_asset_close_to_close'
+                            or target.get('studyProtocol') != return_protocol or 'studyMode' in target
+                            or target.get('horizonSessions') != strategy['target']['horizonSessions']
+                            or target.get('normalization') != strategy['target']['normalization']):
+                        fail('BUNDLE_COVERAGE', '时移研究目标定义不一致。')
+                coordinates = evidence_contract(strategy, days)
+                panel_evidence = {}
+                for fit in fit_records.values():
+                    verify_coordinate_fit(fit, strategy, fail)
             seen, allowed_days = set(), set(days)
             expected_features = {'factor:'+f['id'] for f in strategy['factors']}
             for row in self.rows("researchPanel"):
                 key = (row.get("date"), row.get("targetId"))
                 if (key in seen or key[0] not in allowed_days or key[1] not in targets
+                        or row.get('schema') != ('asset-return-panel-row/2' if timed else 'asset-return-panel-row/1')
                         or target_records[key[1]].get('symbols') != [row.get('assetSymbol')]
                         or not isinstance(row.get('features'), dict) or set(row['features']) != expected_features
                         or any(v is not None and (type(v) not in (int, float) or not math.isfinite(v)) for v in row['features'].values())):
                     fail("BUNDLE_COVERAGE", "收益研究面板身份不完整或重复。")
+                if timed:
+                    if set(row) != {'schema','date','targetId','assetSymbol','inputValid','invalidReason','featureDate','responseStartDate','responseEndDate','originPrice','responseScale','observedReturn','observedResponse','features'} | COORDINATE_KEYS:
+                        fail('BUNDLE_COVERAGE', '时移面板字段不一致。')
+                    verify_coordinate_row(row, coordinates, fail)
+                    panel_evidence[key] = sha(encode({k: row[k] for k in COORDINATE_KEYS | {'inputValid'}}))
                 seen.add(key)
         if coverage["baselineRequired"]:
             if "baselineModelFits" not in self.collections:
@@ -540,16 +566,22 @@ class BundleReader:
                         or origin[0] < previous_date or type(plan.get("inputValid")) is not bool
                         or not isinstance(row_id, str) or not row_id or row_id in row_ids
                         or row.get("status") not in {"valid", "invalid"}
-                        or (row.get("modelFitId") not in model_ids and not (forecast_meta.get("studyProtocol") == "asset-return-study/1" and row.get("status") == "invalid" and row.get("modelFitId") is None))):
+                        or (row.get("modelFitId") not in model_ids and not (is_return and row.get("status") == "invalid" and row.get("modelFitId") is None))):
                     fail("BUNDLE_COVERAGE", "预测计划或身份重复、无序或无效。")
                 if row.get("targetId") not in targets and not (row["status"] == "invalid" and row["targetId"] == "unavailable" and plan["inputValid"] is False):
                     fail("BUNDLE_REFERENCE", "预测引用了不存在的冻结目标。")
                 if is_return:
+                    if row.get('schema') != ('asset-return-observation/2' if timed else 'asset-return-observation/1'):
+                        fail('BUNDLE_REFERENCE', '收益观察版本与研究协议不一致。')
                     target = target_records.get(row['targetId'], {})
                     fit = fit_records.get(row.get('modelFitId'), {})
                     if (target.get('symbols') != [row.get('assetSymbol')]
                             or fit and (fit.get('targetId') != row['targetId'] or fit.get('targetSymbol') != row['assetSymbol'])):
                         fail('BUNDLE_REFERENCE', '收益观察使用了其他资产的模型或目标。')
+                    if timed:
+                        verify_coordinate_row(row, coordinates, fail)
+                        if panel_evidence.get(origin) != sha(encode({k: row[k] for k in COORDINATE_KEYS | {'inputValid'}})):
+                            fail('BUNDLE_REFERENCE', '观察与完整面板的逐输入证据不一致。')
                 if row["status"] == "valid" and not plan["inputValid"]:
                     fail("BUNDLE_COVERAGE", "无效输入不能变成有效预测。")
                 origins.add(origin)

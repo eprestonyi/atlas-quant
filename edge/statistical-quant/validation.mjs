@@ -1,5 +1,6 @@
 import { typedFactorDescriptor } from '../../web/factor-preprocess-semantics.js';
 import { normalizeReturnStudy, assertReturnStudyScope } from './return-study.mjs';
+import {normalizeFactorTiming} from '../../web/asset-return-factor-contract.js';
 import { validateAutomaticFactorConfig } from '../../web/factor-preprocess-contract.js';
 import contextRegistry from '../../engine/atlas_quant/context_sources.json' with {type:'json'};
 const contextAliases = new Set(contextRegistry.items.flatMap(s => (s.api === 'yfinance_history' ? ['close','vol'] : s.api === 'sw_daily' ? ['close','vol','amount','pe','pb','total_mv','float_mv'] : ['close','vol','amount']).map(f => 'ext_ctx_'+(s.aliasKey || s.ts_code.toLowerCase().replace('.', '_'))+'_'+f)));
@@ -190,7 +191,8 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
   if (!Array.isArray(factors) || factors.length > 32) fail('最多32个因子');
   const seen = new Set();
   const cleanFactors = factors.map((f) => {
-    keys(f, ['id', 'expression', 'direction', 'role', 'version'], '因子');
+    const timed = r.returnStudy?.schema === 'asset-return-study/2';
+    keys(f, ['id', 'expression', 'direction', 'role', 'version', ...(timed ? ['baseFactorId','timing'] : [])], '因子');
     const id = text(f.id, '因子ID');
     if (!/^[A-Za-z0-9_-]{1,100}$/.test(id) || seen.has(id))
       fail('因子ID须唯一且为ASCII字母数字、下划线或连字符');
@@ -198,11 +200,16 @@ export function validateStatisticalQuant(input, { scopeSymbolLimit = 50 } = {}) 
     const expression = text(f.expression, '表达式', 500);
     const expressionFields = validateExpression(expression).fields;
     if (expressionFields.some(f => f.startsWith('ext_ctx_') && !contextAliases.has(f))) fail('指数因子来源未登记');
+    let temporal = {};
+    if (timed) {
+      try { temporal = normalizeFactorTiming(f); } catch (error) { fail(error.message); }
+    }
     return {
       id,
       expression,
       direction: choice(f.direction ?? 1, [-1, 1], '因子方向'),
       role: choice(f.role ?? 'predictor', ['predictor', 'hedge', 'event'], '因子用途'),
+      ...temporal,
       ...(f.version === undefined ? {} : { version: number(f.version, '因子版本', 1, 1e6, true) })
     };
   });

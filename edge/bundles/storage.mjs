@@ -1,4 +1,5 @@
 import { ApiError } from '../errors.mjs';
+import {returnEvidenceContract} from './return-evidence.mjs';
 import { NOW, parse, random, sha } from '../runtime.mjs';
 import { validateStoredStatisticalQuant } from '../statistical-quant/validation.mjs';
 import { BUNDLE_PROFILE, HASH } from './profile.mjs';
@@ -417,13 +418,16 @@ export async function uploadChunk(
         )
       : null;
   const indexes = [];
+  const returnStrategy = parsed.metadata.forecast.sourceStrategy;
+  const returnEvidence = returnEvidenceContract(returnStrategy,parsed.metadata.forecast.factorResearch?.panel?.dates);
   if (!sortedSnapshot)
     for (let index = 0; index < rows.length; index++)
       indexes.push(
         await recordIndex(collectionId, rows[index], descriptor.start + index, ordinal, index, {
           marketHedgeTargets,
           returnStudy: parsed.metadata.forecast.sourceStrategy?.research?.returnStudy ?? null,
-          returnFactorNames: parsed.metadata.forecast.sourceStrategy?.factors?.map(f => 'factor:'+f.id) ?? null
+          returnFactorNames: parsed.metadata.forecast.sourceStrategy?.factors?.map(f => 'factor:'+f.id) ?? null,
+          returnStrategy,returnEvidence
         })
       );
   const key = `bundle/${job.owner}/${stage.id}/${collectionId}/${ordinal}-${descriptor.sha256}.json`;

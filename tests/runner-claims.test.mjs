@@ -512,3 +512,17 @@ test('scalar return contracts require exact capability on reserve and durable re
   const downgrade=await claim(requestId,old);assert.equal(downgrade.status,409);
   const recovered=await(await claim(requestId,current)).json();assert.equal(recovered.job.leaseToken,first.job.leaseToken);
 });
+
+test('mixed-time studies stay queued for study/1-only runners and recover only with study/2',async()=>{
+  const spec={schemaVersion:2,name:'mixed time claim',universe:{symbols:['000001.SZ'],start:'20230101',end:'20250930'},research:{mode:'statistical_quant',observationDays:1,returnStudy:{schema:'asset-return-study/2'}},factors:[{id:'size_now',baseFactorId:'size',timing:{anchor:'target_origin',offsetSessions:0},expression:'circ_mv',direction:1,role:'predictor'}],preprocess:{automatic:{schema:'auto-factor-preprocess/2'}},target:{kind:'asset_return',horizonSessions:5,normalization:{kind:'none'}},model:{family:'trend',estimator:'ridge',parameterSharing:'per_target'},execution:{enabled:false}};
+  const id=await seed('requires-mixed-time',spec),old={engineVersion:'99.0.0',factorPreprocessFormats:['auto-factor-preprocess/2'],returnStudyFormats:['asset-return-study/1']};
+  for(const request of [undefined,randomUUID()]){
+    const denied=await claim(request,old);assert.equal(denied.status,200);assert.equal((await denied.json()).job,null);
+    assert.equal((await read(id)).status,'queued');
+  }
+  const requestId=randomUUID(),current={...old,returnStudyFormats:['asset-return-study/1','asset-return-study/2']};
+  const first=await(await claim(requestId,current)).json();assert.equal(first.job.id,id);
+  const downgrade=await claim(requestId,old);assert.equal(downgrade.status,409);
+  assert.equal((await downgrade.json()).error.code,'RUNNER_UPGRADE_REQUIRED');
+  const recovered=await(await claim(requestId,current)).json();assert.equal(recovered.job.leaseToken,first.job.leaseToken);
+});

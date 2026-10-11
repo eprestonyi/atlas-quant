@@ -47,7 +47,8 @@ export async function verifyRecords(env, stage, parsed) {
       invalid('完整集合计数不一致：' + collection.id);
   }
   if ([...actual.keys()].some((id) => !parsed.collections.has(id))) invalid('索引含未声明集合');
-  if (parsed.metadata.forecast?.studyProtocol === 'asset-return-study/1') {
+  const returnProtocol = parsed.metadata.forecast?.studyProtocol;
+  if (['asset-return-study/1','asset-return-study/2'].includes(returnProtocol)) {
     const panel = parsed.metadata.forecast.factorResearch.panel;
     await rejectIfRows(env,
       `SELECT p.ordinal FROM quant_bundle_records p WHERE p.stage_id=? AND p.collection='researchPanel'
@@ -110,11 +111,31 @@ export async function verifyRecords(env, stage, parsed) {
       [fitCollection, stage.id, collection],
       '有效预测引用失效拟合记录'
     );
-    if (parsed.metadata.forecast?.studyProtocol === 'asset-return-study/1') {
+    if (['asset-return-study/1','asset-return-study/2'].includes(returnProtocol)) {
       await rejectIfRows(env,
         `SELECT f.ordinal FROM quant_bundle_records f JOIN quant_bundle_records m ON m.stage_id=f.stage_id AND m.collection=? AND m.row_id=f.fit_id
          WHERE f.stage_id=? AND f.collection=? AND f.target_id IS NOT m.target_id`,
         [fitCollection, stage.id, collection], '收益记录引用了另一资产的参数方程');
+    }
+    if (returnProtocol === 'asset-return-study/2') {
+      await rejectIfRows(env,
+        `SELECT f.ordinal FROM quant_bundle_records f LEFT JOIN quant_bundle_records p
+         ON p.stage_id=f.stage_id AND p.collection='researchPanel' AND p.date=f.date AND p.target_id=f.target_id
+         WHERE f.stage_id=? AND f.collection=? AND (p.ordinal IS NULL
+           OR json_extract(f.metadata,'$.inputEvidenceHash') IS NOT json_extract(p.metadata,'$.inputEvidenceHash')
+           OR json_extract(f.metadata,'$.sampleReadyAt') IS NOT json_extract(p.metadata,'$.sampleReadyAt')
+           OR json_extract(f.metadata,'$.inputAvailableAt') IS NOT json_extract(p.metadata,'$.inputAvailableAt')
+           OR json_extract(f.metadata,'$.availabilityClass') IS NOT json_extract(p.metadata,'$.availabilityClass')
+           OR json_extract(f.metadata,'$.inputValid') IS NOT json_extract(p.metadata,'$.inputValid'))`,
+        [stage.id,collection], '观察与完整面板的逐输入时点证据不一致');
+      await rejectIfRows(env,
+        `SELECT f.ordinal FROM quant_bundle_records f JOIN quant_bundle_records m
+         ON m.stage_id=f.stage_id AND m.collection=? AND m.row_id=f.fit_id
+         WHERE f.stage_id=? AND f.collection=? AND f.status='valid' AND (
+           json_extract(m.metadata,'$.fitDate')>f.date
+           OR json_extract(m.metadata,'$.sampleReadyAtMax') IS NULL
+           OR json_extract(m.metadata,'$.sampleReadyAtMax')>=json_extract(m.metadata,'$.fitDate'))`,
+        [fitCollection,stage.id,collection], '拟合使用了起点尚未成熟的输入或目标');
     }
   }
   await rejectIfRows(

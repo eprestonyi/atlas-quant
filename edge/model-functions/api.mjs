@@ -99,7 +99,7 @@ export async function modelFunctionsApi(req,env,path,owner) {
     }
     if (path==='/model-functions/evaluate' && req.method==='POST') {
       const input=await body(req,1024*1024);
-      if (!exact(input,['source','input',...(Object.hasOwn(input,'edits')?['edits']:[])]) || !obj(input.input) || Object.keys(input.input).some(k=>!['rows','currentState','scale','mode','originPrice','originVolatility'].includes(k)))fail('函数试算输入无效');
+      if (!exact(input,['source','input',...(Object.hasOwn(input,'edits')?['edits']:[])]) || !obj(input.input) || Object.keys(input.input).some(k=>!['rows','currentState','scale','mode','originPrice','originVolatility','originDates','inputEvidence'].includes(k)))fail('函数试算输入无效');
       await rate(env,'model-function-eval:'+owner,30,60);
       const {artifact}=await resolveFunction(env,owner,input.source);
       const fn=Object.hasOwn(input,'edits')?await deriveFunction(artifact,input.edits):artifact;

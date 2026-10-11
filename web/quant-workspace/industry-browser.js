@@ -1,3 +1,4 @@
+import { isFactorTimeStudy } from './factor-time.js';
 import { providerLabel } from './source-labels.js';
 
 export function createIndustryBrowser(C, F) {
@@ -12,7 +13,7 @@ export function createIndustryBrowser(C, F) {
     const all = [...catalog.items, ...(catalog.proxies || [])];
     const items = all.filter(x => (!state.market || x.market === state.market) && (!state.level || String(x.level) === state.level) && (state.kind === 'all' || (state.kind === 'etf' ? x.sourceKind === 'etf_proxy' : x.sourceKind !== 'etf_proxy')) && tokens.every(q => `${x.name} ${x.nameZh || ''} ${x.code || ''} ${x.symbol || ''} ${(x.path || []).join(' ')} ${(x.keywords || []).join(' ')}`.toLowerCase().includes(q)));
     const pageCount = Math.max(1, Math.ceil(items.length / 18)), page = Math.min(state.page, pageCount), shown = items.slice((page - 1) * 18, page * 18);
-    const added = new Set(C.state.strategy.factors.map(x => x.id));
+    const added = new Set(isFactorTimeStudy(C.state.strategy) ? [] : C.state.strategy.factors.map(x => x.id));
     return `<section class="sq-industry-browser"><div class="sq-industry-controls"><label class="sq-search"><input type="search" id="sq-industry-search" aria-label="搜索行业与 ETF" placeholder="白酒、半导体、Software、ETF 代码…" value="${e(state.query)}"></label><select id="sq-industry-market" aria-label="行业市场">${[['CN','A 股'],['US','美股'],['','全部市场']].map(([v,t])=>`<option value="${v}" ${state.market===v?'selected':''}>${t}</option>`).join('')}</select><select id="sq-industry-level" aria-label="行业层级"><option value="">全部层级</option>${[1,2,3,4].map(n=>`<option value="${n}" ${state.level===String(n)?'selected':''}>L${n}</option>`).join('')}</select><select id="sq-industry-kind" aria-label="行业来源类别">${[['all','全部来源'],['official','官方分类 / 指数'],['etf','ETF 代理']].map(([v,t])=>`<option value="${v}" ${state.kind===v?'selected':''}>${t}</option>`).join('')}</select></div><div class="sq-industry-count">${items.length} 个匹配来源</div><div class="sq-industry-list">${shown.map(x => {
       const available = x.historyStatus === 'adapter_supported_requires_observations' && x.factorId;
       const proxy = x.sourceKind === 'etf_proxy', used = added.has(x.factorId), url = safeUrl(x.sourceUrl);

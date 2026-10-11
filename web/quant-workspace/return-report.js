@@ -1,9 +1,12 @@
-import { RETURN_MODES, returnUnit } from './return-study.js';
+import { returnStudyLabel, returnUnit, returnTiming } from './return-study.js';
+import { isFactorTimeStudy } from './factor-time.js';
+import { availabilityLabel, renderInputEvidence } from './input-evidence.js';
+import { reportFeatureLabeler } from './feature-labels.js';
 import { renderSavedModel } from './report-model.js';
 import { renderFactorTransformAudit } from './factor-transform-audit.js';
 import { returnResponseCharts } from './report-charts.js';
 
-export const isReturnReport = r => r?.forecasts?.studyProtocol === 'asset-return-study/1' || r?.forecasts?.sourceStrategy?.research?.returnStudy?.schema === 'asset-return-study/1';
+export const isReturnReport = r => ['asset-return-study/1','asset-return-study/2'].includes(r?.forecasts?.studyProtocol) || ['asset-return-study/1','asset-return-study/2'].includes(r?.forecasts?.sourceStrategy?.research?.returnStudy?.schema);
 // The chosen security scopes every evidence page. No pool-level statistic is
 // substituted when a security's evidence is absent.
 export function createReturnReport(C,F,{remote,remoteState,table,modelCandidates,functionEditor,factorDiagnostics,provenance}) {
@@ -44,11 +47,11 @@ export function createReturnReport(C,F,{remote,remoteState,table,modelCandidates
   function rowView(r,panel=false) {
     const source=panel?r.forecasts.factorResearch?.panel?.rows||[]:r.forecasts.rows||[];
     const {page,rows:all}=collection(r,panel?'researchPanel':'forecasts',source);
-    const rows=page?all:all.slice((state.page-1)*25,state.page*25),s=strategy(r),association=s.research.returnStudy.mode==='association';
-    const columns=panel?['因子观察日','响应区间','因子 R','观察收益','响应尺度','状态']:['因子日期','响应区间','模型响应','实际响应','残差','收益率','状态'];
-    const body=table(columns,rows.map(x=>`<tr><td>${panel?e(x.featureDate||'—'):`${e(x.featureDate||x.date)}<small>已知截止 ${e(x.informationCutoff||'—')}</small>`}</td><td>${e(x.responseStartDate||'—')} → ${e(x.responseEndDate||'—')}</td>${panel?`<td>${F.advanced('因子值',raw(x.features))}</td><td class="numeric">${fmt(x.observedReturn,6)}</td><td class="numeric">${fmt(x.responseScale,6)}</td>`:`<td class="numeric">${fmt(x.predictedResponse,6)}</td><td class="numeric">${fmt(x.observedResponse,6)}</td><td class="numeric">${fmt(x.responseResidual,6)}</td><td class="numeric">${fmt(x.predictedReturn,6)}<small>实际 ${fmt(x.observedReturn,6)}</small></td>`}<td>${e(x.invalidReason||x.status||(x.inputValid?'有效':'输入缺失'))}</td></tr>`));
+    const rows=page?all:all.slice((state.page-1)*25,state.page*25),s=strategy(r),association=s.research.returnStudy.mode==='association',timed=isFactorTimeStudy(s),label=reportFeatureLabeler(r,C.state?.catalog?.factors||[]);
+    const columns=panel?[timed?'响应起点 t':'因子观察日','响应区间','因子 R','观察收益','响应尺度',...(timed?['输入证据']:[]),'状态']:[timed?'响应起点 t':'因子日期','响应区间','模型响应','实际响应','残差','收益率',...(timed?['输入证据']:[]),'状态'];
+    const body=table(columns,rows.map(x=>`<tr><td>${panel?e((timed?x.responseStartDate:x.featureDate)||'—'):`${e((timed?x.responseStartDate:x.featureDate)||x.date)}<small>${timed?'输入可用边界':'已知截止'} ${e(x.informationCutoff||'—')}</small>`}</td><td>${e(x.responseStartDate||'—')} → ${e(x.responseEndDate||'—')}</td>${panel?`<td>${F.advanced('因子值',raw(x.features))}</td><td class="numeric">${fmt(x.observedReturn,6)}</td><td class="numeric">${fmt(x.responseScale,6)}</td>`:`<td class="numeric">${fmt(x.predictedResponse,6)}</td><td class="numeric">${fmt(x.observedResponse,6)}</td><td class="numeric">${fmt(x.responseResidual,6)}</td><td class="numeric">${fmt(x.predictedReturn,6)}<small>实际 ${fmt(x.observedReturn,6)}</small></td>`}${timed?`<td>${e(availabilityLabel(x.availabilityClass))}${F.advanced('逐输入时点',renderInputEvidence(x,{esc:e,fmt,label}))}</td>`:''}<td>${e(x.invalidReason||x.status||(x.inputValid?'有效':'输入缺失'))}</td></tr>`));
     const pages=!page&&all.length>25?`<div class="sq-catalog-pagination"><span>${all.length} 行 · ${state.page} / ${Math.ceil(all.length/25)}</span>${F.button('return-page','上一页',{page:state.page-1,disabled:state.page===1,small:true})}${F.button('return-page','下一页',{page:state.page+1,disabled:state.page*25>=all.length,small:true})}</div>`:'';
-    return (!panel?returnResponseCharts(rows,{esc:e,association,normalized:s.target.normalization.kind!=='none',scope:'当前资产 · 当前页'}):'')+F.panel(panel?'完整资产面板':'模型与观测响应',page?remoteState(page,body):body+pages)+ (panel?F.note('日期 × 资产面板保留缺失与暖机行。当前仅显示所选资产的一页；完整面板可从私有产物下载。'):'');
+    return (!panel?returnResponseCharts(rows,{esc:e,association,responseLabel:timed?'条件收益响应':undefined,normalized:s.target.normalization.kind!=='none',scope:'当前资产 · 当前页'}):'')+F.panel(panel?'完整资产面板':'模型与观测响应',page?remoteState(page,body):body+pages)+ (panel?F.note('日期 × 资产面板保留缺失与暖机行。当前仅显示所选资产的一页；完整面板可从私有产物下载。'):'');
   }
   function validation(r) {
     const {page,rows}=collection(r,'perTarget',r.forecasts.diagnostics?.perTarget||[]);
@@ -67,7 +70,7 @@ export function createReturnReport(C,F,{remote,remoteState,table,modelCandidates
   function view(r,downloads='') {
     const identity=`${C.state.runId||''}/${r.forecasts.artifactId}/${remote.transport?.bundleId||''}`;
     if(state.identity!==identity){Object.assign(state,{identity,targetId:'',tab:'models',fit:null,fitId:'',page:1,error:'',loading:false});state.request++;}
-    state.report=r;const assets=defs(r),s=strategy(r),mode=s.research.returnStudy.mode;
+    state.report=r;const assets=defs(r),s=strategy(r),mode=isFactorTimeStudy(s)?'coordinates':s.research.returnStudy.mode;
     if(!assets.length)return F.note('此产物未提供逐资产模型索引，不能把合并结果替代为单资产报告。','error');
     if(!assets.some(x=>x.targetId===state.targetId))state.targetId=assets[0].targetId;
     const asset=active();
@@ -75,7 +78,7 @@ export function createReturnReport(C,F,{remote,remoteState,table,modelCandidates
     const candidate=r.forecasts.diagnostics?.modelSearch;
     const audit=fit=>renderFactorTransformAudit(C,F,fit);
     const views={models:()=>candidate?modelCandidates.view(r,{targetId:state.targetId,asset})+F.advanced('已采用的滚动模型',fits(r)):fits(r),processing:()=>candidate?modelCandidates.view(r,{targetId:state.targetId,asset,audit}):fits(r,true),observations:()=>rowView(r),panel:()=>rowView(r,true),statistics:()=>diagnostics(r,'features',mode),correlations:()=>diagnostics(r,'correlations',mode),joints:()=>diagnostics(r,'joints',mode),validation:()=>validation(r),provenance:()=>provenance(r)};
-    return `<section class="sq-return-report" data-return-target="${e(state.targetId)}"><div class="sq-report-heading"><h2>逐资产 F 模型与报告</h2><span class="sq-status">${e(RETURN_MODES[mode])}</span>${r.provenance?.synthetic||r.provenance?.dataSource==='demo'?'<span class="sq-status warning">合成数据</span>':''}${F.advanced('完整产物下载',downloads)}</div><div class="sq-asset-panel"><label class="sq-field"><span>研究资产 · ${assets.length} 只</span><select id="sq-return-asset">${assets.map(x=>`<option value="${e(x.targetId)}" ${x.targetId===state.targetId?'selected':''}>${e(x.targetSymbol)}</option>`).join('')}</select></label><div><strong>${e(asset.targetSymbol)} · ${e(returnUnit(s))}</strong><span>共用因子集合 · 当前资产独立参数</span><span>${mode==='association'?'同期已观测因子 → 同期收益；情景推演在 F 试算中单独选择':'起点已知因子 → 后续 '+s.target.horizonSessions+' 交易日收益'}</span></div></div><div class="sq-report-tabs" role="group" aria-label="单资产报告章节">${Object.entries(tabs).map(([id,label])=>F.button('return-tab',label,{id,small:true,pressed:id===state.tab,primary:id===state.tab})).join('')}</div>${(views[state.tab]||views.models)()}</section>`;
+    return `<section class="sq-return-report" data-return-target="${e(state.targetId)}"><div class="sq-report-heading"><h2>逐资产 F 模型与报告</h2><span class="sq-status">${e(returnStudyLabel(s))}</span>${r.provenance?.synthetic||r.provenance?.dataSource==='demo'?'<span class="sq-status warning">合成数据</span>':''}${F.advanced('完整产物下载',downloads)}</div><div class="sq-asset-panel"><label class="sq-field"><span>研究资产 · ${assets.length} 只</span><select id="sq-return-asset">${assets.map(x=>`<option value="${e(x.targetId)}" ${x.targetId===state.targetId?'selected':''}>${e(x.targetSymbol)}</option>`).join('')}</select></label><div><strong>${e(asset.targetSymbol)} · ${e(returnUnit(s))}</strong><span>共用因子集合 · 当前资产独立参数</span><span>${e(returnTiming(s))}</span></div></div><div class="sq-report-tabs" role="group" aria-label="单资产报告章节">${Object.entries(tabs).map(([id,label])=>F.button('return-tab',label,{id,small:true,pressed:id===state.tab,primary:id===state.tab})).join('')}</div>${(views[state.tab]||views.models)()}</section>`;
   }
   async function handle(el) {
     const action=el.dataset.sq;if(!action?.startsWith('return-'))return false;

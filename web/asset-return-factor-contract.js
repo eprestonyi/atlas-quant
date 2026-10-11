@@ -18,12 +18,13 @@ function pricePeriods(node,horizon,used) {
 /** Shared step/API timing admission, matching Python return_study/contract.py. */
 export function returnFactorDescriptors(strategy) {
   const mode = strategy.research?.returnStudy?.mode, horizon = strategy.target?.horizonSessions;
-  if (!['forecast','association'].includes(mode) || !Number.isInteger(horizon) || horizon < 1 || horizon > 252) fail('RETURN_STUDY','收益研究模式或响应期限无效');
+  const timed = strategy.research?.returnStudy?.schema === 'asset-return-study/2';
+  if ((!timed && !['forecast','association'].includes(mode)) || !Number.isInteger(horizon) || horizon < 1 || horizon > 252) fail('RETURN_STUDY','收益研究协议或响应期限无效');
   const overrides = strategy.preprocess?.automatic?.overrides || {};
   return (strategy.factors || []).map(factor => {
     if (factor.role === 'hedge') fail('RETURN_FACTOR_ROLE','独立收益方程不接受篮子对冲腿');
     const item = typedFactorDescriptor(factor,overrides[factor.id]), parsed = parseExpression(factor.expression);
-    if (mode === 'association') {
+    if (!timed && mode === 'association') {
       const ownReference = parsed.fields.some(field => {
         const source = fieldRegistry.fields[field]?.sourceIdentity;
         if (!source) return false;
@@ -37,7 +38,20 @@ export function returnFactorDescriptors(strategy) {
       item.clock = 'research_sessions';
     }
     item.aggregation = item.scope === 'global' ? 'global_once' : 'asset_direct';
-    item.timing = {kind:mode === 'forecast' ? 'origin_known' : 'matched_period',horizonSessions:horizon};
+    if (timed) {
+      const {baseFactorId,timing} = normalizeFactorTiming(factor);
+      item.baseFactorId = baseFactorId;
+      item.timing = {...timing,offsetClock:'research_sessions'};
+    } else item.timing = {kind:mode === 'forecast' ? 'origin_known' : 'matched_period',horizonSessions:horizon};
     return item;
   });
+}
+
+/** Instance identity is independent of its economic definition and time position. */
+export function normalizeFactorTiming(factor) {
+  const baseFactorId = factor.baseFactorId === undefined ? factor.id : factor.baseFactorId;
+  if (typeof baseFactorId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(baseFactorId)) fail('FACTOR_BASE_ID','基础因子 ID 无效');
+  const timing = factor.timing === undefined ? {anchor:'target_origin',offsetSessions:0} : factor.timing;
+  if (!timing || Array.isArray(timing) || Object.keys(timing).sort().join(',') !== 'anchor,offsetSessions' || timing.anchor !== 'target_origin' || !Number.isInteger(timing.offsetSessions) || Math.abs(timing.offsetSessions) > 252) fail('FACTOR_TIMING','因子时点须为目标起点前后 252 个研究交易日以内的整数');
+  return {baseFactorId,timing:{anchor:'target_origin',offsetSessions:timing.offsetSessions}};
 }
