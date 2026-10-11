@@ -1,3 +1,4 @@
+import { factorTimeLabel } from './factor-time.js';
 // Display labels only. Financial names mirror edge/financial/definitions.json;
 // the DOM contract checks parity. Never rewrite model feature keys or outputs.
 export const FINANCIAL_FEATURE_LABELS = Object.freeze({
@@ -29,13 +30,14 @@ export function createFeatureLabeler({factors = [], catalog = []} = {}) {
     if (!key.startsWith('factor:')) return Object.hasOwn(BUILTIN, key) ? BUILTIN[key] : key;
     const id = key.slice(7), factor = definition?.id === id ? definition : factors.find(x => x.id === id);
     if (!factor) return key;
-    if (typeof factor.name === 'string' && factor.name.trim()) return factor.name;
+    const timed = label => label + (factor.timing?.anchor === 'target_origin' ? ' ' + factorTimeLabel(factor) : '');
+    if (typeof factor.name === 'string' && factor.name.trim()) return timed(factor.name);
     // Same ID in a current catalogue is insufficient if its formula/version changed.
-    const entry = catalog.find(x => x.id === id && x.expression === factor.expression &&
+    const entry = catalog.find(x => x.id === (factor.baseFactorId || id) && x.expression === factor.expression &&
       (factor.version === undefined || x.version === factor.version));
     const label = entry?.name || (Object.hasOwn(FINANCIAL_FEATURE_LABELS, factor.expression || '')
       ? FINANCIAL_FEATURE_LABELS[factor.expression] : null);
-    return label ? label + (factor.direction === -1 ? '（反向）' : '') : key;
+    return timed(label ? label + (factor.direction === -1 ? '（反向）' : '') : factor.baseFactorId || key);
   };
 }
 export const reportFeatureLabeler = (report, catalog = []) => createFeatureLabeler({

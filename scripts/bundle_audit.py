@@ -535,7 +535,14 @@ class BundleAudit:
                     "Missing baseline predictions")
         else:
             require(self.collections.get("baselineRows", {}).get("rowCount", 0) == 0, "Unexpected baseline predictions")
-        return_study = f.get('studyProtocol') == 'asset-return-study/1'
+        return_study = f.get('studyProtocol') in {'asset-return-study/1', 'asset-return-study/2'}
+        timed = f.get('studyProtocol') == 'asset-return-study/2'
+        if f.get('studyProtocol') is not None:
+            require(return_study and f['studyProtocol'] == r['strategy']['research']['returnStudy']['schema'] == coverage.get('studyProtocol'),
+                    'Return study protocol mismatch')
+        if timed:
+            require(f.get('sourceStrategy') == r['strategy'], 'Timed source strategy differs from enclosing report')
+        validated_return_fits = set()
         keys = ("date", "targetId", "responseStartDate", "responseEndDate") if return_study else ("date", "targetId", "entryDate", "targetDate")
         for collection, fits in (("forecasts", "modelFits"), ("baselineRows", "baselineModelFits")):
             if collection not in self.collections:
@@ -564,6 +571,10 @@ class BundleAudit:
                     if return_study:
                         require(fit['targetId'] == row['targetId'] and fit['targetSymbol'] == row['assetSymbol'],
                                 'Return row uses another asset model')
+                        if timed and row['modelFitId'] not in validated_return_fits:
+                            from return_study_audit import check_return_fit
+                            check_return_fit(fit, require,r['strategy'])
+                            validated_return_fits.add(row['modelFitId'])
                     require(fit["fitDate"] <= row["date"] and
                             (fit["labelEndMax"] is None or fit["labelEndMax"] < fit["fitDate"]),
                             "Prediction uses future model fit/labels")
@@ -592,31 +603,70 @@ class BundleAudit:
 
     def validate_return_panel(self):
         """Calendar product and target arithmetic from frozen prices, no engine imports."""
-        from return_study_audit import check_return_source
+        from return_study_audit import check_return_source, coordinate_contract, check_return_coordinates, COORDINATE_KEYS
         forecast, report = self.documents['forecast'], self.documents['report']
         panel = forecast['factorResearch']['panel']
-        require(panel['schema'] == 'asset-return-panel/1' and panel['complete'] is True,
+        timed = forecast['studyProtocol'] == 'asset-return-study/2'
+        require(panel['schema'] == ('asset-return-panel/2' if timed else 'asset-return-panel/1') and panel['complete'] is True,
                 'Incomplete return panel')
         targets = {row['id']: row for row in self.rows('targets')}
         symbols = report['strategy']['universe']['symbols']
         require(sorted(panel['symbols']) == sorted(symbols) and len(targets) == len(symbols),
                 'Research collection identity mismatch')
+        if timed:
+            for target in targets.values():
+                require(target.get('studyProtocol') == 'asset-return-study/2' and 'studyMode' not in target and
+                        target.get('kind') == 'asset_return' and target.get('construction') == 'independent_asset_close_to_close' and
+                        target.get('horizonSessions') == report['strategy']['target']['horizonSessions'] and
+                        target.get('normalization') == report['strategy']['target']['normalization'], 'Timed target definition differs from study')
         days = panel['dates']
         require(days and days == sorted(set(days)), 'Invalid panel calendar')
         require(panel['rowCount'] == self.count('researchPanel') == len(days)*len(symbols),
                 'Panel is not the complete date by asset product')
         seen = set()
+        contract = coordinate_contract(report['strategy'], days) if timed else None
         for row in self.rows('researchPanel'):
             key = (row['date'], row['targetId'])
             require(key not in seen and key[0] in days and key[1] in targets, 'Panel identity mismatch')
             require(targets[key[1]]['symbols'] == [row['assetSymbol']], 'Panel asset differs from target')
-            require(row['schema'] == 'asset-return-panel-row/1' and type(row['inputValid']) is bool,
+            require(row['schema'] == ('asset-return-panel-row/2' if timed else 'asset-return-panel-row/1') and type(row['inputValid']) is bool,
                     'Invalid panel record')
             require(set(row['features']) == {'factor:'+f['id'] for f in report['strategy']['factors']},
                     'Panel does not expose exactly the selected factors')
             require(all(v is None or type(v) in (int, float) and math.isfinite(v) for v in row['features'].values()),
                     'Panel contains nonnumeric economic features')
+            if timed:
+                require(set(row) == {'schema','date','targetId','assetSymbol','inputValid','invalidReason','featureDate','responseStartDate','responseEndDate','originPrice','responseScale','observedReturn','observedResponse','features'} | COORDINATE_KEYS,
+                        'Timed panel fields mismatch')
+                check_return_coordinates(row, contract, require)
+            else:
+                require(not COORDINATE_KEYS.intersection(row), 'Legacy panel contains new evidence')
             seen.add(key)
+        if timed:
+            for collection in ('forecasts', 'baselineRows'):
+                if collection not in self.collections:
+                    continue
+                for row in self.rows(collection):
+                    check_return_coordinates(row, contract, require)
+                    found = self.db.execute("SELECT payload FROM records WHERE collection='researchPanel' AND date=? AND target=?", (row['date'],row['targetId'])).fetchone()
+                    require(found is not None, 'Observation absent from complete panel')
+                    panel_row = decode(found[0])
+                    require(all(panel_row[k] == row[k] for k in COORDINATE_KEYS | {'inputValid'}), 'Observation/panel evidence mismatch')
+            positions = {day: i for i,day in enumerate(days)}
+            for fit in self.rows('modelFits'):
+                if fit.get('status') != 'valid':
+                    continue
+                rows = (decode(found[0]) for found in self.db.execute("SELECT payload FROM records WHERE collection='researchPanel' AND target=? AND date>=? AND date<=? ORDER BY date", (fit['targetId'],fit['trainStart'],fit['trainEnd'])))
+                admitted = [row for row in rows if positions[row['date']] % report['strategy']['research']['observationDays'] == 0 and
+                            row['inputValid'] and type(row['observedResponse']) in (int,float) and math.isfinite(row['observedResponse']) and
+                            row['sampleReadyAt'] is not None and row['sampleReadyAt'] < fit['fitDate']]
+                require(admitted and fit['trainRows'] == len(admitted) and fit['trainDates'] == len({row['date'] for row in admitted}),
+                        'Timed fit sample counts differ from independently eligible panel')
+                for key, expected in {'trainStart':min(row['date'] for row in admitted),'trainEnd':max(row['date'] for row in admitted),
+                    'labelEndMax':max(row['responseEndDate'] for row in admitted),
+                    'inputAvailableAtMax':max(row['inputAvailableAt'] for row in admitted),
+                    'sampleReadyAtMax':max(row['sampleReadyAt'] for row in admitted)}.items():
+                    require(fit[key] == expected, 'Timed fit '+key+' differs from independently eligible panel')
         if 'snapshot' in self.documents:
             snapshot = dict(self.documents['snapshot'], rows=list(self.rows('snapshotRows')))
             check_return_source(self.rows('forecasts'), report['strategy'], snapshot, self.near, require)

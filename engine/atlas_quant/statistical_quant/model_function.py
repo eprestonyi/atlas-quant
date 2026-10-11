@@ -19,6 +19,7 @@ SCHEMA = "atlas-model-function/1"
 AUTOMATIC_FUNCTION_SCHEMA = "atlas-model-function/2"
 BASIS_FUNCTION_SCHEMA = "atlas-model-function/3"
 RETURN_FUNCTION_SCHEMA = "atlas-model-function/4"
+COORDINATE_FUNCTION_SCHEMA = "atlas-model-function/5"
 HASH_ALGORITHM = "sha256-canonical-f64-json/1"
 MAX_BYTES = 2 * 1024 * 1024
 MAX_FEATURES = 128
@@ -274,10 +275,10 @@ def validate_function(artifact):
         valid_hash = artifact.get("artifactId") == function_digest({k: v for k, v in artifact.items() if k != "artifactId"})
     except (TypeError, ValueError, OverflowError, RecursionError):
         _bad("non-finite, recursive or non-JSON object")
-    if len(raw) > MAX_BYTES or artifact.get("schema") not in (SCHEMA, AUTOMATIC_FUNCTION_SCHEMA, BASIS_FUNCTION_SCHEMA, RETURN_FUNCTION_SCHEMA) or artifact.get("hashAlgorithm") != HASH_ALGORITHM or not valid_hash:
+    if len(raw) > MAX_BYTES or artifact.get("schema") not in (SCHEMA, AUTOMATIC_FUNCTION_SCHEMA, BASIS_FUNCTION_SCHEMA, RETURN_FUNCTION_SCHEMA, COORDINATE_FUNCTION_SCHEMA) or artifact.get("hashAlgorithm") != HASH_ALGORITHM or not valid_hash:
         _bad("schema, content hash or size mismatch")
     expected = {"schema", "hashAlgorithm", "inputSchema", "featureConstruction", "transforms", "estimator", "training", "scope", "outputs", "identity", "provenance", "editPolicy", "lineage", "artifactId"}
-    is_return = artifact["schema"] == RETURN_FUNCTION_SCHEMA
+    is_return = artifact["schema"] in (RETURN_FUNCTION_SCHEMA, COORDINATE_FUNCTION_SCHEMA)
     output_count = 1 if is_return else 2
     if set(artifact) != expected or (not is_return and artifact["outputs"] != OUTPUTS):
         _bad("unexpected artifact fields or outputs")
@@ -339,7 +340,7 @@ def validate_function(artifact):
     elif e.get("kind") == "basis_linear" and set(e) == {"kind", "coefficients", "intercepts", "terms", "termCenter", "termScale", "signedExpm1AbsoluteInputCap"}:
         from .basis_models import MAX_TERMS
         terms = e["terms"]
-        if artifact["schema"] not in (BASIS_FUNCTION_SCHEMA, RETURN_FUNCTION_SCHEMA) or not isinstance(terms, list) or not 1 <= len(terms) <= MAX_TERMS or e["signedExpm1AbsoluteInputCap"] != 3:
+        if artifact["schema"] not in (BASIS_FUNCTION_SCHEMA, RETURN_FUNCTION_SCHEMA, COORDINATE_FUNCTION_SCHEMA) or not isinstance(terms, list) or not 1 <= len(terms) <= MAX_TERMS or e["signedExpm1AbsoluteInputCap"] != 3:
             _bad("invalid basis dictionary")
         for term in terms:
             if not isinstance(term, dict):
@@ -410,10 +411,15 @@ def validate_function(artifact):
     return artifact
 
 
-def predict_function(artifact, rows, *, current_state=None, scale=None, mode=None, origin_price=None, origin_volatility=None):
+def predict_function(artifact, rows, *, current_state=None, scale=None, mode=None, origin_price=None, origin_volatility=None, origin_dates=None, input_evidence=None):
     """Evaluate numeric JSON only. Source expressions/metadata are never executed."""
     a = validate_function(artifact)
-    is_return = a["schema"] == RETURN_FUNCTION_SCHEMA
+    coordinate = a['schema'] == COORDINATE_FUNCTION_SCHEMA
+    is_return = a["schema"] in (RETURN_FUNCTION_SCHEMA, COORDINATE_FUNCTION_SCHEMA)
+    if coordinate and mode is not None:
+        _bad('factor-coordinate functions have no model-wide mode')
+    if not coordinate and (origin_dates is not None or input_evidence is not None):
+        _bad('legacy functions do not accept factor-coordinate evidence')
     if is_return and (current_state is not None or scale is not None):
         _bad("return functions do not accept legacy price-state context")
     if not is_return and any(v is not None for v in (mode, origin_price, origin_volatility)):
@@ -426,6 +432,9 @@ def predict_function(artifact, rows, *, current_state=None, scale=None, mode=Non
         if not isinstance(row, dict) or set(row) != set(names) or any(v is not None and not _numeric(v) for v in row.values()):
             _bad("input row must exactly match the feature schema")
         values.append([np.nan if row[name] is None else row[name] for name in names])
+    if coordinate:
+        from .return_study.inference import evidence_classes
+        classes = evidence_classes(a, rows, origin_dates, input_evidence)
     X = np.asarray(values, dtype=float).reshape(len(rows), len(names))
     t, e = a["transforms"], a["estimator"]
     with np.errstate(over="ignore", invalid="ignore"):
@@ -460,6 +469,9 @@ def predict_function(artifact, rows, *, current_state=None, scale=None, mode=Non
                         result[row_i, output_i] += tree[node_i][0]
     if not np.isfinite(result).all():
         _bad("non-finite prediction")
+    if coordinate:
+        from .return_study.inference import response_document
+        return response_document(a, result[:, 0].tolist(), origin_price, origin_volatility, classes, input_evidence is not None)
     if is_return:
         from .return_study.function import response_document
         return response_document(a, result[:, 0].tolist(), mode, origin_price, origin_volatility)
@@ -529,15 +541,17 @@ def main(argv=None):
     inputs = json.loads(args.input.read_text())
     if args.edits:
         artifact = edit_function(artifact, json.loads(args.edits.read_text()))
-    allowed = {"rows", "mode", "originPrice", "originVolatility"} if artifact.get("schema") == RETURN_FUNCTION_SCHEMA else {"rows", "currentState", "scale"}
+    allowed = ({'rows', 'originDates', 'inputEvidence', 'originPrice', 'originVolatility'} if artifact.get('schema') == COORDINATE_FUNCTION_SCHEMA else
+               {"rows", "mode", "originPrice", "originVolatility"} if artifact.get("schema") == RETURN_FUNCTION_SCHEMA else {"rows", "currentState", "scale"})
     if not isinstance(inputs, dict) or set(inputs) - allowed or "rows" not in inputs:
         _bad("unexpected evaluation fields")
-    if artifact.get("schema") == RETURN_FUNCTION_SCHEMA:
-        for key in ("originPrice", "originVolatility"):
+    if artifact.get("schema") in (RETURN_FUNCTION_SCHEMA, COORDINATE_FUNCTION_SCHEMA):
+        for key in ("originPrice", "originVolatility") + (('originDates', 'inputEvidence') if artifact.get('schema') == COORDINATE_FUNCTION_SCHEMA else ()):
             if key in inputs and not isinstance(inputs[key], list):
                 _bad("optional return context must be a numeric vector, not null")
     result = predict_function(artifact, inputs["rows"], current_state=inputs.get("currentState"), scale=inputs.get("scale"),
-                              mode=inputs.get("mode"), origin_price=inputs.get("originPrice"), origin_volatility=inputs.get("originVolatility"))
+                              mode=inputs.get("mode"), origin_price=inputs.get("originPrice"), origin_volatility=inputs.get("originVolatility"),
+                              origin_dates=inputs.get('originDates'), input_evidence=inputs.get('inputEvidence'))
     if args.edits:
         result["derivedArtifact"] = artifact
     args.output.write_text(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2) + "\n")

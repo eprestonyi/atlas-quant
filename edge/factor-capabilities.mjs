@@ -8,11 +8,11 @@ export const needsYahooContextSources = strategy => strategy?.factors?.some(f =>
 export const supportsModelSearch = runner => (Array.isArray(runner?.functionSearchFormats) ? runner.functionSearchFormats : []).includes('factor-model-search/1') === true;
 export const needsModelSearch = strategy => strategy?.model?.search !== undefined;
 export const needsAutomaticFactors = strategy => strategy?.preprocess?.automatic !== undefined;
-export const supportsReturnStudy = runner => runner?.returnStudyFormats?.includes('asset-return-study/1') === true;
+export const supportsReturnStudy = (runner,strategy) => runner?.returnStudyFormats?.includes(strategy?.research?.returnStudy?.schema || 'asset-return-study/1') === true;
 export const needsContextSources = strategy => strategy?.factors?.some(f => /\bext_ctx_/.test(f.expression)) === true;
 export const needsForeignContextSources = strategy => strategy?.factors?.some(f => /\bext_ctx_[a-z]/.test(f.expression)) === true;
 export function assertFactorCapabilities(strategy, runner) {
-  if ((strategy?.research?.returnStudy && !supportsReturnStudy(runner)) ||
+  if ((strategy?.research?.returnStudy && !supportsReturnStudy(runner,strategy)) ||
       (needsAutomaticFactors(strategy) && !supportsAutomaticFactors(runner, strategy)) ||
       (needsContextSources(strategy) && !supportsContextSources(runner)) ||
       (needsForeignContextSources(strategy) && !supportsForeignContextSources(runner)) ||

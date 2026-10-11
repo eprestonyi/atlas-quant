@@ -1,4 +1,4 @@
-import {supportsContextSources, supportsForeignContextSources, supportsYahooContextSources, supportsModelSearch, supportsReturnStudy, assertFactorCapabilities} from './factor-capabilities.mjs';
+import {supportsContextSources, supportsForeignContextSources, supportsYahooContextSources, supportsModelSearch, assertFactorCapabilities} from './factor-capabilities.mjs';
 import {
   assertRunMarket,
   MARKET_RESEARCH_PROFILES,
@@ -91,8 +91,9 @@ export async function claimRunnerJob(env, input, now) {
   const supportsForeignContext = Number(supportsForeignContextSources(input));
   const supportsYahooContext = Number(supportsYahooContextSources(input));
   const supportsSearch = Number(supportsModelSearch(input));
-  const supportsReturns = Number(supportsReturnStudy(input));
-  const factorGuard = `(?=1 OR json_type(spec,'$.research.returnStudy') IS NULL) AND (?=1 OR json_type(spec,'$.model.search') IS NULL) AND (json_type(spec,'$.preprocess.automatic') IS NULL OR json_extract(spec,'$.preprocess.automatic.schema') IN(SELECT value FROM json_each(?))) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE instr(json_extract(f.value,'$.expression'),'ext_ctx_')>0)) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE json_extract(f.value,'$.expression') GLOB '*ext_ctx_[a-z]*')) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE instr(json_extract(f.value,'$.expression'),'ext_ctx_yf_')>0))`;
+  const returnFormats = JSON.stringify(Array.isArray(input.returnStudyFormats)
+    ? input.returnStudyFormats.filter(x => ['asset-return-study/1','asset-return-study/2'].includes(x)) : []);
+  const factorGuard = `(json_type(spec,'$.research.returnStudy') IS NULL OR json_extract(spec,'$.research.returnStudy.schema') IN(SELECT value FROM json_each(?))) AND (?=1 OR json_type(spec,'$.model.search') IS NULL) AND (json_type(spec,'$.preprocess.automatic') IS NULL OR json_extract(spec,'$.preprocess.automatic.schema') IN(SELECT value FROM json_each(?))) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE instr(json_extract(f.value,'$.expression'),'ext_ctx_')>0)) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE json_extract(f.value,'$.expression') GLOB '*ext_ctx_[a-z]*')) AND (?=1 OR NOT EXISTS(SELECT 1 FROM json_each(spec,'$.factors') f WHERE instr(json_extract(f.value,'$.expression'),'ext_ctx_yf_')>0))`;
   const acceptedFinancial = acceptedFinancialProfiles(env, input);
   const acceptedMarket = MARKET_RESEARCH_PROFILES.filter(
     (p) => marketEnabled(env, p) && supportsMarket(input, p)
@@ -125,7 +126,7 @@ export async function claimRunnerJob(env, input, now) {
         supportsBundle,
         JSON.stringify(acceptedFinancial),
         JSON.stringify(acceptedMarket),
-        supportsReturns,
+        returnFormats,
         supportsSearch,
         automaticFormats,
         supportsContext,
@@ -157,7 +158,7 @@ export async function claimRunnerJob(env, input, now) {
       supportsBundle,
       JSON.stringify(acceptedFinancial),
       JSON.stringify(acceptedMarket),
-        supportsReturns,
+        returnFormats,
         supportsSearch,
         automaticFormats,
         supportsContext,

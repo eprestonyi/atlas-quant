@@ -35,10 +35,18 @@ def factor_diagnostics(samples, holdout, strategy):
     X, meta = samples.X.loc[mask], samples.meta.loc[mask]
     mature = meta.inputValid & samples.y.loc[mask].notna().all(axis=1)
     y = samples.y.loc[mask, 'response'].where(mature)
-    dev = samples.X.loc[samples.meta.date < holdout]
+    if 'sampleReadyAt' in samples.meta:
+        from ..validation import mature_mask
+        dev = samples.X.loc[mature_mask(samples, holdout)]
+    else:
+        dev = samples.X.loc[samples.meta.date < holdout]
     identity = {'targetId': str(meta.targetId.iloc[0]), 'targetSymbol': str(meta.assetSymbol.iloc[0])}
     desc = {item['feature']: item for item in samples.automatic_preprocessing['factors']}
     definitions = {'factor:'+f['id']: f for f in strategy['factors']}
+    relationships = None
+    if 'sampleReadyAt' in samples.meta:
+        from .coordinates import target_relationships
+        relationships = target_relationships(strategy, samples.automatic_preprocessing['factors'])
     features = []
     for name in X:
         temporal = {'n': int((X[name].notna() & y.notna()).sum()), 'pearson': _correlation(X[name], y),
@@ -55,6 +63,8 @@ def factor_diagnostics(samples, holdout, strategy):
                 'perTarget': [temporal], 'totalTargets': 1, 'omittedTargets': 0,
                 'interpretation': 'within_target_temporal_association_not_cross_sectional_IC'},
             'descriptiveFit': univariate})
+        if relationships is not None:
+            features[-1]['targetRelationship'] = relationships[name]
     columns = list(X)
     covariance = X.cov(min_periods=2).to_numpy()
     pairs = list(combinations(columns, 2))
@@ -68,7 +78,7 @@ def factor_diagnostics(samples, holdout, strategy):
         'covarianceDof': 1, 'missingness': 'pairwise_complete', 'positiveSemidefiniteGuaranteed': False,
         'jointDistributions': joints, 'jointPairBudget': MAX_JOINT_PAIRS,
         'totalPossiblePairs': len(pairs), 'omittedPairs': max(0, len(pairs)-MAX_JOINT_PAIRS)}
-    mode = strategy['research']['returnStudy']['mode']
+    mode = strategy['research']['returnStudy'].get('mode', 'forecast')
     return {**identity, 'features': features, 'dependence': dependence, 'jointDistributions': joints,
         'firstDate': str(meta.date.min()), 'lastDate': str(meta.date.max()), 'origins': len(meta),
         'maturedValidOrigins': int(mature.sum()), 'period': 'terminal_sequential_out_of_sample',

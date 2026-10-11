@@ -16,6 +16,7 @@ const requireSame = (actual, expected, label) => {
  * saved strategy here or infer missing fields from the portable artifact.
  */
 export function assertFunctionSource(artifact, fit, strategy) {
+  const timed = strategy?.research?.returnStudy?.schema === 'asset-return-study/2';
   requireSame(object(artifact) && ['scope', 'training', 'featureConstruction', 'provenance', 'estimator', 'transforms']
     .every(key => object(artifact[key])) && Array.isArray(artifact.inputSchema) && artifact.inputSchema.every(object), true, '函数结构');
   requireSame(fit?.status, 'valid', '拟合状态');
@@ -33,9 +34,9 @@ export function assertFunctionSource(artifact, fit, strategy) {
     researchStart: strategy?.universe?.start,
     researchEnd: strategy?.universe?.end,
     generalizationOutsideScopeValidated: false,
-    ...(strategy?.research?.returnStudy ? {studyMode: strategy.research.returnStudy.mode} : {})
+    ...(strategy?.research?.returnStudy ? timed ? {studyProtocol:'asset-return-study/2'} : {studyMode: strategy.research.returnStudy.mode} : {})
   }, '适用范围');
-  for (const key of ['trainStart', 'trainEnd', 'informationCutoff', 'labelEndMax', 'trainRows', 'trainDates'])
+  for (const key of ['trainStart', 'trainEnd', 'informationCutoff', 'labelEndMax', 'trainRows', 'trainDates',...(timed ? ['inputAvailableAtMax','sampleReadyAtMax'] : [])])
     requireSame(artifact.training[key], fit[key], '训练记录');
   requireSame(artifact.training.informationCutoff, fit.fitDate, '拟合时点');
   requireSame(artifact.inputSchema.map(x => x.name), fit.featureNames, '特征及其顺序');
@@ -43,7 +44,7 @@ export function assertFunctionSource(artifact, fit, strategy) {
   requireSame(artifact.featureConstruction.factors, strategy?.factors, '因子定义');
   requireSame(artifact.featureConstruction.preprocess, strategy?.preprocess, '预处理声明');
   if (strategy?.preprocess?.automatic) {
-    requireSame(artifact.schema, strategy.research?.returnStudy ? 'atlas-model-function/4' : artifact.estimator.kind === 'basis_linear' ? 'atlas-model-function/3' : 'atlas-model-function/2', '自动因子函数版本');
+    requireSame(artifact.schema, strategy.research?.returnStudy ? timed ? 'atlas-model-function/5' : 'atlas-model-function/4' : artifact.estimator.kind === 'basis_linear' ? 'atlas-model-function/3' : 'atlas-model-function/2', '自动因子函数版本');
     if (strategy.research?.returnStudy) {
       requireSame(artifact.featureConstruction.inputs, fit.returnInputDescriptors, '收益因子的变换与时期');
     } else requireSame(artifact.featureConstruction.automatic, fit.automaticPreprocessing, '因子经济变换与作用域');

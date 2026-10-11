@@ -107,7 +107,8 @@ export async function validateForecastCompletion(env, job, result) {
     throw new ApiError('INVALID_RESULT', '新研究缺少预测协议证据');
   const artifact = result.forecasts;
   if (result.strategy?.research?.returnStudy) {
-    if (artifact?.studyProtocol !== 'asset-return-study/1' || result.metrics !== null ||
+    if (!['asset-return-study/1','asset-return-study/2'].includes(artifact?.studyProtocol) ||
+        artifact.studyProtocol !== result.strategy.research.returnStudy.schema || result.metrics !== null ||
         result.strategy.execution?.enabled !== false || result.execution?.enabled !== false ||
         result.equity.length || result.trades.length)
       throw new ApiError('INVALID_RESULT', '收益研究必须保留独立研究协议，不包含执行绩效');

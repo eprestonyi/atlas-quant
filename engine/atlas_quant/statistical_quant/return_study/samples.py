@@ -7,7 +7,7 @@ from ...factors import evaluate_expression
 from ..targets import Samples
 from ..schema import MAX_SAMPLES, digest, fail
 from ..preprocessing import _context_panel, transform_values
-from .contract import input_descriptors, outputs
+from .contract import input_descriptors, outputs, coordinates_enabled, protocol
 
 
 def evaluate_inputs(panel, dates, symbols, strategy):
@@ -31,6 +31,9 @@ def evaluate_inputs(panel, dates, symbols, strategy):
         else:
             raw = evaluate_expression(factor['expression'], evaluated).unstack('ts_code').reindex(index=dates, columns=symbols)
             values[item['feature']] = transform_values(raw, item['transform'])*factor['direction']
+    if coordinates_enabled(strategy):
+        from .coordinates import shift_inputs
+        values = shift_inputs(values, descriptors)
     return values, descriptors
 
 
@@ -38,11 +41,16 @@ def build_samples(panel, dates, strategy):
     dates, symbols = list(dates), sorted(strategy['universe']['symbols'])
     if not dates or len(dates)*len(symbols) > MAX_SAMPLES:
         fail('FORECAST_BUDGET', '完整日期与证券面板超过资源上限；请缩短窗口或筛选集合')
+    if coordinates_enabled(strategy):
+        from .coordinates import MAX_INPUT_CELLS
+        if len(dates)*len(symbols)*len(strategy['factors']) > MAX_INPUT_CELLS:
+            fail('RETURN_INPUT_EVIDENCE_BUDGET', '完整逐因子时点面板超过500000个单元，请缩短日期或减少输入')
     close = panel.close.unstack('ts_code').reindex(index=dates, columns=symbols)
     close = close.where(np.isfinite(close) & (close > 0))
     values, descriptors = evaluate_inputs(panel, dates, symbols, strategy)
     h = strategy['target']['horizonSessions']
-    norm, mode = strategy['target']['normalization'], strategy['research']['returnStudy']['mode']
+    coordinate = coordinates_enabled(strategy)
+    norm, mode = strategy['target']['normalization'], 'forecast' if coordinate else strategy['research']['returnStudy']['mode']
     sigma = None
     if norm['kind'] == 'trailing_volatility':
         daily = close/close.shift(1)-1
@@ -53,6 +61,9 @@ def build_samples(panel, dates, strategy):
         definition = {'kind': 'asset_return', 'symbols': [symbol], 'unit': outputs(strategy)[0],
                       'construction': 'independent_asset_close_to_close', 'studyMode': mode,
                       'horizonSessions': h, 'normalization': copy.deepcopy(norm)}
+        if coordinate:
+            definition.pop('studyMode')
+            definition['studyProtocol'] = protocol(strategy)
         target_id = 'target_'+digest(definition)[:24]
         definitions[target_id] = {'id': target_id, **definition}
         identities[symbol] = target_id
@@ -93,17 +104,24 @@ def build_samples(panel, dates, strategy):
                 'inputValid': reason is None, 'invalidReason': reason,
                 'isObservation': t % strategy['research']['observationDays'] == 0})
             features.append(feature); labels.append([response])
-    automatic = {'schema': 'asset-return-feature-processing/1', 'factors': descriptors}
-    return Samples(pd.DataFrame(features).astype(float), pd.DataFrame(labels, columns=['response']),
+    automatic = {'schema': 'asset-return-feature-processing/2' if coordinate else 'asset-return-feature-processing/1', 'factors': descriptors}
+    samples = Samples(pd.DataFrame(features).astype(float), pd.DataFrame(labels, columns=['response']),
                    pd.DataFrame(meta), definitions, 0, dates, [], automatic)
+    if coordinate:
+        from .coordinates import attach_coordinates
+        samples = attach_coordinates(samples, panel, dates, strategy, descriptors)
+    return samples
 
 
 def panel_document(samples, symbols):
+    coordinate = 'inputEvidence' in samples.meta
     rows = []
     for index, row in samples.meta.iterrows():
-        rows.append({'schema': 'asset-return-panel-row/1',
+        rows.append({'schema': 'asset-return-panel-row/2' if coordinate else 'asset-return-panel-row/1',
             **{name: row[name] for name in ('date', 'targetId', 'assetSymbol', 'inputValid', 'invalidReason',
                 'featureDate', 'responseStartDate', 'responseEndDate', 'originPrice', 'responseScale', 'observedReturn', 'observedResponse')},
             'features': samples.X.loc[index].to_dict()})
-    return {'schema': 'asset-return-panel/1', 'rowCount': len(rows), 'complete': True,
+        if coordinate:
+            rows[-1].update({key: row[key] for key in ('inputEvidence', 'inputAvailableAt', 'sampleReadyAt', 'availabilityClass')})
+    return {'schema': 'asset-return-panel/2' if coordinate else 'asset-return-panel/1', 'rowCount': len(rows), 'complete': True,
             'dates': list(samples.dates), 'symbols': sorted(symbols), 'rows': rows}

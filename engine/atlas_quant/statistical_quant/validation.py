@@ -10,6 +10,8 @@ from .schema import digest, fail, MAX_FORECASTS
 def mature_mask(samples, before, allowed_dates=None, window=None):
     m = samples.meta
     mask = m.inputValid & samples.y.notna().all(axis=1) & m.targetDate.notna() & (m.targetDate < before) & (m.date < before)
+    if 'sampleReadyAt' in m:
+        mask &= m.sampleReadyAt.notna() & (m.sampleReadyAt < before)
     if allowed_dates is not None:
         mask &= m.date.isin(allowed_dates)
     if window:
@@ -54,10 +56,16 @@ def _train(samples, spec, train_dates, cutoff, strategy, runtime=None):
                 "trainStart": actual_dates[0], "trainEnd": actual_dates[-1],
                 "informationCutoff": cutoff, "labelEndMax": samples.meta.loc[mask, "targetDate"].max(),
                 "trainDates": len(actual_dates), **model.audit}
+            if 'sampleReadyAt' in samples.meta:
+                exc.interrupted_fit_audit.update(inputAvailableAtMax=samples.meta.loc[mask, 'inputAvailableAt'].max(),
+                                                 sampleReadyAtMax=samples.meta.loc[mask, 'sampleReadyAt'].max())
         raise
     audit = {"trainStart": actual_dates[0], "trainEnd": actual_dates[-1],
              "informationCutoff": cutoff, "labelEndMax": samples.meta.loc[mask, "targetDate"].max(),
              "trainDates": len(actual_dates), **model.audit}
+    if 'sampleReadyAt' in samples.meta:
+        audit.update(inputAvailableAtMax=samples.meta.loc[mask, 'inputAvailableAt'].max(),
+                     sampleReadyAtMax=samples.meta.loc[mask, 'sampleReadyAt'].max())
     if "returnStudy" in strategy.get("research", {}):
         audit["returnInputDescriptors"] = samples.automatic_preprocessing["factors"]
     if strategy["model"].get("parameterSharing") == "per_target":

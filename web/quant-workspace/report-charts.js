@@ -65,7 +65,7 @@ export function candidateScoreChart(candidates, e) {
 
 export function trainingFitChart(plot, e, {artifact} = {}) {
   if (plot?.sample !== 'training_in_sample') return '';
-  if (artifact?.schema === 'atlas-model-function/4') return returnResponseCharts((plot.points||[]).map(x=>({date:x.date,assetSymbol:artifact.scope.symbols[0],observedResponse:x.actualResponse,predictedResponse:x.fittedResponse})),{esc:e,association:artifact.scope.studyMode==='association',normalized:artifact.featureConstruction.targetSpecification.normalization.kind!=='none',scope:`训练样本内 · ${(plot.points||[]).length} / ${plot.totalRows} 个样本；不是测试集表现`});
+  if (['atlas-model-function/4','atlas-model-function/5'].includes(artifact?.schema)) return returnResponseCharts((plot.points||[]).map(x=>({date:x.date,assetSymbol:artifact.scope.symbols[0],observedResponse:x.actualResponse,predictedResponse:x.fittedResponse})),{esc:e,association:artifact.scope.studyMode==='association',responseLabel:artifact.schema==='atlas-model-function/5'?'条件收益响应':undefined,normalized:artifact.featureConstruction.targetSpecification.normalization.kind!=='none',scope:`训练样本内 · ${(plot.points||[]).length} / ${plot.totalRows} 个样本；不是测试集表现`});
   const points = (plot.points || []).filter(p => [p.actualFuture,p.fittedFuture].every(finite));
   if (!points.length) return '';
   const domain = extent(points.flatMap(p => [p.actualFuture,p.fittedFuture])), x = scaled(domain,[65,590]), y = scaled(domain,[225,25]);
@@ -73,12 +73,12 @@ export function trainingFitChart(plot, e, {artifact} = {}) {
 }
 
 // Single-response observations are rendered directly; no fictitious P/entry pair.
-export function returnResponseCharts(rows, {esc:e, association=false, normalized=false, scope='当前页'}) {
+export function returnResponseCharts(rows, {esc:e, association=false, responseLabel, normalized=false, scope='当前页'}) {
   const eligible=rows.filter(r=>finite(r.predictedResponse)&&finite(r.observedResponse));
   const sample=eligible.length>1000?Array.from({length:1000},(_,i)=>eligible[Math.round(i*(eligible.length-1)/999)]):eligible;
   if(!sample.length)return '';
   const domain=extent(sample.flatMap(r=>[r.predictedResponse,r.observedResponse])),x=scaled(domain,[65,590]),y=scaled(domain,[225,25]);
-  const format=normalized?number:percent, label=association?'同期响应':'未来收益',unit=normalized?'波动标准化响应':'收益率';
+  const format=normalized?number:percent, label=responseLabel || (association?'同期响应':'未来收益'),unit=normalized?'波动标准化响应':'收益率';
   const caption=`${scope} · ${sample.length} / ${eligible.length} 条可配对观测；${unit}`;
   const scatter=frame(`${label}：模型 × 实际`,svg(`${label}散点图`,axes(domain,domain,e,'实际'+unit,'模型'+unit,format)+`<line class="reference" x1="${x(domain[0])}" x2="${x(domain[1])}" y1="${y(domain[0])}" y2="${y(domain[1])}"/>`+sample.map(r=>`<circle class="point" cx="${x(r.observedResponse)}" cy="${y(r.predictedResponse)}" r="3"><title>${e(r.date)} · ${e(r.assetSymbol)} · ${format(r.observedResponse)} / ${format(r.predictedResponse)}</title></circle>`).join(''),e),e,caption);
   const errors=sample.map(r=>r.observedResponse-r.predictedResponse),ed=extent(errors),bins=Math.min(20,Math.max(5,Math.ceil(Math.sqrt(errors.length)))),counts=Array(bins).fill(0);

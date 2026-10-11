@@ -37,7 +37,7 @@ export function renderFactorTransformAudit(C, F, fit) {
   const value = x => x == null ? '—' : String(x);
   const pair = (label, x) => `<span>${e(label)} <code>${e(value(x))}</code></span>`;
   const raw = x => `<pre class="sq-report-code">${e(JSON.stringify(x, null, 2))}</pre>`;
-  const t = a.transforms || {}, automatic = a.featureConstruction?.automatic || (a.featureConstruction?.schema === 'asset-return-features/1' ? {schema:'asset-return-features/1'} : null);
+  const t = a.transforms || {}, automatic = a.featureConstruction?.automatic || (['asset-return-features/1','asset-return-features/2'].includes(a.featureConstruction?.schema) ? {schema:a.featureConstruction.schema} : null);
   const training = a.training || {};
   const rows = factorTransformRows(fit);
   const table = `<div class="sq-table-scroll"><table class="sq-table sq-transform-table"><thead><tr>${['输入与原始表达式', '经济变换 R', '训练有效 / 缺失', '截尾与填补', '训练中心与尺度', '模型输入'].map(s => `<th>${s}</th>`).join('')}</tr></thead><tbody>${rows.map(row => {

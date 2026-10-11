@@ -7,7 +7,7 @@ import numpy as np
 from .. import models
 from ..schema import VERSION, digest, fail, prediction_config
 from ..validation import mature_mask, folds, select, _train, forecast_origins
-from .contract import SCHEMA, outputs
+from .contract import SCHEMA, outputs, coordinates_enabled, protocol
 from .samples import build_samples, panel_document
 from .diagnostics import metrics, factor_diagnostics
 
@@ -83,7 +83,7 @@ def _record(row, value, fit_id):
     conditional = float(row.originPrice*(1+predicted_return)) if predicted_return is not None and np.isfinite(row.originPrice) else None
     if predicted_return is not None and not np.isfinite([predicted_return, conditional]).all():
         fail('INVALID_FORECAST', '收益还原超出有限数值范围')
-    return {'schema': 'asset-return-observation/1',
+    result = {'schema': 'asset-return-observation/1',
         'forecastId': 'forecast_'+digest({'date': row.date, 'targetId': row.targetId, 'fit': fit_id, 'response': prediction})[:32],
         'date': row.date, 'assetSymbol': row.assetSymbol, 'targetId': row.targetId, 'modelFitId': fit_id,
         'featureDate': row.featureDate, 'responseStartDate': row.responseStartDate, 'responseEndDate': row.responseEndDate,
@@ -93,6 +93,13 @@ def _record(row, value, fit_id):
         'predictedResponse': prediction, 'predictedReturn': predicted_return, 'conditionalPrice': conditional,
         'responseResidual': float(row.observedResponse-value) if finite and np.isfinite(row.observedResponse) else None,
         'labelMaturedAt': row.responseEndDate if np.isfinite(row.observedResponse) else None}
+    if hasattr(row, 'inputEvidence'):
+        result['schema'] = 'asset-return-observation/2'
+        result.update({key: getattr(row, key) for key in ('inputEvidence', 'inputAvailableAt', 'sampleReadyAt', 'availabilityClass')})
+        # The fit cutoff is t; a conditional realized evaluation can consume
+        # values from later dates. Preserve both instead of asserting t-only.
+        result['informationCutoff'] = max(row.date, row.inputAvailableAt)+'_AFTER_CLOSE' if row.inputAvailableAt is not None else None
+    return result
 
 
 def _asset(samples, strategy, holdout, runtime, partial):
@@ -162,6 +169,8 @@ def run(strategy, panel, dates, audit, provenance, *, plan_sink=None):
     from ...context_sources import summarize_context_provenance
     from ..ai_review import attach_reviewer
     samples = build_samples(panel, dates, strategy)
+    study_protocol = protocol(strategy)
+    coordinate = coordinates_enabled(strategy)
     observation = samples.meta.isObservation
     sampled = replace(samples, X=samples.X.loc[observation], y=samples.y.loc[observation], meta=samples.meta.loc[observation])
     holdout, indices = forecast_origins(sampled, strategy)
@@ -176,7 +185,7 @@ def run(strategy, panel, dates, audit, provenance, *, plan_sink=None):
               'declaredBeforeFitting': True, 'maximumResearchSeconds': MAX_RESEARCH_SECONDS,
               'maximumFitAttemptsAdmission': MAX_FIT_ATTEMPTS, 'includesFactorFreeBaseline': False}
     if plan_sink is not None:
-        plan_sink({'schemaVersion': 1, 'studyProtocol': SCHEMA, 'source': 'samples_before_model_fitting',
+        plan_sink({'schemaVersion': 1, 'studyProtocol': study_protocol, 'source': 'samples_before_model_fitting',
             'baselineRequired': False, 'holdoutStart': holdout,
             'origins': [{'date': row.date, 'targetId': row.targetId, 'responseStartDate': row.responseStartDate,
                          'responseEndDate': row.responseEndDate, 'inputValid': bool(row.inputValid)}
@@ -231,7 +240,7 @@ def run(strategy, panel, dates, audit, provenance, *, plan_sink=None):
             'terminalMetricsUsedForSelection': False, 'candidateSetExpandedUsingOutcomes': False,
             'eliminatesBiasOrOverfitting': False, 'reinforcementLearningIncluded': False,
             'researchFitBudget': {**budget, 'actualFitAttempts': base_runtime.attempts}}}
-    factor_research = {'schemaVersion': 1, 'studyProtocol': SCHEMA,
+    factor_research = {'schemaVersion': 1, 'studyProtocol': study_protocol,
         'modelFunctions': [{'modelFitId': f['id'], 'targetId': f['targetId'], 'artifactId': f['functionArtifact']['artifactId'],
             'path': f'forecasts.modelFits[{i}].functionArtifact'} for i, f in enumerate(fits) if 'functionArtifact' in f],
         'candidateModelFunctions': [{'candidateId': c['id'], 'modelFitId': c['fit']['id'], 'targetId': c['targetId'],
@@ -242,25 +251,33 @@ def run(strategy, panel, dates, audit, provenance, *, plan_sink=None):
             'dependence': {'jointDistributions': [j for d in factor_stats for j in d['jointDistributions']]}},
         'panel': panel_document(samples, strategy['universe']['symbols']),
         'editSemantics': 'derived_function_requires_new_validation_original_report_is_immutable'}
-    artifact = _finite_json({'schemaVersion': 1, 'studyProtocol': SCHEMA,
+    if coordinate:
+        diagnostics['availabilityClassCounts'] = {name: sum(r['availabilityClass'] == name for r in rows)
+            for name in ('origin_known_by_policy', 'conditional_realized', 'availability_unverified', 'unresolved_input')}
+        diagnostics['inputAvailabilityMeaning'] = 'declared_daily_policy_boundaries_not_verified_provider_or_revision_timestamps'
+        diagnostics['conditionalMetricsAreExAnteForecastEvidence'] = False
+        from .coordinates import target_relationships
+        diagnostics['targetInputRelationships'] = target_relationships(strategy, samples.automatic_preprocessing['factors'])
+    artifact = _finite_json({'schemaVersion': 1, 'studyProtocol': study_protocol,
         'predictionConfigHash': digest(prediction_config(strategy)), 'dataFingerprint': audit['dataSha256'],
         'sourceStrategy': copy.deepcopy(strategy), 'rows': rows, 'totalRows': len(rows), 'truncated': False,
         'targetDefinitions': list(samples.definitions.values()), 'modelFits': fits, 'hedgeFits': [],
         'diagnostics': diagnostics, 'factorResearch': factor_research})
     artifact['artifactId'] = digest(artifact)
-    mode = strategy['research']['returnStudy']['mode']
+    mode = None if coordinate else strategy['research']['returnStudy']['mode']
     return _finite_json({'schemaVersion': 2, 'status': 'completed', 'engineVersion': VERSION, 'strategy': strategy,
-        'research': {**strategy['research'], 'studyProtocol': SCHEMA, 'executionOnly': False, 'predictionRefitPerformed': True},
+        'research': {**strategy['research'], 'studyProtocol': study_protocol, 'executionOnly': False, 'predictionRefitPerformed': True},
         'provenance': {**summarize_context_provenance(provenance), **audit}, 'forecasts': artifact,
         'validation': {'completeArtifactPath': 'forecasts.diagnostics', 'holdoutStart': holdout,
                        'selectionUsesHoldout': False, 'parameterSharing': 'per_target'},
         'selection': {'winner': 'per_target', 'winnerTrialId': 'per_target', 'params': {},
             'metric': 'equal_date_single_asset_response_mse', 'holdoutUsedForSelection': False,
             'qualified': False, 'deploymentQualified': False,
-            'evidenceStatus': 'DESCRIPTIVE_ASSOCIATION_NOT_FORECAST' if mode == 'association' else 'RETURN_FORECAST_NOT_SIGNIFICANCE_TESTED'},
+            'evidenceStatus': 'INPUT_AVAILABILITY_SPECIFIC_RETURN_RESEARCH' if coordinate else 'DESCRIPTIVE_ASSOCIATION_NOT_FORECAST' if mode == 'association' else 'RETURN_FORECAST_NOT_SIGNIFICANCE_TESTED'},
         'metrics': None, 'equity': [], 'trades': [], 'ledger': [], 'decisions': [],
         'execution': {'enabled': False, 'forecastArtifactId': artifact['artifactId'], 'ledger': [], 'decisions': []},
         'factors': strategy['factors'],
         'warnings': (['SYNTHETIC_DATA_NOT_MARKET_EVIDENCE'] if provenance.get('synthetic') else []) +
                     ['OVERLAPPING_LABELS_ARE_NOT_INDEPENDENT', 'CURRENT_UNIVERSE_NOT_HISTORICAL_CONSTITUENTS',
+                     'CONDITIONAL_REALIZED_INPUTS_ARE_NOT_ORIGIN_KNOWN_FORECASTS' if coordinate else
                      'ASSOCIATION_SCENARIO_IS_NOT_ORIGIN_KNOWN_FORECAST' if mode == 'association' else 'PREDICTIVE_IMPROVEMENT_IS_NOT_PROFITABILITY']})

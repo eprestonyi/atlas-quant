@@ -1,4 +1,5 @@
 import { createFeatureLabeler, constructedFeatureLabel } from './feature-labels.js';
+import { factorTimeLabel } from './factor-time.js';
 
 const SUBSCRIPT = '₀₁₂₃₄₅₆₇₈₉';
 const subscript = index => String(index + 1).replace(/\d/g, digit => SUBSCRIPT[Number(digit)]);
@@ -42,9 +43,13 @@ function constructionDefinition(artifact, input, factor, symbol) {
     return_over_trailing_volatility: [`r${member}ₜ = ${raw} / d${member}ₜ₋${lag} − 1`, `σ${member}ₜ = sampleSD(r${member}ₜ₋${t.volatilityWindow}, …, r${member}ₜ₋${t.volatilityLag}; ddof = ${t.ddof})`, `${out} = r${member}ₜ / σ${member}ₜ`, `d ≤ 0 或 σ${member}ₜ ≤ ${t.minVolatility} 或历史不足 → null`]
   };
   const labels = {first_difference:'一阶差分',simple_return:'简单收益率',log_return:'对数收益率',signed_log1p:'原单位带符号数量压缩',identity:'原值',log_positive:'对数',log1p_nonnegative:'log1p',reciprocal_nonzero:'倒数',percent_to_fraction:'百分比转小数',return_over_trailing_volatility:'收益 / 历史波动'};
-  return { descriptor, equations: [`${raw} = ${descriptor.expression}`, ...(formulas[t.kind] || ['未识别的经济变换']), `${out} 非有限 → null`,
-    `${symbol} = ${scope === 'global' || asset ? `${direction} × ${out}` : `Σⱼ(qⱼ pⱼ,ₜ / scale) × ${direction} × ${out}`}`],
-    operations: [labels[t.kind] || t.kind, ...(descriptor.timing ? [descriptor.timing.kind === 'matched_period' ? `${descriptor.timing.horizonSessions} 日同期输入` : '起点已知输入'] : []), ...(descriptor.clock === 'observed_source_sessions_asof' ? ['来源交易期 → as-of 对齐'] : []), scope === 'global' ? '全局一次' : asset ? '个股输入' : '篮子聚合'] };
+  const timed = descriptor.timing?.anchor === 'target_origin';
+  const equations = [`${raw} = ${descriptor.expression}`, ...(formulas[t.kind] || ['未识别的经济变换']), `${out} 非有限 → null`,
+    `${symbol} = ${scope === 'global' || asset ? `${direction} × ${out}` : `Σⱼ(qⱼ pⱼ,ₜ / scale) × ${direction} × ${out}`}`];
+  return { descriptor, equations: timed ? [`因子取值时点 ${factorTimeLabel(descriptor)} · 相对响应起点 t 的研究交易日`,
+    `s = 该时点对应的${descriptor.clock === 'observed_source_sessions_asof' ? '来源交易期（as-of 对齐）' : '研究交易期'}`,
+    ...equations.map(line => line.replaceAll('ₜ', 'ₛ'))] : equations,
+    operations: [labels[t.kind] || t.kind, ...(descriptor.timing ? [timed ? factorTimeLabel(descriptor) : descriptor.timing.kind === 'matched_period' ? `${descriptor.timing.horizonSessions} 日同期输入` : '起点已知输入'] : []), ...(descriptor.clock === 'observed_source_sessions_asof' ? ['来源交易期 → as-of 对齐'] : []), scope === 'global' ? '全局一次' : asset ? '个股输入' : '篮子聚合'] };
 }
 
 // These are the portable function's actual numerical inputs. A factor expression
@@ -57,11 +62,12 @@ export function inputDefinition(artifact, index) {
   const construction = constructionDefinition(artifact, input, factor, r);
   const observed = t.winsorLower
     ? `clip(${r}, ${t.winsorLower[index]}, ${t.winsorUpper[index]})` : r;
-  const filled = t.imputeMedian ? `${r} = null ? ${t.imputeMedian[index]} : ${observed}` : observed;
-  const equations = [`${r} = input[${JSON.stringify(input.name)}]`, `${u} = ${filled}`,
+  const future = artifact.schema === 'atlas-model-function/5' && construction.descriptor?.timing?.offsetSessions > 0;
+  const filled = t.imputeMedian && !future ? `${r} = null ? ${t.imputeMedian[index]} : ${observed}` : observed;
+  const equations = [`${r} = input[${JSON.stringify(input.name)}]`, ...(future ? [`${r} 须为明确有限值；null → 拒绝求值`] : []), `${u} = ${filled}`,
     `${symbol} = ${t.scaleMean ? `(${u} − ${t.scaleMean[index]}) / ${t.scaleScale[index]}` : u}`];
   return { input, factor, symbol, equations, construction,
-    operations: [...construction.operations, t.winsorLower && '截尾', t.imputeMedian && '缺失填充', t.scaleMean && (['origin-state-features/2','asset-return-features/1'].includes(artifact.featureConstruction?.schema) ? 'median / IQR' : '标准化')].filter(Boolean) };
+    operations: [...construction.operations, t.winsorLower && '截尾', future ? '未来输入不得缺失' : t.imputeMedian && '缺失填充', t.scaleMean && (['origin-state-features/2','asset-return-features/1','asset-return-features/2'].includes(artifact.featureConstruction?.schema) ? 'median / IQR' : '标准化')].filter(Boolean) };
 }
 
 export function renderFunctionInputs(C, F, artifact) {

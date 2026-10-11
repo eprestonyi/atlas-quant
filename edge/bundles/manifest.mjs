@@ -3,6 +3,8 @@ import { sha } from '../runtime.mjs';
 import { BUNDLE_PROFILE, COLLECTION_PATHS, OPTIONAL_CONTEXT_PATHS, HASH } from './profile.mjs';
 import { byteLength, keys, object, parseStrictJson } from './json.mjs';
 import { assertContextManifest } from './context-sources.mjs';
+const canonicalObject = x => Array.isArray(x) ? x.map(canonicalObject) : object(x)
+  ? Object.fromEntries(Object.keys(x).sort().map(key => [key,canonicalObject(x[key])])) : x;
 
 const MARKER = '__atlas_quant_bundle_marker__';
 const fail = (message, code = 'BUNDLE_MANIFEST', status = 400) => {
@@ -280,13 +282,17 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
   const returnStudy = forecast.sourceStrategy?.research?.returnStudy;
   if (returnStudy) {
     const panel = forecast.factorResearch?.panel;
-    if (returnStudy.schema !== 'asset-return-study/1' ||
+    const timed = returnStudy.schema === 'asset-return-study/2';
+    if (timed && JSON.stringify(canonicalObject(forecast.sourceStrategy)) !== JSON.stringify(canonicalObject(report.strategy)))
+      fail('时移研究来源声明与报告不一致');
+    if ((timed ? Object.keys(returnStudy).length !== 1 :
+          returnStudy.schema !== 'asset-return-study/1' || !['forecast','association'].includes(returnStudy.mode)) ||
         forecast.studyProtocol !== returnStudy.schema || coverage.studyProtocol !== returnStudy.schema ||
         report.strategy.target?.kind !== 'asset_return' || report.strategy.execution?.enabled !== false ||
         report.execution?.enabled !== false || report.metrics !== null ||
         ['trades', 'equity', 'riskLedger', 'decisions'].some(id => collections.get(id)?.rowCount !== 0) ||
         !collections.has('researchPanel') ||
-        forecast.factorResearch?.panel?.schema !== 'asset-return-panel/1' ||
+        forecast.factorResearch?.panel?.schema !== (timed ? 'asset-return-panel/2' : 'asset-return-panel/1') ||
         forecast.factorResearch.panel.complete !== true ||
         forecast.factorResearch.panel.rowCount !== collections.get('researchPanel').rowCount ||
         collections.get('researchPanel').rowCount > 110000)
@@ -298,6 +304,8 @@ export async function validateManifestLayout(manifestText, expectedId, protocol)
         panel.rowCount !== panel.dates.length * panel.symbols.length ||
         collections.get('targets').rowCount !== panel.symbols.length)
       fail('收益研究面板必须覆盖日历与所有研究资产的完整乘积');
+    if (timed && panel.rowCount * report.strategy.factors.length > 500000)
+      fail('逐输入时点证据超过完整面板资源上限','BUNDLE_BUDGET',413);
   } else if (forecast.studyProtocol !== undefined || coverage.studyProtocol !== undefined || collections.has('researchPanel')) {
     fail('旧研究不得混入收益研究协议');
   }

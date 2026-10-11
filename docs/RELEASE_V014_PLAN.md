@@ -1,0 +1,15 @@
+# v0.14 factor time coordinates
+
+Status: candidate construction and acceptance in progress; production remains v0.13 until a separately pinned release is verified.
+
+New studies use `asset-return-study/2`: a single per-asset return equation with independently timed factor instances. Each instance retains its economic expression/window and chooses an offset on the complete research-session calendar. The same base factor can occupy several columns. New F/5 freezes the definitions, transforms and coefficients; the browser accepts mixed observed/assumed inputs without a mutually exclusive model mode. Existing study/1 and F/4 artifacts retain their original semantics and hashes.
+
+The complete input panel records conservative availability boundaries separately from actual source dates. Model training and fitted transformations require both the response and all required inputs to mature before each fitting cutoff. Conditional fits using realized future values remain permissible and are identified as such. Missing future inputs cannot silently become a median-imputed prediction. Portable inference provenance is caller-declared, not independent proof of data availability. The complete evidence matrix has a 500,000-cell budget and is never truncated.
+
+Acceptance uses one new frozen synthetic two-asset study with `returns(close,20)` at offsets -5, 0 and +1. Preserve the run intent, original snapshot, 780-row panel, 156 observations and four candidate functions. Subsequent transport, arithmetic, browser and export checks reuse these exact bytes and never re-fit this acceptance study. Its purpose is implementation validation, not predictive-edge evidence. Legacy fixtures and negative cases must remain enforced, including all-lag information-cutoff and lead-beyond-target-horizon counterexamples.
+
+Before release, require the exact clean candidate's complete Python, Node, DOM, replay and Linux push/PR checks. Fresh-capture the active Worker/settings, six native service processes, package tree, configs, plists, shared dependency environment, spool and queues. No database migration, dependency upgrade, credential change, config change or queue-policy expansion is intended.
+
+Use a new private release directory and unique mutation journals. Stage the candidate packages while preserving the v0.13 trees. Pause only the three currently active queues with guarded state checks, preserve the three already paused queues, stop the six services, prove absence and acquire existing service/compute locks. Exchange packages, publish the pinned Worker, start all services, verify exact code and `asset-return-study/2` capability, and restore the original active queues. Uncertain outcomes require readback, not replay.
+
+Verify production behavior through a bounded new acceptance path, actual browser clicks, frozen function evaluation and native downloads. Publish only tracked source and synthetic fixtures; confirm the full source archive at both public download endpoints. Retain all original evidence and at least 500 MiB free disk. The wider strategy, execution and monitoring project remains incomplete.

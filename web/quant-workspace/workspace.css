@@ -2302,6 +2302,22 @@
 .sq-factor-workbench .sq-selected-factor > div { flex-basis: 140px; }
 .sq-factor-workbench .sq-selected-factor label { width: auto; flex: 1 0 112px; min-width: 112px; }
 .sq-factor-workbench .sq-selected-factor .sq-button { margin-left: auto; }
+.sq-factor-workbench .sq-selected-factor .sq-factor-title { flex: 1 1 180px; }
+.sq-factor-time { display: flex; align-items: center; gap: 8px; max-width: 100%; }
+.sq-factor-workbench .sq-selected-factor .sq-factor-time { flex: 1 1 230px; }
+.sq-factor-workbench .sq-selected-factor .sq-factor-time label { flex: 0 1 auto; min-width: 0; }
+.sq-factor-time select { min-width: 80px; }
+.sq-factor-time-distance { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.sq-factor-time-distance input { width: 76px; min-width: 0; }
+.sq-factor-construction { flex: 1 0 100%; min-width: 0; }
+.sq-factor-construction summary { cursor: pointer; font-size: 12px; padding: 5px 0; }
+.sq-factor-construction input { width: 100%; min-width: 0; }
+.sq-factor-construction code { overflow-wrap: anywhere; }
+.mfe-factor-input { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.mfe-factor-input .sq-field { min-width: 0; }
+.mfe-evidence-dates summary { cursor: pointer; font-size: 12px; padding: 6px 0; }
+.sq-unified-equation { min-height: 90px; }
+.sq-unified-equation span { font-size: clamp(16px, 2.2vw, 26px); overflow-wrap: anywhere; }
 .sq-factor-workbench .sq-tabs { margin-top: 0; }
 .sq-model-placeholder { display: flex; align-items: center; gap: 22px; padding: 28px 0; }
 .sq-model-placeholder > span { font: 34px Georgia, serif; color: #d5e9d9; }

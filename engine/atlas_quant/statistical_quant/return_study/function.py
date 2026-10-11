@@ -5,7 +5,8 @@ import math
 import re
 import numpy as np
 
-from .contract import FUNCTION_SCHEMA, input_descriptors, outputs, target_contract
+from .contract import (FUNCTION_SCHEMA, COORDINATE_FUNCTION_SCHEMA, COORDINATE_SCHEMA,
+                       input_descriptors, outputs, target_contract, coordinates_enabled, normalize_coordinates)
 from ..model_function import _bad, _date, _export_components, _integer, _keys, _numeric, _seal, _vector, HASH_ALGORITHM
 
 IDENTITY = {"response": "output[0]", "simpleReturn": "response * responseScale",
@@ -30,7 +31,8 @@ def export_function(model, training, strategy):
     if len(symbols) != 1:
         _bad("a return equation must identify its single fitted asset")
     estimator, transforms = _export_components(model)
-    value = {"schema": FUNCTION_SCHEMA, "hashAlgorithm": HASH_ALGORITHM,
+    coordinate = coordinates_enabled(strategy)
+    value = {"schema": COORDINATE_FUNCTION_SCHEMA if coordinate else FUNCTION_SCHEMA, "hashAlgorithm": HASH_ALGORITHM,
         "inputSchema": [{"name": c, "type": "finite_number_or_null"} for c in model.columns],
         "transforms": transforms, "estimator": estimator,
         "training": {k: training.get(k) for k in ("trainStart", "trainEnd", "informationCutoff", "labelEndMax", "trainRows", "trainDates")},
@@ -38,27 +40,39 @@ def export_function(model, training, strategy):
             "horizonSessions": strategy["target"]["horizonSessions"], "symbols": symbols,
             "observationDays": strategy["research"]["observationDays"],
             "researchStart": strategy["universe"]["start"], "researchEnd": strategy["universe"]["end"],
-            "generalizationOutsideScopeValidated": False, "studyMode": strategy["research"]["returnStudy"]["mode"]},
+            "generalizationOutsideScopeValidated": False},
         "outputs": outputs(strategy), "identity": copy.deepcopy(IDENTITY),
-        "featureConstruction": {"schema": "asset-return-features/1", "factors": copy.deepcopy(strategy["factors"]),
+        "featureConstruction": {"schema": "asset-return-features/2" if coordinate else "asset-return-features/1", "factors": copy.deepcopy(strategy["factors"]),
             "preprocess": copy.deepcopy(strategy["preprocess"]), "targetSpecification": copy.deepcopy(strategy["target"]),
             "inputs": copy.deepcopy(descriptors)},
         "provenance": {"estimator": model.spec["estimator"], "parameters": copy.deepcopy(model.spec["params"]), "sklearnVersion": sklearn.__version__},
         "editPolicy": {"allowed": ["estimator_numeric_parameters"], "arbitraryCode": False, "editedEvidenceStatus": "UNVALIDATED_USER_EDIT"},
         "lineage": {"parentArtifactId": None, "status": "fitted"}}
+    if coordinate:
+        value['scope']['studyProtocol'] = COORDINATE_SCHEMA
+        value['training'].update({key: training.get(key) for key in ('inputAvailableAtMax', 'sampleReadyAtMax')})
+    else:
+        value['scope']['studyMode'] = strategy['research']['returnStudy']['mode']
     return validate_function(_seal(value))
 
 
 def validate_metadata(a):
     """Reconstruct effective semantics rather than trusting a self-hashed claim."""
     training, scope, construction = a["training"], a["scope"], a["featureConstruction"]
-    _keys(training, ("trainStart", "trainEnd", "informationCutoff", "labelEndMax", "trainRows", "trainDates"))
+    coordinate = a['schema'] == COORDINATE_FUNCTION_SCHEMA
+    _keys(training, ("trainStart", "trainEnd", "informationCutoff", "labelEndMax", "trainRows", "trainDates") +
+          (('inputAvailableAtMax', 'sampleReadyAtMax') if coordinate else ()))
     for key in ("trainStart", "trainEnd", "informationCutoff", "labelEndMax"):
         _date(training[key])
     if not training["trainStart"] <= training["trainEnd"] <= training["labelEndMax"] < training["informationCutoff"] or not _integer(training["trainRows"], 1, 10_000_000) or not _integer(training["trainDates"], 1, training["trainRows"]):
         _bad("invalid training chronology or counts")
-    _keys(scope, ("family", "targetKind", "horizonSessions", "symbols", "observationDays", "researchStart", "researchEnd", "generalizationOutsideScopeValidated", "studyMode"))
-    if scope["family"] not in ("mean_reversion", "trend", "fundamental", "event") or scope["targetKind"] != "asset_return" or scope["studyMode"] not in ("forecast", "association") or not _integer(scope["horizonSessions"], 1, 252) or not _integer(scope["observationDays"], 1, 60) or scope["generalizationOutsideScopeValidated"] is not False:
+    if coordinate:
+        _date(training['inputAvailableAtMax']); _date(training['sampleReadyAtMax'])
+        if not (training['sampleReadyAtMax'] == max(training['labelEndMax'], training['inputAvailableAtMax']) < training['informationCutoff']):
+            _bad('input and response maturity must precede the fit cutoff')
+    _keys(scope, ("family", "targetKind", "horizonSessions", "symbols", "observationDays", "researchStart", "researchEnd", "generalizationOutsideScopeValidated", 'studyProtocol' if coordinate else "studyMode"))
+    valid_study = scope.get('studyProtocol') == COORDINATE_SCHEMA if coordinate else scope.get('studyMode') in ('forecast', 'association')
+    if scope["family"] not in ("mean_reversion", "trend", "fundamental", "event") or scope["targetKind"] != "asset_return" or not valid_study or not _integer(scope["horizonSessions"], 1, 252) or not _integer(scope["observationDays"], 1, 60) or scope["generalizationOutsideScopeValidated"] is not False:
         _bad("invalid return model scope")
     symbols = scope["symbols"]
     if not isinstance(symbols, list) or len(symbols) != 1 or not isinstance(symbols[0], str) or not re.fullmatch(r"[0-9]{6}\.(SH|SZ)", symbols[0]):
@@ -67,17 +81,22 @@ def validate_metadata(a):
     if scope["researchStart"] >= scope["researchEnd"]:
         _bad("invalid research interval")
     _keys(construction, ("schema", "factors", "preprocess", "targetSpecification", "inputs"))
-    if construction["schema"] != "asset-return-features/1":
+    if construction["schema"] != ('asset-return-features/2' if coordinate else "asset-return-features/1"):
         _bad("invalid return feature construction")
     factors = construction["factors"]
     if not isinstance(factors, list) or not 1 <= len(factors) <= 32:
         _bad("invalid factor definitions")
     ids = set()
     for factor in factors:
-        _keys(factor, ("id", "expression", "direction", "role"), ("version",))
+        _keys(factor, ("id", "expression", "direction", "role") + (('baseFactorId', 'timing') if coordinate else ()), ("version",))
         if not isinstance(factor["id"], str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", factor["id"]) or factor["id"] in ids or not isinstance(factor["expression"], str) or not 1 <= len(factor["expression"]) <= 500 or factor["role"] not in ("predictor", "event") or not _numeric(factor["direction"]) or factor["direction"] not in (-1, 1) or ("version" in factor and not _integer(factor["version"], 1, 1_000_000)):
             _bad("invalid return factor metadata")
         ids.add(factor["id"])
+        if coordinate:
+            try:
+                normalize_coordinates(factor)
+            except (ValueError, TypeError):
+                _bad('invalid factor instance timing')
     pre = construction["preprocess"]
     _keys(pre, ("winsorize", "standardize", "decorrelation", "correlationThreshold", "automatic"))
     if type(pre["winsorize"]) is not bool or type(pre["standardize"]) is not bool or pre["decorrelation"] not in ("none", "drop_correlated") or not _numeric(pre["correlationThreshold"]) or not .5 <= pre["correlationThreshold"] <= 1:
@@ -90,7 +109,8 @@ def validate_metadata(a):
         target = target_contract(construction["targetSpecification"])
         if target["horizonSessions"] != scope["horizonSessions"]:
             _bad("target horizon differs from scope")
-        strategy = {"research": {"returnStudy": {"mode": scope["studyMode"]}}, "target": target,
+        study = {'schema': COORDINATE_SCHEMA} if coordinate else {"mode": scope["studyMode"]}
+        strategy = {"research": {"returnStudy": study}, "target": target,
                     "universe": {"symbols": symbols}, "preprocess": pre, "factors": factors}
         expected = input_descriptors(strategy)
         # bool must not compare equal to an integer in source descriptors.

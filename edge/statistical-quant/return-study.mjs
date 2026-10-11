@@ -1,15 +1,16 @@
 /** Single-asset return research. An asset collection never defines portfolio weights. */
 import {returnFactorDescriptors} from '../../web/asset-return-factor-contract.js';
 export const RETURN_STUDY_SCHEMA = 'asset-return-study/1';
+export const TIMED_RETURN_STUDY_SCHEMA = 'asset-return-study/2';
 
 export function normalizeReturnStudy(research, target, { keys, number, fail }) {
   const isReturn = target.kind === 'asset_return';
   if (!isReturn && (research.returnStudy !== undefined || target.normalization !== undefined))
     fail('收益研究协议只适用于逐资产收益目标');
   if (!isReturn) return null;
-  const study = keys(research.returnStudy, ['schema', 'mode'], '收益研究协议');
-  if (study.schema !== RETURN_STUDY_SCHEMA || !['forecast', 'association'].includes(study.mode))
-    fail('收益研究模式无效');
+  const timed = research.returnStudy?.schema === TIMED_RETURN_STUDY_SCHEMA;
+  const study = keys(research.returnStudy, timed ? ['schema'] : ['schema', 'mode'], '收益研究协议');
+  if (!timed && (study.schema !== RETURN_STUDY_SCHEMA || !['forecast', 'association'].includes(study.mode))) fail('收益研究模式无效');
   if (target.basket !== undefined) fail('研究集合不接受篮子权重');
   const scale = keys(target.normalization, ['kind', 'windowSessions', 'ddof', 'horizonScale', 'minimum'], '收益标准化');
   let normalization;
@@ -23,7 +24,7 @@ export function normalizeReturnStudy(research, target, { keys, number, fail }) {
       windowSessions: number(scale.windowSessions, '波动率窗口', 20, 252, true),
       ddof: 1, horizonScale: 'sqrt_h', minimum: 1e-8 };
   } else fail('收益标准化类型无效');
-  return { returnStudy: { schema: RETURN_STUDY_SCHEMA, mode: study.mode }, normalization };
+  return { returnStudy: timed ? {schema:TIMED_RETURN_STUDY_SCHEMA} : { schema: RETURN_STUDY_SCHEMA, mode: study.mode }, normalization };
 }
 
 export function assertReturnStudyScope(strategy, fail) {
